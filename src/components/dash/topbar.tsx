@@ -13,7 +13,7 @@ function titleFor(pathname: string): string {
   return match?.label ?? 'RRTrack';
 }
 
-export function Topbar() {
+export function Topbar({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -29,6 +29,7 @@ export function Topbar() {
 
       <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />
+        {children}
       </div>
     </header>
   );

@@ -8,7 +8,8 @@ on:
 # O Next 16 removeu o `next lint` e o `next build` não linta mais: se o lint
 # não estiver aqui explicitamente, ele simplesmente não roda em lugar nenhum.
 jobs:
-  check:
+  app:
+    name: App (typecheck, lint, testes, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,3 +34,38 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  banco:
+    name: Banco (migrations + asserções de segurança)
+    runs-on: ubuntu-latest
+
+    # Postgres 17, a versão que o Supabase serve nos projetos novos.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar o cliente psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # Aplica as migrations do zero e roda as asserções: RLS ligada em toda
+      # tabela, nenhuma policy de escrita, segredos fora do alcance do painel,
+      # cifra ida e volta, rate limit atômico.
+      - name: Migrations e segurança
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: ./supabase/tests/aplicar.sh

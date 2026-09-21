@@ -190,6 +190,43 @@ para que trocar pgcrypto por Vault não toque em código de aplicação.
 
 ---
 
+## Autenticação — o que não pode quebrar
+
+- **`setAll` recebe DOIS parâmetros** no `@supabase/ssr` 0.12: `(cookies,
+  headers)`. O segundo traz `Cache-Control: private, no-cache, no-store…`, e
+  ele **precisa** ser aplicado na resposta. Sem isso, um CDN (a Vercel é um)
+  pode cachear uma resposta com `Set-Cookie` de sessão e servir o token de um
+  usuário para outro. Exemplos na internet usam a assinatura antiga, de um
+  parâmetro só — não copie de lá. Ver `src/lib/supabase/proxy.ts`.
+- **Um cliente novo por requisição.** Reaproveitar deixa as respostas
+  seguintes sem os cabeçalhos de cache.
+- **`getClaims()`**, não `getSession()` nem `getUser()`: valida a assinatura
+  do JWT localmente, sem uma ida ao servidor de Auth a cada verificação.
+- **O `proxy.ts` é checagem otimista**, só lê o cookie — ele roda em toda
+  navegação, inclusive nas que o Next prefetcha. Quem autoriza de verdade é o
+  `layout.tsx` do `(dash)`, com `usuarioAtual()`.
+- **`shouldCreateUser: false`** no `signInWithOtp`. É a trava de cadastro no
+  código; a do painel do Supabase é a segunda.
+- **A tela de login responde igual** existindo ou não o e-mail — senão ela
+  vira um verificador de quem tem acesso.
+- **Todo redirect passa por `caminhoInterno()`** (`src/lib/rotas.ts`). É o que
+  impede transformar nosso domínio em trampolim de phishing. Tem teste com os
+  vetores de ataque.
+
+## Banco — como mexer com segurança
+
+- Migrations em `supabase/migrations/`. Rode `./supabase/tests/aplicar.sh`
+  antes de commitar: aplica tudo num Postgres limpo e roda as asserções de
+  segurança. O CI roda o mesmo a cada push.
+- **Privilégio de coluna não sobrepõe privilégio de tabela.** Como o Supabase
+  concede `SELECT` na tabela inteira, um `revoke select (coluna)` isolado não
+  faz nada. Para esconder uma coluna: `revoke all on <tabela>` e depois
+  `grant select (colunas seguras)`. Foi assim que os tokens cifrados saíram do
+  alcance do painel — e a asserção 3 do teste existe para isso não regredir.
+- `security definer` sempre com `set search_path = ''`, e tudo qualificado
+  (`public.`, `private.`, `extensions.`).
+- O passo a passo de ligar um projeto novo está em `supabase/README.md`.
+
 ## Convenções
 
 - Código e comentários em **português**. Nomes de tabela e coluna em inglês
@@ -205,7 +242,7 @@ para que trocar pgcrypto por Vault não toque em código de aplicação.
 ## Estado das fases
 
 - [x] **Fase 0** — Fundação e design system
-- [ ] **Fase 1** — Banco, RLS e autenticação (magic link)
+- [x] **Fase 1** — Banco, RLS e autenticação (magic link)
 - [ ] **Fase 2** — Configuração das contas pelo painel
 - [ ] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [ ] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
