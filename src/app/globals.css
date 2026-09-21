@@ -1,0 +1,256 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* next-themes aplica a classe no <html>. O escuro é o padrão do produto:
+   o <html> já nasce com class="dark" no SSR, então não há flash nem
+   dependência de JS para o tema correto aparecer. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Tokens — HSL puro, sem a função hsl(), para permitir hsl(var(--x) / <alpha>).
+   Claro é o tema alternativo; escuro é o padrão (logo abaixo).
+--------------------------------------------------------------------------- */
+:root {
+  --radius: 0.625rem;
+
+  --background: 150 20% 99%;
+  --foreground: 222 45% 9%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 45% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 45% 9%;
+
+  --primary: 142 70% 26%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 150 14% 94%;
+  --secondary-foreground: 222 40% 14%;
+
+  --muted: 150 12% 95%;
+  --muted-foreground: 215 14% 42%;
+
+  --accent: 150 14% 94%;
+  --accent-foreground: 222 40% 14%;
+
+  --cyan: 190 90% 32%;
+  --cyan-foreground: 0 0% 100%;
+  --amber: 32 92% 40%;
+  --amber-foreground: 0 0% 100%;
+
+  --destructive: 0 72% 44%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 70% 28%;
+  --warning: 32 92% 40%;
+
+  --border: 150 12% 88%;
+  --input: 150 12% 88%;
+  --ring: 142 70% 26%;
+
+  --chart-1: 142 70% 32%;
+  --chart-2: 190 85% 34%;
+  --chart-3: 32 90% 44%;
+  --chart-4: 265 60% 52%;
+  --chart-5: 330 70% 46%;
+
+  /* Superfície "glass" e a malha de fundo */
+  --glass: 0 0% 100%;
+  --glass-opacity: 0.72;
+  --glass-border: 150 10% 78%;
+  --glass-border-alpha: 0.9;
+  --mesh-1: 142 70% 40%;
+  --mesh-2: 190 80% 42%;
+  --noise-opacity: 0.02;
+  --glass-shadow-alpha: 0.1;
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: 222 47% 4%;
+  --foreground: 210 20% 96%;
+
+  --card: 222 40% 7%;
+  --card-foreground: 210 20% 96%;
+  --popover: 222 42% 6%;
+  --popover-foreground: 210 20% 96%;
+
+  --primary: 142 76% 58%;
+  --primary-foreground: 142 85% 6%;
+
+  --secondary: 217 26% 13%;
+  --secondary-foreground: 210 20% 96%;
+
+  --muted: 217 25% 12%;
+  --muted-foreground: 215 16% 62%;
+
+  --accent: 217 26% 15%;
+  --accent-foreground: 210 20% 96%;
+
+  --cyan: 187 88% 55%;
+  --cyan-foreground: 190 90% 8%;
+  --amber: 38 95% 58%;
+  --amber-foreground: 32 90% 8%;
+
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 76% 58%;
+  --warning: 38 95% 58%;
+
+  --border: 217 25% 16%;
+  --input: 217 25% 18%;
+  --ring: 142 76% 58%;
+
+  --chart-1: 142 76% 58%;
+  --chart-2: 187 88% 55%;
+  --chart-3: 38 95% 58%;
+  --chart-4: 265 85% 70%;
+  --chart-5: 330 80% 64%;
+
+  --glass: 217 32% 12%;
+  --glass-opacity: 0.55;
+  --glass-border: 210 40% 60%;
+  --glass-border-alpha: 0.14;
+  --mesh-1: 142 76% 45%;
+  --mesh-2: 187 88% 42%;
+  --noise-opacity: 0.035;
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+   Ponte para os utilitários do Tailwind v4.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-cyan: hsl(var(--cyan));
+  --color-cyan-foreground: hsl(var(--cyan-foreground));
+  --color-amber: hsl(var(--amber));
+  --color-amber-foreground: hsl(var(--amber-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* Fundo escuro profundo com gradiente radial suave. `background-attachment`
+       fixo faz a malha ficar parada enquanto o conteúdo rola. */
+    background-image:
+      radial-gradient(
+        ellipse 80% 55% at 12% -10%,
+        hsl(var(--mesh-1) / 0.14),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse 70% 50% at 92% 4%,
+        hsl(var(--mesh-2) / 0.1),
+        transparent 62%
+      );
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    min-height: 100dvh;
+  }
+
+  /* Textura sutil: ruído em SVG, sem custo de rede e sem bloquear cliques. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--noise-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Números não devem dançar quando a métrica atualiza. */
+  .tabular,
+  [data-slot='metric'],
+  th[data-numeric],
+  td[data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.3);
+  }
+
+  /* Foco visível e consistente — acessibilidade de teclado. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Cartão "glass": leve blur sobre o fundo, borda translúcida de 1px e um
+     brilho interno no topo que dá o relevo. */
+  .glass {
+    background-color: hsl(var(--glass) / var(--glass-opacity));
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid hsl(var(--glass-border) / var(--glass-border-alpha));
+    box-shadow:
+      0 1px 0 0 hsl(0 0% 100% / 0.04) inset,
+      0 8px 24px -12px hsl(222 60% 2% / var(--glass-shadow-alpha, 0.5));
+  }
+
+  /* Rola horizontalmente no celular sem barra feia (tabelas densas). */
+  .scroll-x {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+}

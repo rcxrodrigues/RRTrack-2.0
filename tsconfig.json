@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    // TypeScript 7 (compilador nativo em Go). Este arquivo é deliberadamente
+    // válido também no TS 5.9 — ver o plano de recuo no CLAUDE.md.
+    // Nada de `target: es5`, `moduleResolution: node` ou `baseUrl`: removidos
+    // ou deprecados no TS 7.
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    // Payload de webhook e query string são dados de fora: acesso por índice
+    // devolve `| undefined` e o compilador obriga a tratar.
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "incremental": true,
+    "noEmit": true,
+
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}

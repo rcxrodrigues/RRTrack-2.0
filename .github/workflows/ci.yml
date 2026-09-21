@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# O Next 16 removeu o `next lint` e o `next build` não linta mais: se o lint
+# não estiver aqui explicitamente, ele simplesmente não roda em lugar nenhum.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # tsc do TypeScript 7 (nativo, em Go).
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Oxlint + tsgolint — checagem de tipos sem depender da API do compilador.
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes
+        run: npm run test
+
+      - name: Build
+        run: npm run build
