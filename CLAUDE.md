@@ -243,6 +243,13 @@ verifica no Supabase.
 
 ## Banco — como mexer com segurança
 
+- **O SQL Editor do Supabase envia só as 100 primeiras linhas.** Script mais
+  longo chega cortado ao banco, e o erro que aparece é o sintoma (um bloco
+  `$$` "não terminado", porque o fechamento ficou fora do corte), não a causa.
+  Por isso existe `supabase/INSTALAR-COMPACTO.sql`: mesmo conteúdo em 18
+  linhas, gerado por `supabase/tests/gerar-compacto.py`. Regere depois de
+  mexer nas migrations — a equivalência é verificada comparando o catálogo
+  dos dois bancos, objeto a objeto.
 - Migrations em `supabase/migrations/`. Rode `./supabase/tests/aplicar.sh`
   antes de commitar: aplica tudo num Postgres limpo e roda as asserções de
   segurança. O CI roda o mesmo a cada push.
