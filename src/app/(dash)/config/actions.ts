@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { randomBytes } from 'node:crypto';
 
+import { invalidarTokens } from '@/lib/destinos';
+import { invalidarConfiguracao } from '@/lib/settings';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { usuarioAtual } from '@/lib/supabase/server';
 import { testarContaDeAnuncio, testarPixel, type ResultadoTeste } from '@/lib/meta/testar';
@@ -29,6 +31,18 @@ export type Resultado = {
  */
 async function exigirSessao(): Promise<{ id: string } | null> {
   return usuarioAtual();
+}
+
+/**
+ * Tudo que o servidor guarda em memória sobre a configuração.
+ *
+ * Só vale para ESTA instância: em serverless as outras seguem com o valor
+ * antigo até o TTL vencer. É por isso que os dois caches são curtos — a
+ * invalidação acelera a propagação, não a garante.
+ */
+function esquecerCaches(): void {
+  invalidarConfiguracao();
+  invalidarTokens();
 }
 
 function falha(mensagem: string, detalhe?: string): Resultado {
@@ -130,6 +144,7 @@ export async function salvarConta(
       if (error) throw new Error(error.message);
     }
 
+    esquecerCaches();
     revalidatePath('/config');
     return { ok: true, mensagem: id ? 'Conta atualizada' : 'Conta cadastrada' };
   } catch (erro) {
@@ -157,6 +172,7 @@ export async function alternarConta(
       .eq('id', id);
     if (error) throw new Error(error.message);
 
+    esquecerCaches();
     revalidatePath('/config');
     return { ok: true, mensagem: ativo ? 'Conta ativada' : 'Conta desativada' };
   } catch (erro) {
@@ -176,6 +192,7 @@ export async function removerConta(tipo: TipoConta, id: string): Promise<Resulta
       .eq('id', id);
     if (error) throw new Error(error.message);
 
+    esquecerCaches();
     revalidatePath('/config');
     return { ok: true, mensagem: 'Conta removida' };
   } catch (erro) {
@@ -287,6 +304,7 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
       .eq('id', true);
     if (error) throw new Error(error.message);
 
+    esquecerCaches();
     revalidatePath('/config');
     return { ok: true, mensagem: 'Configurações salvas' };
   } catch (erro) {
@@ -314,6 +332,7 @@ export async function gerarWebhookToken(): Promise<Resultado & { token?: string 
     });
     if (error) throw new Error(error.message);
 
+    esquecerCaches();
     revalidatePath('/config');
     return {
       ok: true,

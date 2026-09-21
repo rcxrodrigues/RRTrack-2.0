@@ -18,6 +18,13 @@ export function texto(valor: unknown, chave: string): string | undefined {
   return typeof campo === 'string' ? campo : undefined;
 }
 
+/** O número em `chave`, ou `undefined`. NaN e Infinity não passam. */
+export function numero(valor: unknown, chave: string): number | undefined {
+  if (!ehObjeto(valor)) return undefined;
+  const campo = valor[chave];
+  return typeof campo === 'number' && Number.isFinite(campo) ? campo : undefined;
+}
+
 /** O objeto aninhado em `chave`, ou `undefined`. */
 export function objeto(valor: unknown, chave: string): Record<string, unknown> | undefined {
   if (!ehObjeto(valor)) return undefined;

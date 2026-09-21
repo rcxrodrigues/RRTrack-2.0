@@ -349,6 +349,64 @@ Hashear qualquer um deles o torna inútil.
 
 ---
 
+## Destinos server-side — as regras do envio
+
+O evento sai por dois caminhos: o Pixel no navegador e a Conversions API aqui.
+O que impede a conversão de contar em dobro é o `event_id` ser **idêntico** nos
+dois — a Meta recebe os dois, vê o mesmo id e fica com o mais completo.
+
+- **O disparo roda em `after()`**, depois da resposta. Quem chama `/api/event` é
+  o navegador de quem está comprando; segurar a página por uma ida à Meta seria
+  trocar velocidade de loja por conveniência nossa. Medido: resposta em 258ms
+  com o disparo terminando em 2063ms.
+- **`Promise.allSettled`, nunca `all`.** Com `all`, um pixel de token vencido
+  faria o evento sumir dos outros destinos. `src/lib/destinos.test.ts` prova
+  isso executando o fan-out, não lendo o código.
+- **200 com `events_received: 0` é FALHA.** A Meta aceita a chamada e descarta
+  o evento; contar como sucesso esconderia no log justamente o caso que
+  precisa aparecer.
+- **O token vai no CORPO do POST, nunca na query.** Query string aparece em log
+  de proxy e em histórico de erro, e este token escreve no pixel.
+- **O `payload_meta` gravado não tem o token.** O segredo entra só na hora do
+  `fetch` e nunca encosta na linha do log — que é auditoria, e um token ali
+  seria segredo vazado em repouso.
+- **O `test_event_code` é omitido quando vazio, nunca mandado em branco.**
+  Esquecido preenchido em produção, ele manda toda conversão para Test Events,
+  onde ela não conta: o otimizador da Meta para de aprender e a campanha morre
+  sem ninguém entender por quê.
+- **`event_time` em SEGUNDOS.** Com milissegundos a Meta recusa dizendo só que
+  o horário está fora da janela.
+- **Os hashes vêm prontos do banco**, não são calculados no envio: normalizar
+  em dois lugares é garantir que um dia os dois divergem — e o dia em que isso
+  acontecer, o match cai sem ninguém notar.
+- **O visitante é buscado sempre que há identificador**, não só quando falta
+  UTM. É dele que saem os hashes e o `fbp`/`fbc` que dão à Meta alguém para
+  casar; sem isso o evento chega sem identificação.
+- **`ignoreDuplicates` com `.select()`.** O conflito devolve lista vazia, e é
+  assim que se sabe se a linha é nova. Sem essa distinção, um beacon reenviado
+  dispararia a Meta de novo e sobrescreveria a resposta já gravada.
+
+### O GA4 NÃO entra no `/api/event`
+
+O que acontece no navegador já foi pela gtag.js que o snippet carrega. O
+Measurement Protocol **não deduplica** como a Meta faz com o `event_id`:
+mandar o mesmo evento por lá conta duas vezes no relatório.
+
+`src/lib/ga4/mp.ts` existe para a **compra do webhook** (Fase 5), que acontece
+noutro site e nunca passou por gtag nenhuma. Ele reaproveita o `client_id` e o
+`session_id` da visita — sem eles o GA4 abre sessão nova e a compra vira
+tráfego direto, desligada do anúncio que a trouxe.
+
+### Cache de token
+
+O token do cofre fica 60s em memória. Sem isso, cada evento de cada visitante
+viraria uma leitura `security definer` no Postgres por pixel. O token já vive
+na memória da instância durante o envio; o cache só estende por um minuto, e
+nunca é logado. Toda mutação no painel chama `esquecerCaches()` — que vale só
+para a instância que atendeu, e é por isso que os TTLs são curtos.
+
+---
+
 ## Autenticação — o que não pode quebrar
 
 - **`setAll` recebe DOIS parâmetros** no `@supabase/ssr` 0.12: `(cookies,
@@ -414,7 +472,7 @@ Hashear qualquer um deles o torna inútil.
 - [x] **Fase 1** — Banco, RLS e autenticação (magic link)
 - [x] **Fase 2** — Configuração das contas pelo painel
 - [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
-- [ ] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
+- [x] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
 - [ ] **Fase 5** — Webhook de compra (AppMax / Pagou.ai / MillionsPay)
 - [ ] **Fase 6** — Dashboard
 - [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
