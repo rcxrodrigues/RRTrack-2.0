@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { toast } from 'sonner';
-import { Check, Copy, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { MOEDAS } from '@/lib/moedas';
+import { CampoCopiavel } from './campo-copiavel';
 import { gerarWebhookToken, salvarSettings } from '../actions';
 
 export type Settings = {
@@ -27,43 +28,6 @@ export type Settings = {
   allowed_origins: string[];
   webhook_token_last4: string | null;
 };
-
-function CampoCopiavel({ valor, rotulo }: { valor: string; rotulo: string }) {
-  const [copiado, setCopiado] = React.useState(false);
-
-  // onClick espera retorno void: a promessa é resolvida aqui dentro e não
-  // devolvida para o React.
-  function copiar(): void {
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(valor);
-        setCopiado(true);
-        setTimeout(() => { setCopiado(false); }, 2000);
-      } catch {
-        toast.error('Não consegui copiar', {
-          description: 'Selecione e copie à mão.',
-        });
-      }
-    })();
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <code className="bg-muted/60 ring-border min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs ring-1">
-        {valor}
-      </code>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        onClick={copiar}
-        aria-label={`Copiar ${rotulo}`}
-      >
-        {copiado ? <Check className="size-4" /> : <Copy className="size-4" />}
-      </Button>
-    </div>
-  );
-}
 
 export function SecaoGeral({
   settings,

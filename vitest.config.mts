@@ -7,6 +7,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // `server-only` lança ao ser importado fora do runtime do Next. No
+      // build essa explosão é a barreira que mantém o service_role longe do
+      // navegador; no teste, ela só atrapalha.
+      'server-only': fileURLToPath(
+        new URL('./tests/server-only-stub.ts', import.meta.url),
+      ),
     },
   },
   test: {

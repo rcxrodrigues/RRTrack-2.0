@@ -198,14 +198,61 @@ verifica no Supabase.
 
 ## Design system
 
-- **Cores em HSL** em variáveis CSS — `142 76% 58%`, sem a função `hsl()` em
+### A marca
+
+O azul vem do logo, **medido** pixel a pixel e não escolhido no olho:
+`hsl(226 100% 50%)` (#0037FF) é o tom dominante, e o gradiente do símbolo vai
+daí até o ciano `hsl(185 85% 60%)`.
+
+### Dois tokens por cor, quando os papéis conflitam
+
+`--primary` e `--primary-vivid` não são redundância. A cor da marca tem dois
+usos com exigências **opostas**, e nenhum tom único atende aos dois:
+
+| uso | precisa contrastar com | valor (escuro) |
+|---|---|---|
+| fundo de botão | o texto branco em cima | `224 100% 60%` → 4.54:1 |
+| texto, link, item ativo | o fundo da página | `224 100% 64%` → 5.11:1 |
+
+Em 60% o texto reprova (4.36:1); em 62% o botão reprova. As faixas não se
+cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
+
+**Regra:** cor da marca em superfície → `--primary`; em texto ou ícone →
+`--primary-vivid`.
+
+### Como mexer numa cor sem quebrar nada
+
+1. `npm run test` — `src/app/globals.test.ts` lê o `globals.css` e audita
+   **todo** token: contraste de texto contra o fundo, de superfície contra o
+   texto em cima, e separação ΔE entre as séries de gráfico. Foi escrito
+   depois de uma primária ir para produção com 4.36:1 porque a conta foi feita
+   à mão e lida como aprovada.
+2. Para **cor de gráfico**, rode também o validador da skill `dataviz`: ele
+   checa banda de luminosidade OKLCH, piso de croma e separação sob
+   daltonismo, que contraste sozinho não pega.
+3. Abra **/estilo** no painel — ele lê os tokens aplicados e mostra os números
+   ao vivo, nos dois temas.
+
+> Contraste e distinguibilidade são perguntas diferentes. Azul e âmbar têm
+> luminância parecida (1.07:1) e ninguém os confunde — o que os separa é o
+> matiz. Para séries de gráfico a métrica é **ΔE em OKLab** (piso 15), nunca
+> razão de contraste.
+
+### O resto
+
+- **Cores em HSL** em variáveis CSS — `224 100% 60%`, sem a função `hsl()` em
   volta, para permitir `hsl(var(--primary) / 0.3)`. O shadcn novo usa OKLCH;
   aqui é HSL de propósito. Ao trazer um componente do shadcn, converta.
-- Primária verde-neon: `142 76% 58%` no escuro, `142 70% 26%` no claro.
-  Accents: ciano e âmbar. `--radius: 0.625rem`.
 - **Escuro é o padrão.** O `<html>` já nasce com `class="dark"` no SSR, então o
   tema certo aparece antes do JS — e continua certo se o JS não carregar.
-- Manrope (texto) e JetBrains Mono (números e JSON), via `next/font`.
+- **O "RRTrack" do cabeçalho é texto, não imagem.** O lettering do arquivo da
+  marca é branco e sumiria no tema claro. Em texto ele acompanha o tema, é
+  selecionável e é lido por leitor de tela. Só o símbolo é imagem
+  (`public/marca/rr-icone.webp`), sobre um selo escuro que vale nos dois temas
+  — ele também tem partes brancas.
+- **Inter** no texto e nos números; **JetBrains Mono** reservada a id, token,
+  JSON e código. A Inter tem numerais tabulares de verdade, então a métrica
+  grande fica nela: mais legível em corpo grande que a monoespaçada.
   **Todo número usa `font-variant-numeric: tabular-nums`** (classe `.tabular`
   ou `data-slot="metric"`), para a métrica não dançar ao atualizar.
 - `.glass`: blur + borda translúcida + brilho interno. Use em cartão de
@@ -215,6 +262,66 @@ verifica no Supabase.
   `src/lib/nav.ts` é a fonte única das duas.
 - Métrica sem dado mostra **`—`, nunca `0`**: zero é um número, "sem dado" não é.
   É o que o `MetricCard` faz quando recebe `value={null}`.
+
+---
+
+## Captura — o que não pode regredir
+
+Os três endpoints públicos (`/t.js`, `/api/identify`, `/api/event`) compartilham
+um portão único, `prepararCaptura()` em `src/lib/captura.ts`: allowlist de
+origem, rate limit e leitura do contexto. É centralizado porque o modo de falha
+clássico é um endpoint novo nascer sem uma das travas — quem escreveu esqueceu
+de copiar.
+
+**As duas falhas são deliberadas e opostas.** Vale saber por quê antes de
+"consertar" alguma delas:
+
+| trava | falha para | porque |
+|---|---|---|
+| CORS | **fechado** | allowlist vazia bloqueia tudo. Um endpoint de captura aberto deixa qualquer site do mundo gravar no seu banco |
+| rate limit | **aberto** | se o próprio limitador cai, a captura do site inteiro pararia. Estes endpoints gravam — não expõem nem apagam nada |
+
+- **Recusa é `recusar()`, sucesso é `responder()`.** Passar `{ erro }` para a
+  de sucesso devolvia `{"ok":true,"erro":…}` com status 200: um corpo que se
+  contradiz e um status que mente. Payload inválido é **400**; falha ao gravar
+  o evento é **500**.
+- **Toda recusa leva os cabeçalhos de CORS.** Sem eles o navegador esconde o
+  429 atrás de um erro de CORS e ninguém descobre que era rate limit.
+- **O corpo da recusa diz o CAMPO, não a mensagem do Zod.** O campo ajuda quem
+  instala o snippet; a mensagem descreve o nosso schema por dentro. O detalhe
+  vai para o log.
+- **`_trck` é `httpOnly: false` de propósito** — o snippet precisa ler o valor
+  para pendurá-lo nos links de checkout e de WhatsApp. Não é descuido.
+- **O cache de `settings` guarda também a falha**, por 5 segundos. Sem isso,
+  numa queda do Supabase cada pageview do site esperava o timeout da conexão.
+- **`/t.js` não tem allowlist** — tag de script não manda `Origin`, e o arquivo
+  só contém ids de GA4 e de pixel, que qualquer visitante já enxerga. Token
+  nenhum passa por ali.
+
+### Hash para a CAPI: siga o `normalize.py`, não a prosa
+
+A Meta compara o nosso hash com o que ela calcula do lado dela. Normalizou
+diferente → os hashes não batem → o evento chega sem identificação, **sem erro
+e sem aviso**, só com match pior. É a falha mais silenciosa do projeto inteiro.
+
+A página de parâmetros diz "sem pontuação, sem caracteres especiais". O
+`normalize.py` do SDK oficial — que é a implementação de referência — faz outra
+coisa, e é ela que vale:
+
+| campo | a Meta faz | consequência |
+|---|---|---|
+| `fn` / `ln` | **nada** além de minúsculas e trim | `O'Brien` → `o'brien`. Tirar o apóstrofo aqui quebra o match |
+| `ct` / `st` | remove só `[0-9.\s\-()]` | `São Paulo` → `sãopaulo` — **o acento fica**; `Coeur d'Alene` → `coeurd'alene` |
+| `zp` | tira espaços, corta no primeiro hífen | `01310-100` → `01310`. **Letras ficam** — postcode britânico é letra e número |
+| `em` | minúsculas e trim | |
+| `ph` | só dígitos, sem `+` nem zeros de discagem | acrescentamos o DDI `55` quando vêm 10-11 dígitos: formulário brasileiro não pede código de país |
+
+Exceção nossa, e única: `st` tira o prefixo do país **antes** da limpeza. O
+`BR-SP` que a Vercel manda viraria `brsp` pela regra da Meta, que não casa com
+nada. Testes com estes vetores em `src/lib/hash.test.ts`.
+
+**Nunca hasheados:** `fbp`, `fbc`, `client_ip_address`, `client_user_agent`.
+Hashear qualquer um deles o torna inútil.
 
 ---
 
@@ -278,8 +385,8 @@ verifica no Supabase.
 
 - [x] **Fase 0** — Fundação e design system
 - [x] **Fase 1** — Banco, RLS e autenticação (magic link)
-- [ ] **Fase 2** — Configuração das contas pelo painel
-- [ ] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
+- [x] **Fase 2** — Configuração das contas pelo painel
+- [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [ ] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
 - [ ] **Fase 5** — Webhook de compra (Hotmart / Kiwify / Eduzz)
 - [ ] **Fase 6** — Dashboard

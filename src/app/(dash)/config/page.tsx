@@ -5,6 +5,7 @@ import { criarClienteServidor } from '@/lib/supabase/server';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SecaoContas, type Conta, type ConfigSecao } from './_components/secao-contas';
 import { SecaoGeral, type Settings } from './_components/secao-geral';
+import { SecaoInstalacao } from './_components/secao-instalacao';
 
 export const metadata: Metadata = { title: 'Configuração' };
 
@@ -126,7 +127,8 @@ export default async function ConfigPage() {
   const cabecalhos = await headers();
   const host = cabecalhos.get('x-forwarded-host') ?? cabecalhos.get('host') ?? '';
   const protocolo = host.startsWith('localhost') ? 'http' : 'https';
-  const urlDoWebhook = `${protocolo}://${host}/api/webhook/compra`;
+  const base = `${protocolo}://${host}`;
+  const urlDoWebhook = `${base}/api/webhook/compra`;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -135,6 +137,7 @@ export default async function ConfigPage() {
       <Tabs defaultValue="geral" className="flex flex-col gap-4">
         <TabsList>
           <TabsTrigger value="geral">Geral</TabsTrigger>
+          <TabsTrigger value="instalacao">Instalação</TabsTrigger>
           <TabsTrigger value="meta">
             Meta
             {pixels.length > 0 && (
@@ -163,6 +166,18 @@ export default async function ConfigPage() {
 
         <TabsContent value="geral">
           <SecaoGeral settings={settings} urlDoWebhook={urlDoWebhook} />
+        </TabsContent>
+
+        <TabsContent value="instalacao">
+          <SecaoInstalacao
+            base={base}
+            estado={{
+              origensPermitidas: settings.allowed_origins,
+              cookieDomain: settings.cookie_domain,
+              quantidadePixels: pixels.filter((c) => c.is_active).length,
+              quantidadeGa4: ga4.filter((c) => c.is_active).length,
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="meta">
