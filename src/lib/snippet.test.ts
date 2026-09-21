@@ -10,6 +10,7 @@ const CONFIG: Configuracao = {
     testEventCode: 'TEST123',
     cookieDomain: '.transforlar.com',
     origensPermitidas: ['https://transforlar.com'],
+    dominiosCheckout: ['seguro.transforlar.com'],
   },
   ga4: [
     { id: '1', measurementId: 'G-ABC123' },
@@ -70,9 +71,13 @@ describe('montarSnippet', () => {
     expect(snippet).toContain("(function (w, d) {");
   });
 
+  it('embute os domínios de checkout cadastrados', () => {
+    expect(snippet).toContain('seguro.transforlar.com');
+  });
+
   it('funciona sem nenhum destino configurado', () => {
     const vazio = montarSnippet('https://x.com', {
-      settings: CONFIG.settings,
+      settings: { ...CONFIG.settings, dominiosCheckout: [] },
       ga4: [],
       pixels: [],
     });

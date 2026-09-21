@@ -62,6 +62,41 @@ begin
 end;
 $$;
 
+-- 3d) O outro lado da armadilha: coluna NÃO-secreta precisa ser VISÍVEL ------
+--
+-- Como o SELECT da tabela foi revogado e devolvido coluna a coluna, toda
+-- coluna nova nasce INVISÍVEL para o painel até alguém escrever o grant.
+-- A 3) guarda o lado do vazamento; esta guarda o lado de a tela quebrar com
+-- "permission denied" em produção.
+do $$
+declare
+  v_par record;
+  v_falta text[] := '{}';
+begin
+  for v_par in
+    select * from (values
+      ('settings','currency'),
+      ('settings','allowed_origins'),
+      ('settings','checkout_domains'),
+      ('settings','cookie_domain'),
+      ('settings','webhook_token_last4'),
+      ('ga4_accounts','measurement_id'),
+      ('meta_pixels','pixel_id'),
+      ('meta_ad_accounts','ad_account_id')
+    ) as t(tabela, coluna)
+  loop
+    if not has_column_privilege('authenticated', 'public.' || v_par.tabela, v_par.coluna, 'SELECT') then
+      v_falta := v_falta || (v_par.tabela || '.' || v_par.coluna);
+    end if;
+  end loop;
+
+  if array_length(v_falta, 1) > 0 then
+    raise exception 'FALHA: o painel não consegue ler: % (falta o grant select (coluna))', v_falta;
+  end if;
+  raise notice 'OK 3d · Colunas não-secretas legíveis pelo painel';
+end;
+$$;
+
 -- 3b) Nem anon nem authenticated podem escrever em nada --------------------
 do $$
 declare v_escrita text[];

@@ -28,11 +28,16 @@ O painel vive num **subdomínio da oferta**. Isso não é detalhe de hospedagem 
 DNS no Cloudflare e app na Vercel:
 
 ```
-transforlar.com           LP / site de vendas (externo)
+transforlar.com           loja Shopify (externa)
                           roda <script src="https://track.transforlar.com/t.js">
 track.transforlar.com     ESTE app: painel + APIs de captura + webhook
-checkout externo          Hotmart / Kiwify / Eduzz — outro site
+checkout de terceiro      plataforma própria de checkout — outro site
+gateway                   AppMax / Pagou.ai / MillionsPay processam o pagamento
 ```
+
+> **A primeira loja é Shopify com checkout de terceiro**, não infoproduto. Isso
+> não é detalhe: quem manda o webhook de venda é o checkout ou o gateway, não a
+> Shopify, e o `trck_user_id` precisa atravessar para o domínio do checkout.
 
 - **Cookie `_trck` com `Domain=.transforlar.com`** vale na LP e no painel. É
   cookie de primeira parte: o Safari não descarta e o ITP não corta em 7 dias.
@@ -40,6 +45,17 @@ checkout externo          Hotmart / Kiwify / Eduzz — outro site
   cookie viaja com `SameSite=Lax` + `credentials: 'include'`.
 - O checkout é outro site, e por isso **o `trck_user_id` viaja na URL** do
   checkout e nos links de WhatsApp. É essa a ponte cross-domain.
+- **Os domínios do checkout são configuração, não código** (`settings.
+  checkout_domains`, cadastrados no painel). Nasceram como uma regex fixa de
+  plataformas de infoproduto dentro do snippet — errado duas vezes: nenhuma
+  delas aparece num funil Shopify, e cada oferta futura usa o checkout que
+  quiser. O WhatsApp continua no código porque é universal e porque lá o id vai
+  no **texto** da mensagem, não na query.
+- **O acerto do domínio é por HOST, nunca por `indexOf` no href.** Uma busca de
+  texto casaria com `https://golpe.com/?volta=checkout.loja.com` e mandaria o
+  identificador do visitante para o domínio de quem montou o link.
+  `src/lib/snippet-marcacao.test.ts` **executa** o snippet contra esses vetores
+  — conferir o fonte por string não prova nada sobre comportamento.
 
 CORS nunca fica aberto: a allowlist de origens é configurada no painel.
 
@@ -373,6 +389,9 @@ Hashear qualquer um deles o torna inútil.
   faz nada. Para esconder uma coluna: `revoke all on <tabela>` e depois
   `grant select (colunas seguras)`. Foi assim que os tokens cifrados saíram do
   alcance do painel — e a asserção 3 do teste existe para isso não regredir.
+  **O outro lado da mesma armadilha:** coluna NOVA nasce invisível para o
+  painel até alguém escrever o `grant select (coluna)`, e a tela quebra com
+  "permission denied". A asserção 3d guarda esse lado.
 - `security definer` sempre com `set search_path = ''`, e tudo qualificado
   (`public.`, `private.`, `extensions.`).
 - O passo a passo de ligar um projeto novo está em `supabase/README.md`.
@@ -396,7 +415,7 @@ Hashear qualquer um deles o torna inútil.
 - [x] **Fase 2** — Configuração das contas pelo painel
 - [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [ ] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
-- [ ] **Fase 5** — Webhook de compra (Hotmart / Kiwify / Eduzz)
+- [ ] **Fase 5** — Webhook de compra (AppMax / Pagou.ai / MillionsPay)
 - [ ] **Fase 6** — Dashboard
 - [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
 - [ ] **Fase 8** — Retenção, auditoria e publicação

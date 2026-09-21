@@ -26,6 +26,7 @@ export function montarSnippet(base: string, config: Configuracao): string {
     params: PARAMS_TRCK,
     ga4: config.ga4.map((c) => c.measurementId),
     pixels: config.pixels.map((p) => p.pixelId),
+    checkout: config.settings.dominiosCheckout,
   };
 
   return `/* RRTrack 2.0 */
@@ -118,7 +119,22 @@ export function montarSnippet(base: string, config: Configuracao): string {
   /* ---------------------------------------------------------------------
      O vínculo viaja na URL — é a ponte para o checkout, que é outro site
   --------------------------------------------------------------------- */
-  var DESTINOS = /(hotmart|kiwify|eduzz|monetizze|braip|perfectpay|ticto|payt|lastlink|wa\\.me|api\\.whatsapp\\.com)/i;
+  /* O WhatsApp fica no código: é universal e o mecanismo é outro — lá o id
+     vai no TEXTO da mensagem. Os domínios de checkout vêm do painel, porque
+     cada oferta usa o checkout que quiser e trocar não pode pedir deploy. */
+  var WHATSAPP = /(^|\\.)(wa\\.me|whatsapp\\.com)$/i;
+
+  /* Compara por HOST, não por pedaço de texto no href.
+     Um "indexOf" cru casaria com https://golpe.com/?volta=checkout.loja.com,
+     e aí o identificador do visitante iria embora para o site errado. */
+  function ehCheckout(url) {
+    var host = url.hostname.toLowerCase();
+    for (var i = 0; i < CFG.checkout.length; i++) {
+      var alvo = String(CFG.checkout[i]).toLowerCase();
+      if (host === alvo || host.slice(-(alvo.length + 1)) === '.' + alvo) return true;
+    }
+    return false;
+  }
 
   function marcarLinks() {
     if (!trckUserId) return;
@@ -127,25 +143,25 @@ export function montarSnippet(base: string, config: Configuracao): string {
       var a = links[i];
       try {
         var href = a.getAttribute('href') || '';
-        if (!DESTINOS.test(href)) continue;
         if (href.indexOf('trck_user_id=') !== -1) continue;
+
+        var destino = new URL(href, w.location.href);
+        if (!WHATSAPP.test(destino.hostname) && !ehCheckout(destino)) continue;
 
         /* Link de WhatsApp leva o id no TEXTO da mensagem: o wa.me ignora
            parâmetros que não conhece, e o texto é o que chega para quem
            atende. */
-        if (/wa\\.me|api\\.whatsapp\\.com/i.test(href)) {
-          var u2 = new URL(href, w.location.href);
-          var texto = u2.searchParams.get('text') || '';
+        if (WHATSAPP.test(destino.hostname)) {
+          var texto = destino.searchParams.get('text') || '';
           if (texto.indexOf(trckUserId) === -1) {
-            u2.searchParams.set('text', texto + (texto ? ' ' : '') + '[#' + trckUserId + ']');
-            a.setAttribute('href', u2.toString());
+            destino.searchParams.set('text', texto + (texto ? ' ' : '') + '[#' + trckUserId + ']');
+            a.setAttribute('href', destino.toString());
           }
           continue;
         }
 
-        var u3 = new URL(href, w.location.href);
-        u3.searchParams.set('trck_user_id', trckUserId);
-        a.setAttribute('href', u3.toString());
+        destino.searchParams.set('trck_user_id', trckUserId);
+        a.setAttribute('href', destino.toString());
       } catch (e) { /* link malformado: deixa como está */ }
     }
   }

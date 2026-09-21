@@ -8,6 +8,7 @@ import { CampoCopiavel } from './campo-copiavel';
 export type EstadoInstalacao = {
   origensPermitidas: string[];
   cookieDomain: string | null;
+  dominiosCheckout: string[];
   quantidadePixels: number;
   quantidadeGa4: number;
 };
@@ -58,7 +59,8 @@ export function SecaoInstalacao({
   const temOrigem = estado.origensPermitidas.length > 0;
   const temCookie = estado.cookieDomain !== null;
   const temDestino = estado.quantidadePixels + estado.quantidadeGa4 > 0;
-  const tudoPronto = temOrigem && temCookie && temDestino;
+  const temCheckout = estado.dominiosCheckout.length > 0;
+  const tudoPronto = temOrigem && temCookie && temDestino && temCheckout;
 
   return (
     <div className="flex flex-col gap-4">
@@ -96,6 +98,11 @@ export function SecaoInstalacao({
               faltando="Sem isso o visitante não é reconhecido entre a landing page e o painel. Aba Geral → Domínio do cookie."
             />
             <Requisito
+              pronto={temCheckout}
+              titulo="Domínio do checkout cadastrado"
+              faltando="Sem isso o identificador não atravessa para o checkout e a venda chega órfã. Aba Geral → Domínios do checkout."
+            />
+            <Requisito
               pronto={temDestino}
               titulo="Ao menos um destino ativo"
               faltando="Os eventos são gravados, mas não vão para lugar nenhum. Cadastre um pixel ou uma propriedade do GA4."
@@ -121,11 +128,24 @@ export function SecaoInstalacao({
             <Label>Automático</Label>
             <p className="text-muted-foreground text-sm">
               O snippet varre a página e marca sozinho todo link que aponte
-              para Hotmart, Kiwify, Eduzz, Monetizze, Braip, PerfectPay, Ticto,
-              Payt, Lastlink e WhatsApp. Nos links de WhatsApp o identificador
-              entra no <em>texto</em> da mensagem, que é o que chega para quem
-              atende.
+              para um dos domínios cadastrados em <strong>Geral → Domínios do
+              checkout</strong>, e também os de WhatsApp. Nos links de WhatsApp
+              o identificador entra no <em>texto</em> da mensagem, que é o que
+              chega para quem atende.
             </p>
+            {temCheckout ? (
+              <ul className="flex flex-col gap-1">
+                {estado.dominiosCheckout.map((d) => (
+                  <li key={d} className="text-muted-foreground font-mono text-xs">
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-destructive-vivid text-xs">
+                Nenhum domínio cadastrado — nenhum link está sendo marcado.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">

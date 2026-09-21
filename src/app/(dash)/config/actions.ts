@@ -267,6 +267,7 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
     test_event_code: formData.get('test_event_code'),
     cookie_domain: formData.get('cookie_domain'),
     allowed_origins: formData.get('allowed_origins'),
+    checkout_domains: formData.get('checkout_domains'),
   });
 
   if (!analise.success) {
@@ -281,6 +282,7 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
         test_event_code: analise.data.test_event_code || null,
         cookie_domain: analise.data.cookie_domain || null,
         allowed_origins: analise.data.allowed_origins,
+        checkout_domains: analise.data.checkout_domains,
       })
       .eq('id', true);
     if (error) throw new Error(error.message);

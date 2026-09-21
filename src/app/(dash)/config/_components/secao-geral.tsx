@@ -26,6 +26,7 @@ export type Settings = {
   test_event_code: string | null;
   cookie_domain: string | null;
   allowed_origins: string[];
+  checkout_domains: string[];
   webhook_token_last4: string | null;
 };
 
@@ -153,6 +154,25 @@ export function SecaoGeral({
             <p className="text-muted-foreground text-xs">
               Uma por linha. Só estes sites podem enviar eventos. Deixar vazio
               não libera geral — bloqueia todos.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="checkout_domains">Domínios do checkout</Label>
+            <Textarea
+              id="checkout_domains"
+              name="checkout_domains"
+              defaultValue={settings.checkout_domains.join('\n')}
+              placeholder={'seguro.minhaloja.com\ncheckout.minhaloja.com'}
+              className="font-mono text-xs"
+              rows={3}
+            />
+            <p className="text-muted-foreground text-xs">
+              Um por linha. O snippet pendura o identificador do visitante em
+              todo link que aponte para estes domínios — é a ponte para o
+              checkout, que é outro site e não recebe o cookie. Sem isso, a
+              venda chega órfã e só casa por e-mail. Pode colar a URL inteira:
+              eu fico com o domínio.
             </p>
           </div>
 

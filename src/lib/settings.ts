@@ -18,6 +18,8 @@ export type Settings = {
   testEventCode: string | null;
   cookieDomain: string | null;
   origensPermitidas: string[];
+  /** Domínios do checkout — o snippet marca os links que apontam para eles. */
+  dominiosCheckout: string[];
 };
 
 export type DestinoGa4 = { id: string; measurementId: string };
@@ -49,6 +51,7 @@ const PADRAO: Configuracao = {
     testEventCode: null,
     cookieDomain: null,
     origensPermitidas: [],
+    dominiosCheckout: [],
   },
   ga4: [],
   pixels: [],
@@ -58,13 +61,20 @@ function texto(valor: unknown): string | null {
   return typeof valor === 'string' && valor.length > 0 ? valor : null;
 }
 
+/** Coluna text[] do Postgres, lida sem confiar no formato. */
+function listaDeTexto(valor: unknown): string[] {
+  return Array.isArray(valor)
+    ? valor.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : [];
+}
+
 async function buscar(): Promise<Configuracao> {
   const supabase = criarClienteAdmin();
 
   const [settings, ga4, pixels] = await Promise.all([
     supabase
       .from('settings')
-      .select('currency, test_event_code, cookie_domain, allowed_origins')
+      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains')
       .eq('id', true)
       .maybeSingle(),
     // Só os destinos ATIVOS: desativar uma conta no painel precisa parar o
@@ -83,9 +93,8 @@ async function buscar(): Promise<Configuracao> {
       currency: texto(linha?.currency) ?? 'BRL',
       testEventCode: texto(linha?.test_event_code),
       cookieDomain: texto(linha?.cookie_domain),
-      origensPermitidas: Array.isArray(linha?.allowed_origins)
-        ? linha.allowed_origins.filter((o): o is string => typeof o === 'string')
-        : [],
+      origensPermitidas: listaDeTexto(linha?.allowed_origins),
+      dominiosCheckout: listaDeTexto(linha?.checkout_domains),
     },
     ga4: (ga4.data ?? []).flatMap((l) => {
       const id = texto(l.id);

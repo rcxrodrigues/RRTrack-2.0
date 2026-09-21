@@ -33,6 +33,7 @@ const SETTINGS_PADRAO: Settings = {
   test_event_code: null,
   cookie_domain: null,
   allowed_origins: [],
+  checkout_domains: [],
   webhook_token_last4: null,
 };
 
@@ -48,7 +49,7 @@ async function carregar() {
   const [settings, ga4, pixels, ads] = await Promise.all([
     supabase
       .from('settings')
-      .select('currency, test_event_code, cookie_domain, allowed_origins, webhook_token_last4')
+      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains, webhook_token_last4')
       .eq('id', true)
       .returns<Settings[]>()
       .single(),
@@ -174,6 +175,7 @@ export default async function ConfigPage() {
             estado={{
               origensPermitidas: settings.allowed_origins,
               cookieDomain: settings.cookie_domain,
+              dominiosCheckout: settings.checkout_domains,
               quantidadePixels: pixels.filter((c) => c.is_active).length,
               quantidadeGa4: ga4.filter((c) => c.is_active).length,
             }}
