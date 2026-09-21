@@ -649,6 +649,12 @@ revoke insert, update, delete, truncate
   on public.visitors, public.events_log, public.purchases
   from anon, authenticated;
 
+-- E o `anon` não tem o que fazer aqui: as policies são todas `to
+-- authenticated`, então a RLS já devolve zero linhas para ele. Tirar o
+-- privilégio também é a terceira tranca — dados pessoais (e-mail, IP, geo)
+-- não deveriam depender de uma única camada.
+revoke all on public.visitors, public.events_log, public.purchases from anon;
+
 
 -- ============================================================================
 -- MIGRATION · 20260921120300_rate_limit_e_cache
@@ -764,6 +770,7 @@ create policy "meta_insights_cache: leitura autenticada"
 revoke all on public.rate_limits from anon, authenticated;
 revoke insert, update, delete, truncate
   on public.meta_insights_cache from anon, authenticated;
+revoke all on public.meta_insights_cache from anon;
 
 revoke all on function public.check_rate_limit(text, integer, integer) from public, anon, authenticated;
 revoke all on function public.purge_rate_limits(integer) from public, anon, authenticated;

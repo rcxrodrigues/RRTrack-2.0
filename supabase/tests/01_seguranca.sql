@@ -83,6 +83,22 @@ begin
 end;
 $$;
 
+-- 3c) anon não alcança nenhuma tabela ---------------------------------------
+do $$
+declare v_alcanca text[];
+begin
+  select array_agg(distinct g.table_name || ' → ' || g.privilege_type)
+    into v_alcanca
+    from information_schema.role_table_grants g
+   where g.table_schema = 'public' and g.grantee = 'anon';
+
+  if v_alcanca is not null then
+    raise exception 'FALHA: anon ainda alcança tabelas: %', v_alcanca;
+  end if;
+  raise notice 'OK 3c · anon não tem privilégio em tabela nenhuma';
+end;
+$$;
+
 -- 4) anon não executa as funções de segredo ---------------------------------
 do $$
 declare v_pode text[] := '{}';

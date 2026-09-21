@@ -109,6 +109,7 @@ create policy "meta_insights_cache: leitura autenticada"
 revoke all on public.rate_limits from anon, authenticated;
 revoke insert, update, delete, truncate
   on public.meta_insights_cache from anon, authenticated;
+revoke all on public.meta_insights_cache from anon;
 
 revoke all on function public.check_rate_limit(text, integer, integer) from public, anon, authenticated;
 revoke all on function public.purge_rate_limits(integer) from public, anon, authenticated;

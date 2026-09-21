@@ -193,3 +193,9 @@ create policy "purchases: leitura autenticada"
 revoke insert, update, delete, truncate
   on public.visitors, public.events_log, public.purchases
   from anon, authenticated;
+
+-- E o `anon` não tem o que fazer aqui: as policies são todas `to
+-- authenticated`, então a RLS já devolve zero linhas para ele. Tirar o
+-- privilégio também é a terceira tranca — dados pessoais (e-mail, IP, geo)
+-- não deveriam depender de uma única camada.
+revoke all on public.visitors, public.events_log, public.purchases from anon;
