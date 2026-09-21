@@ -131,7 +131,7 @@ grant select (
 -- impede que um search_path malicioso sequestre a resolução de nomes.
 -- -----------------------------------------------------------------------------
 create or replace function public.set_webhook_token(p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b011$
 declare v_id uuid;
 begin
   select webhook_token_secret_id into v_id from public.settings where id;
@@ -142,10 +142,10 @@ begin
          webhook_token_last4     = private.secret_last4(p_secret)
    where id;
 end;
-$$;
+$b011$;
 
 create or replace function public.set_ga4_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b012$
 declare v_id uuid;
 begin
   select api_secret_secret_id into v_id from public.ga4_accounts where id = p_id;
@@ -156,10 +156,10 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b012$;
 
 create or replace function public.set_meta_pixel_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b013$
 declare v_id uuid;
 begin
   select capi_token_secret_id into v_id from public.meta_pixels where id = p_id;
@@ -170,10 +170,10 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b013$;
 
 create or replace function public.set_meta_ad_account_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b014$
 declare v_id uuid;
 begin
   select ads_token_secret_id into v_id from public.meta_ad_accounts where id = p_id;
@@ -184,29 +184,29 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b014$;
 
 create or replace function public.get_webhook_token()
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b015$
   select private.ler_segredo(webhook_token_secret_id) from public.settings where id;
-$$;
+$b015$;
 
 create or replace function public.get_ga4_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b016$
   select private.ler_segredo(api_secret_secret_id) from public.ga4_accounts where id = p_id;
-$$;
+$b016$;
 
 create or replace function public.get_meta_pixel_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b017$
   select private.ler_segredo(capi_token_secret_id) from public.meta_pixels where id = p_id;
-$$;
+$b017$;
 
 create or replace function public.get_meta_ad_account_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b018$
   select private.ler_segredo(ads_token_secret_id) from public.meta_ad_accounts where id = p_id;
-$$;
+$b018$;
 
-do $$
+do $b019$
 declare
   v_fn text;
 begin
@@ -224,7 +224,7 @@ begin
     execute format('grant execute on function %s to service_role', v_fn);
   end loop;
 end;
-$$;
+$b019$;
 
 
 -- -----------------------------------------------------------------------------
@@ -236,7 +236,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $b0110$
 begin
   case tg_table_name
     when 'ga4_accounts'     then perform private.esquecer_segredo(old.api_secret_secret_id);
@@ -246,7 +246,7 @@ begin
   end case;
   return old;
 end;
-$$;
+$b0110$;
 
 create trigger ga4_accounts_limpa_segredo after delete on public.ga4_accounts
   for each row execute function private.limpar_segredo_da_conta();

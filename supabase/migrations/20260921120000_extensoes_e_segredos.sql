@@ -26,16 +26,16 @@ create extension if not exists pgcrypto with schema extensions;
 
 -- O Vault vem com o projeto. Se faltar, é melhor falhar aqui, com instrução,
 -- do que adiante com um erro obscuro.
-do $$
+do $b001$
 begin
   if not exists (select 1 from pg_namespace where nspname = 'vault') then
     raise exception using
       errcode = 'undefined_schema',
       message = 'O schema "vault" não existe neste projeto',
-      hint    = 'Ative a extensão "supabase_vault" em Database → Extensions e rode de novo.';
+      hint    = 'Ative a extensão "supabase_vault" em Database > Extensions e rode de novo.';
   end if;
 end;
-$$;
+$b001$;
 
 -- Tudo que não é para ser tocado pelo painel mora aqui.
 create schema if not exists private;
@@ -58,7 +58,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b002$
 declare
   v_id uuid;
 begin
@@ -80,7 +80,7 @@ begin
   perform vault.update_secret(p_id_atual, p_segredo);
   return p_id_atual;
 end;
-$$;
+$b002$;
 
 -- -----------------------------------------------------------------------------
 -- Ler um segredo. Só o servidor chega aqui, via as funções public.get_*.
@@ -91,7 +91,7 @@ language plpgsql
 stable
 security definer
 set search_path = ''
-as $$
+as $b003$
 declare
   v_segredo text;
 begin
@@ -105,7 +105,7 @@ begin
 
   return v_segredo;
 end;
-$$;
+$b003$;
 
 -- Apagar o segredo junto com a conta, para não acumular lixo no cofre.
 create or replace function private.esquecer_segredo(p_id uuid)
@@ -114,13 +114,13 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b004$
 begin
   if p_id is not null then
     delete from vault.secrets where id = p_id;
   end if;
 end;
-$$;
+$b004$;
 
 -- Os últimos 4 caracteres, para o painel mostrar ••••••••4f2a sem abrir o cofre.
 create or replace function private.secret_last4(p_secret text)
@@ -128,12 +128,12 @@ returns text
 language sql
 immutable
 set search_path = ''
-as $$
+as $b005$
   select case
     when p_secret is null or length(p_secret) < 4 then null
     else right(p_secret, 4)
   end;
-$$;
+$b005$;
 
 revoke all on function private.guardar_segredo(uuid, text, text) from public, anon, authenticated;
 revoke all on function private.ler_segredo(uuid)                 from public, anon, authenticated;
@@ -147,9 +147,9 @@ create or replace function private.touch_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
-as $$
+as $b006$
 begin
   new.updated_at := now();
   return new;
 end;
-$$;
+$b006$;

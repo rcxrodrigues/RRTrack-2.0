@@ -31,7 +31,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b031$
 declare
   v_window timestamptz;
   v_hits   integer;
@@ -56,7 +56,7 @@ begin
 
   return v_hits <= p_limit;
 end;
-$$;
+$b031$;
 
 -- Janelas vencidas não servem para nada; a Fase 8 agenda esta limpeza.
 create or replace function public.purge_rate_limits(p_older_than_hours integer default 24)
@@ -65,7 +65,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b032$
 declare
   v_apagadas integer;
 begin
@@ -74,7 +74,7 @@ begin
   get diagnostics v_apagadas = row_count;
   return v_apagadas;
 end;
-$$;
+$b032$;
 
 -- -----------------------------------------------------------------------------
 -- Cache dos Insights do Meta Ads. A Meta cobra por pontuação (BUC) e pune

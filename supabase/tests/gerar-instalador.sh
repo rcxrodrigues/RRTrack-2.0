@@ -26,17 +26,17 @@ OUT="$RAIZ/supabase/INSTALAR.sql"
 -- Os tokens ficam no Supabase Vault, cuja chave-mestra vive FORA do banco.
 -- Se a extensão não estiver ativa, melhor parar aqui com uma instrução clara.
 -- ============================================================================
-do $$
+do $inst0$
 begin
   if not exists (select 1 from pg_namespace where nspname = 'vault') then
     raise exception using
       errcode = 'undefined_schema',
       message = 'O Supabase Vault não está ativo neste projeto',
-      hint    = 'Vá em Database → Extensions, ative "supabase_vault" e rode este arquivo de novo.';
+      hint    = 'Vá em Database > Extensions, ative "supabase_vault" e rode este arquivo de novo.';
   end if;
-  raise notice 'Cofre (Supabase Vault) disponível.';
+  raise notice 'Cofre (Supabase Vault) disponivel.';
 end;
-$$;
+$inst0$;
 
 CABECALHO
 
@@ -54,7 +54,7 @@ CABECALHO
 -- ============================================================================
 -- VERIFICAÇÃO FINAL · o relatório que diz se deu certo
 -- ============================================================================
-do $$
+do $inst9$
 declare
   v_tabelas        integer;
   v_sem_rls        text[];
@@ -145,7 +145,7 @@ begin
   raise notice '═══════════════════════════════════════════════════════';
   raise notice '';
 end;
-$$;
+$inst9$;
 RODAPE
 } > "$OUT"
 

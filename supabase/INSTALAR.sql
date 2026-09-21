@@ -16,17 +16,17 @@
 -- Os tokens ficam no Supabase Vault, cuja chave-mestra vive FORA do banco.
 -- Se a extensão não estiver ativa, melhor parar aqui com uma instrução clara.
 -- ============================================================================
-do $$
+do $inst0$
 begin
   if not exists (select 1 from pg_namespace where nspname = 'vault') then
     raise exception using
       errcode = 'undefined_schema',
       message = 'O Supabase Vault não está ativo neste projeto',
-      hint    = 'Vá em Database → Extensions, ative "supabase_vault" e rode este arquivo de novo.';
+      hint    = 'Vá em Database > Extensions, ative "supabase_vault" e rode este arquivo de novo.';
   end if;
-  raise notice 'Cofre (Supabase Vault) disponível.';
+  raise notice 'Cofre (Supabase Vault) disponivel.';
 end;
-$$;
+$inst0$;
 
 
 -- ============================================================================
@@ -60,16 +60,16 @@ create extension if not exists pgcrypto with schema extensions;
 
 -- O Vault vem com o projeto. Se faltar, é melhor falhar aqui, com instrução,
 -- do que adiante com um erro obscuro.
-do $$
+do $b001$
 begin
   if not exists (select 1 from pg_namespace where nspname = 'vault') then
     raise exception using
       errcode = 'undefined_schema',
       message = 'O schema "vault" não existe neste projeto',
-      hint    = 'Ative a extensão "supabase_vault" em Database → Extensions e rode de novo.';
+      hint    = 'Ative a extensão "supabase_vault" em Database > Extensions e rode de novo.';
   end if;
 end;
-$$;
+$b001$;
 
 -- Tudo que não é para ser tocado pelo painel mora aqui.
 create schema if not exists private;
@@ -92,7 +92,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b002$
 declare
   v_id uuid;
 begin
@@ -114,7 +114,7 @@ begin
   perform vault.update_secret(p_id_atual, p_segredo);
   return p_id_atual;
 end;
-$$;
+$b002$;
 
 -- -----------------------------------------------------------------------------
 -- Ler um segredo. Só o servidor chega aqui, via as funções public.get_*.
@@ -125,7 +125,7 @@ language plpgsql
 stable
 security definer
 set search_path = ''
-as $$
+as $b003$
 declare
   v_segredo text;
 begin
@@ -139,7 +139,7 @@ begin
 
   return v_segredo;
 end;
-$$;
+$b003$;
 
 -- Apagar o segredo junto com a conta, para não acumular lixo no cofre.
 create or replace function private.esquecer_segredo(p_id uuid)
@@ -148,13 +148,13 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b004$
 begin
   if p_id is not null then
     delete from vault.secrets where id = p_id;
   end if;
 end;
-$$;
+$b004$;
 
 -- Os últimos 4 caracteres, para o painel mostrar ••••••••4f2a sem abrir o cofre.
 create or replace function private.secret_last4(p_secret text)
@@ -162,12 +162,12 @@ returns text
 language sql
 immutable
 set search_path = ''
-as $$
+as $b005$
   select case
     when p_secret is null or length(p_secret) < 4 then null
     else right(p_secret, 4)
   end;
-$$;
+$b005$;
 
 revoke all on function private.guardar_segredo(uuid, text, text) from public, anon, authenticated;
 revoke all on function private.ler_segredo(uuid)                 from public, anon, authenticated;
@@ -181,12 +181,12 @@ create or replace function private.touch_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
-as $$
+as $b006$
 begin
   new.updated_at := now();
   return new;
 end;
-$$;
+$b006$;
 
 
 -- ============================================================================
@@ -325,7 +325,7 @@ grant select (
 -- impede que um search_path malicioso sequestre a resolução de nomes.
 -- -----------------------------------------------------------------------------
 create or replace function public.set_webhook_token(p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b011$
 declare v_id uuid;
 begin
   select webhook_token_secret_id into v_id from public.settings where id;
@@ -336,10 +336,10 @@ begin
          webhook_token_last4     = private.secret_last4(p_secret)
    where id;
 end;
-$$;
+$b011$;
 
 create or replace function public.set_ga4_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b012$
 declare v_id uuid;
 begin
   select api_secret_secret_id into v_id from public.ga4_accounts where id = p_id;
@@ -350,10 +350,10 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b012$;
 
 create or replace function public.set_meta_pixel_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b013$
 declare v_id uuid;
 begin
   select capi_token_secret_id into v_id from public.meta_pixels where id = p_id;
@@ -364,10 +364,10 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b013$;
 
 create or replace function public.set_meta_ad_account_secret(p_id uuid, p_secret text)
-returns void language plpgsql security definer set search_path = '' as $$
+returns void language plpgsql security definer set search_path = '' as $b014$
 declare v_id uuid;
 begin
   select ads_token_secret_id into v_id from public.meta_ad_accounts where id = p_id;
@@ -378,29 +378,29 @@ begin
          secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
-$$;
+$b014$;
 
 create or replace function public.get_webhook_token()
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b015$
   select private.ler_segredo(webhook_token_secret_id) from public.settings where id;
-$$;
+$b015$;
 
 create or replace function public.get_ga4_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b016$
   select private.ler_segredo(api_secret_secret_id) from public.ga4_accounts where id = p_id;
-$$;
+$b016$;
 
 create or replace function public.get_meta_pixel_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b017$
   select private.ler_segredo(capi_token_secret_id) from public.meta_pixels where id = p_id;
-$$;
+$b017$;
 
 create or replace function public.get_meta_ad_account_secret(p_id uuid)
-returns text language sql security definer stable set search_path = '' as $$
+returns text language sql security definer stable set search_path = '' as $b018$
   select private.ler_segredo(ads_token_secret_id) from public.meta_ad_accounts where id = p_id;
-$$;
+$b018$;
 
-do $$
+do $b019$
 declare
   v_fn text;
 begin
@@ -418,7 +418,7 @@ begin
     execute format('grant execute on function %s to service_role', v_fn);
   end loop;
 end;
-$$;
+$b019$;
 
 
 -- -----------------------------------------------------------------------------
@@ -430,7 +430,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $b0110$
 begin
   case tg_table_name
     when 'ga4_accounts'     then perform private.esquecer_segredo(old.api_secret_secret_id);
@@ -440,7 +440,7 @@ begin
   end case;
   return old;
 end;
-$$;
+$b0110$;
 
 create trigger ga4_accounts_limpa_segredo after delete on public.ga4_accounts
   for each row execute function private.limpar_segredo_da_conta();
@@ -686,7 +686,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b031$
 declare
   v_window timestamptz;
   v_hits   integer;
@@ -711,7 +711,7 @@ begin
 
   return v_hits <= p_limit;
 end;
-$$;
+$b031$;
 
 -- Janelas vencidas não servem para nada; a Fase 8 agenda esta limpeza.
 create or replace function public.purge_rate_limits(p_older_than_hours integer default 24)
@@ -720,7 +720,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
-as $$
+as $b032$
 declare
   v_apagadas integer;
 begin
@@ -729,7 +729,7 @@ begin
   get diagnostics v_apagadas = row_count;
   return v_apagadas;
 end;
-$$;
+$b032$;
 
 -- -----------------------------------------------------------------------------
 -- Cache dos Insights do Meta Ads. A Meta cobra por pontuação (BUC) e pune
@@ -774,7 +774,7 @@ grant execute on function public.purge_rate_limits(integer) to service_role;
 -- ============================================================================
 -- VERIFICAÇÃO FINAL · o relatório que diz se deu certo
 -- ============================================================================
-do $$
+do $inst9$
 declare
   v_tabelas        integer;
   v_sem_rls        text[];
@@ -865,4 +865,4 @@ begin
   raise notice '═══════════════════════════════════════════════════════';
   raise notice '';
 end;
-$$;
+$inst9$;
