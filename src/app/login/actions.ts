@@ -1,6 +1,6 @@
 'use server';
 
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
@@ -42,16 +42,33 @@ export async function enviarLinkDeAcesso(
   const proximo = caminhoInterno(formData.get('proximo'));
 
   const cabecalhos = await headers();
-  const host = cabecalhos.get('host');
+  const host = cabecalhos.get('x-forwarded-host') ?? cabecalhos.get('host');
   const protocolo = cabecalhos.get('x-forwarded-proto') ?? 'https';
   const origem = `${protocolo}://${host}`;
+
+  // Para onde ir depois de entrar viaja num COOKIE, não na URL de retorno.
+  //
+  // O Supabase compara o `emailRedirectTo` inteiro com a allowlist de
+  // Redirect URLs — com query string e tudo. Um `?proximo=/eventos` faz o
+  // endereço deixar de casar, e aí ele manda a pessoa para o Site URL em
+  // silêncio. Melhor não depender de uma configuração de painel para o
+  // login funcionar.
+  const cookieStore = await cookies();
+  cookieStore.set('trck_proximo', proximo, {
+    httpOnly: true,
+    secure: protocolo === 'https',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60, // a mesma hora que o link vale
+  });
 
   const supabase = await criarClienteServidor();
   const { error } = await supabase.auth.signInWithOtp({
     email: email.data,
     options: {
       shouldCreateUser: false,
-      emailRedirectTo: `${origem}/auth/callback?proximo=${encodeURIComponent(proximo)}`,
+      // Sem query string: é exatamente o que vai na allowlist do Supabase.
+      emailRedirectTo: `${origem}/auth/callback`,
     },
   });
 

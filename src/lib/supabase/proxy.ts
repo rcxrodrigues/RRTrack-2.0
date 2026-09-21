@@ -63,7 +63,18 @@ export async function atualizarSessao(request: NextRequest): Promise<NextRespons
   const { data } = await supabase.auth.getClaims();
   const autenticado = typeof data?.claims?.sub === 'string';
 
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
+
+  // Quando o Supabase recusa um link de acesso, ele redireciona para o Site
+  // URL com o motivo na query — não para o nosso callback. Sem isto, o erro
+  // se perderia numa volta silenciosa para o login.
+  const erroDoSupabase = searchParams.get('error_code') ?? searchParams.get('error');
+  if (erroDoSupabase && !pathname.startsWith('/auth/erro')) {
+    const destino = request.nextUrl.clone();
+    destino.pathname = '/auth/erro';
+    destino.search = `?motivo=${encodeURIComponent(erroDoSupabase)}`;
+    return NextResponse.redirect(destino);
+  }
 
   if (!autenticado && !ehRotaPublica(pathname)) {
     const destino = request.nextUrl.clone();
