@@ -45,7 +45,7 @@ export default async function ErroAuthPage({
     <main className="relative z-10 flex min-h-dvh flex-col items-center justify-center px-4 py-10">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex justify-center">
-          <Logo />
+          <Logo tamanho="grande" />
         </div>
 
         <Card>

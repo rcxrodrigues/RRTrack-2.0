@@ -25,7 +25,7 @@ export default async function LoginPage({
 
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex justify-center">
-          <Logo />
+          <Logo tamanho="grande" />
         </div>
 
         <Card>

@@ -13,53 +13,57 @@
 :root {
   --radius: 0.625rem;
 
-  --background: 150 20% 99%;
-  --foreground: 222 45% 9%;
+  --background: 210 20% 99%;
+  --foreground: 225 40% 9%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 45% 9%;
+  --card-foreground: 225 40% 9%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 45% 9%;
+  --popover-foreground: 225 40% 9%;
 
-  --primary: 142 70% 26%;
+  /* Azul royal do logo (hsl 226 100% 50%), escurecido até passar no
+     contraste sobre fundo claro: 8.4:1 contra o fundo, 8.6:1 com texto
+     branco em cima. */
+  --primary: 226 95% 42%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 150 14% 94%;
-  --secondary-foreground: 222 40% 14%;
+  --secondary: 215 16% 94%;
+  --secondary-foreground: 225 35% 14%;
 
-  --muted: 150 12% 95%;
-  --muted-foreground: 215 14% 42%;
+  --muted: 215 16% 95%;
+  --muted-foreground: 220 12% 42%;
 
-  --accent: 150 14% 94%;
-  --accent-foreground: 222 40% 14%;
+  --accent: 215 16% 94%;
+  --accent-foreground: 225 35% 14%;
 
-  --cyan: 190 90% 32%;
+  /* A outra ponta do gradiente do logo. */
+  --cyan: 190 90% 30%;
   --cyan-foreground: 0 0% 100%;
   --amber: 32 92% 40%;
   --amber-foreground: 0 0% 100%;
 
   --destructive: 0 72% 44%;
   --destructive-foreground: 0 0% 100%;
-  --success: 142 70% 28%;
+  --success: 152 65% 30%;
   --warning: 32 92% 40%;
 
-  --border: 150 12% 88%;
-  --input: 150 12% 88%;
-  --ring: 142 70% 26%;
+  --border: 215 16% 88%;
+  --input: 215 16% 88%;
+  --ring: 226 95% 42%;
 
-  --chart-1: 142 70% 32%;
-  --chart-2: 190 85% 34%;
+  --chart-1: 226 95% 46%;
+  --chart-2: 190 90% 32%;
   --chart-3: 32 90% 44%;
   --chart-4: 265 60% 52%;
-  --chart-5: 330 70% 46%;
+  --chart-5: 340 70% 46%;
 
   /* Superfície "glass" e a malha de fundo */
   --glass: 0 0% 100%;
   --glass-opacity: 0.72;
-  --glass-border: 150 10% 78%;
+  --glass-border: 215 14% 78%;
   --glass-border-alpha: 0.9;
-  --mesh-1: 142 70% 40%;
-  --mesh-2: 190 80% 42%;
+  --mesh-1: 226 95% 50%;
+  --mesh-2: 190 90% 45%;
   --noise-opacity: 0.02;
   --glass-shadow-alpha: 0.1;
 
@@ -67,52 +71,56 @@
 }
 
 .dark {
-  --background: 222 47% 4%;
-  --foreground: 210 20% 96%;
+  /* Fundo azulado profundo — a mesma família do logo, não um cinza neutro. */
+  --background: 225 45% 5%;
+  --foreground: 213 25% 96%;
 
-  --card: 222 40% 7%;
-  --card-foreground: 210 20% 96%;
-  --popover: 222 42% 6%;
-  --popover-foreground: 210 20% 96%;
+  --card: 225 38% 8%;
+  --card-foreground: 213 25% 96%;
+  --popover: 225 40% 7%;
+  --popover-foreground: 213 25% 96%;
 
-  --primary: 142 76% 58%;
-  --primary-foreground: 142 85% 6%;
+  /* Azul do logo clareado até o ponto em que ele aparece no fundo escuro
+     (4.4:1) E ainda aceita texto branco por cima (4.5:1). Mais claro, o
+     texto do botão falha; mais escuro, o botão some. */
+  --primary: 224 100% 60%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 217 26% 13%;
-  --secondary-foreground: 210 20% 96%;
+  --secondary: 222 28% 14%;
+  --secondary-foreground: 213 25% 96%;
 
-  --muted: 217 25% 12%;
-  --muted-foreground: 215 16% 62%;
+  --muted: 222 26% 13%;
+  --muted-foreground: 217 16% 64%;
 
-  --accent: 217 26% 15%;
-  --accent-foreground: 210 20% 96%;
+  --accent: 222 28% 16%;
+  --accent-foreground: 213 25% 96%;
 
-  --cyan: 187 88% 55%;
+  --cyan: 185 85% 60%;
   --cyan-foreground: 190 90% 8%;
   --amber: 38 95% 58%;
   --amber-foreground: 32 90% 8%;
 
-  --destructive: 0 72% 56%;
+  --destructive: 0 72% 58%;
   --destructive-foreground: 0 0% 100%;
-  --success: 142 76% 58%;
+  --success: 152 65% 52%;
   --warning: 38 95% 58%;
 
-  --border: 217 25% 16%;
-  --input: 217 25% 18%;
-  --ring: 142 76% 58%;
+  --border: 222 26% 17%;
+  --input: 222 26% 19%;
+  --ring: 224 100% 60%;
 
-  --chart-1: 142 76% 58%;
-  --chart-2: 187 88% 55%;
+  --chart-1: 224 100% 64%;
+  --chart-2: 185 85% 60%;
   --chart-3: 38 95% 58%;
   --chart-4: 265 85% 70%;
-  --chart-5: 330 80% 64%;
+  --chart-5: 330 80% 66%;
 
-  --glass: 217 32% 12%;
+  --glass: 222 32% 13%;
   --glass-opacity: 0.55;
-  --glass-border: 210 40% 60%;
+  --glass-border: 213 40% 62%;
   --glass-border-alpha: 0.14;
-  --mesh-1: 142 76% 45%;
-  --mesh-2: 187 88% 42%;
+  --mesh-1: 226 100% 52%;
+  --mesh-2: 185 85% 50%;
   --noise-opacity: 0.035;
 
   color-scheme: dark;
@@ -122,7 +130,7 @@
    Ponte para os utilitários do Tailwind v4.
 --------------------------------------------------------------------------- */
 @theme inline {
-  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   --color-background: hsl(var(--background));
@@ -203,13 +211,16 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  /* Números não devem dançar quando a métrica atualiza. */
+  /* Números não devem dançar quando a métrica atualiza.
+     A Inter tem numerais tabulares de verdade, então a métrica fica na
+     própria fonte de texto — mais legível em corpo grande que a
+     monoespaçada, que continua reservada a id, token, JSON e código. */
   .tabular,
   [data-slot='metric'],
   th[data-numeric],
   td[data-numeric] {
     font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum';
+    font-feature-settings: 'tnum', 'cv11';
   }
 
   ::selection {

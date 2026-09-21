@@ -32,7 +32,7 @@ export function MetricCard({
       <span
         data-slot="metric"
         className={cn(
-          'mt-2 font-mono text-2xl leading-none font-semibold sm:text-3xl',
+          'mt-2 text-2xl leading-none font-semibold tracking-tight sm:text-3xl',
           value === null ? 'text-muted-foreground/40' : accentClass,
         )}
       >
