@@ -47,7 +47,7 @@ export async function dispararCompra(transactionId: string): Promise<void> {
       .select(
         'transaction_id, status, value, currency, email, email_hash, phone, phone_hash, ' +
           'first_name, last_name, product_id, product_name, fbp, fbc, ' +
-          'ga_client_id, ga_session_id, geo_country, geo_region, geo_city, ip, sent_at',
+          'ga_client_id, ga_session_id, geo_country, geo_region, geo_city, ip, sent_at, reverted_at',
       )
       .eq('transaction_id', transactionId)
       .returns<LinhaCompra[]>()
@@ -87,6 +87,134 @@ export async function dispararCompra(transactionId: string): Promise<void> {
       erro instanceof Error ? erro.message : erro,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Estorno
+// ---------------------------------------------------------------------------
+
+/**
+ * Desfaz uma venda que voltou.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────┐
+ * │ O QUE DÁ E O QUE NÃO DÁ PARA DESFAZER                                 │
+ * │                                                                       │
+ * │ **GA4: dá.** Existe o evento padrão `refund`, com o mesmo             │
+ * │ `transaction_id` — o GA4 subtrai a receita sozinho.                   │
+ * │                                                                       │
+ * │ **Meta: NÃO dá.** A Conversions API não tem evento de reversão. Não   │
+ * │ existe "anti-Purchase": a conversão já contada continua contada, e a  │
+ * │ única saída é a Deletion API, que apaga por intervalo de tempo — um   │
+ * │ machado onde se precisa de bisturi.                                   │
+ * │                                                                       │
+ * │ Por isso o ROAS que VALE é o do nosso painel, calculado sobre as      │
+ * │ linhas com `status = 'aprovada'`. O da Meta fica otimista por         │
+ * │ desenho dela, não por descuido nosso — e o painel precisa dizer isso  │
+ * │ quando os dois números divergirem.                                     │
+ * └───────────────────────────────────────────────────────────────────────┘
+ */
+export async function desfazerCompra(transactionId: string): Promise<void> {
+  const supabase = criarClienteAdmin();
+
+  try {
+    const { data } = await supabase
+      .from('purchases')
+      .select(
+        'transaction_id, status, value, currency, product_id, product_name, ' +
+          'ga_client_id, ga_session_id, sent_at, reverted_at',
+      )
+      .eq('transaction_id', transactionId)
+      .returns<LinhaCompra[]>()
+      .maybeSingle();
+
+    if (!data) return;
+
+    const status = texto(data, 'status');
+    if (status !== 'estornada' && status !== 'chargeback') return;
+
+    // Nunca foi enviada: não há o que desfazer. Acontece quando o estorno
+    // chega antes da aprovação — a Appmax avisa que a ordem dos eventos não
+    // é garantida.
+    if (!texto(data, 'sent_at')) return;
+
+    // A trava do reenvio. Os gateways reenviam o evento de estorno; sem
+    // isto a receita ficaria negativa em cima de uma venda só.
+    if (texto(data, 'reverted_at')) return;
+
+    const respostaGa4 = await enviarRefundGa4(data);
+
+    await supabase
+      .from('purchases')
+      .update({
+        reverted_at: new Date().toISOString(),
+        response_ga4: respostaGa4,
+      })
+      .eq('transaction_id', transactionId);
+  } catch (erro) {
+    console.error(
+      '[compras] falha ao desfazer:',
+      erro instanceof Error ? erro.message : erro,
+    );
+  }
+}
+
+/** O `refund` do GA4 — evento padrão, e o GA4 subtrai a receita sozinho. */
+async function enviarRefundGa4(compra: LinhaCompra): Promise<unknown> {
+  const config = await carregarConfiguracao();
+  if (config.ga4.length === 0) {
+    return { meta: 'a Meta não tem reversão', ga4: 'nenhuma propriedade ativa' };
+  }
+
+  const clientId = texto(compra, 'ga_client_id');
+  if (!clientId) {
+    return { meta: 'a Meta não tem reversão', ga4: 'a visita não tinha _ga' };
+  }
+
+  const valor = compra.value;
+  const payload = montarPayloadGa4({
+    clientId,
+    sessionId: texto(compra, 'ga_session_id'),
+    eventos: [
+      {
+        name: 'refund',
+        params: {
+          // O MESMO transaction_id da compra: é por ele que o GA4 sabe o
+          // que está sendo desfeito.
+          transaction_id: texto(compra, 'transaction_id') ?? '',
+          ...(typeof valor === 'number' ? { value: valor } : {}),
+          currency: texto(compra, 'currency') ?? config.settings.currency,
+        },
+      },
+    ],
+  });
+
+  const envios = await Promise.allSettled(
+    config.ga4.map(async (conta) => {
+      const segredo = await segredoDoGa4(conta.id);
+      if (!segredo) {
+        return [conta.measurementId, { ok: false, status: 0, erro: 'sem api_secret' }] as const;
+      }
+      return [
+        conta.measurementId,
+        await enviarParaGa4(conta.measurementId, segredo, payload),
+      ] as const;
+    }),
+  );
+
+  const respostas: Record<string, RespostaGa4> = {};
+  for (const envio of envios) {
+    if (envio.status === 'fulfilled') {
+      const [id, resultado] = envio.value;
+      respostas[id] = resultado;
+    }
+  }
+
+  return {
+    // Registrado explicitamente para quem for auditar não procurar o que
+    // nunca existiu.
+    meta: 'a Conversions API não tem evento de reversão — ver desfazerCompra',
+    ga4: respostas,
+  };
 }
 
 // ---------------------------------------------------------------------------

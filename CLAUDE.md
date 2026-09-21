@@ -520,6 +520,28 @@ nenhum gateway conhece.
   Inventar um faria a compra abrir sessão nova e aparecer como tráfego
   direto, desligada do anúncio que a trouxe.
 
+### O estorno: o GA4 dá, a Meta NÃO dá
+
+**GA4:** existe o evento padrão `refund`, com o mesmo `transaction_id`. Ele
+subtrai a receita sozinho.
+
+**Meta: não existe reversão.** A Conversions API não tem "anti-Purchase". A
+conversão já contada continua contada, e a única saída é a Deletion API, que
+apaga por intervalo de tempo — um machado onde se precisa de bisturi.
+
+**Consequência que o painel precisa dizer:** o ROAS que VALE é o nosso,
+calculado sobre `status = 'aprovada'`. O da Meta fica otimista por desenho
+dela, não por descuido nosso. Quando os dois divergirem, o certo é o nosso.
+
+`reverted_at` é o par de `sent_at`: um responde "já mandei a venda?", o outro
+"já desfiz?". Sem ele, cada reenvio do evento de estorno — e a Appmax reenvia
+até quatro vezes — mandaria outro `refund` e a receita ficaria negativa em
+cima de uma venda só.
+
+Disparar e desfazer se excluem **por dentro**: cada um checa o status e sai
+calado quando não é o seu caso. A rota chama os dois, porque a ordem dos
+eventos do gateway não é garantida e o estorno pode chegar antes da aprovação.
+
 ### O geo da compra vem do VISITANTE, nunca da requisição
 
 A requisição do webhook vem do **servidor do gateway**. Usar o IP dela

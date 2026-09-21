@@ -33,7 +33,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-const { dispararCompra, eventIdDaCompra } = await import('./compras');
+const { desfazerCompra, dispararCompra, eventIdDaCompra } = await import('./compras');
 
 const APROVADA = {
   transaction_id: 'yampi:1000001',
@@ -204,5 +204,78 @@ describe('o registro', () => {
     // reenvio manual e deliberado.
     expect(texto(gravado, 'sent_at')).toBeTruthy();
     expect(texto(gravado, 'meta_event_id')).toBe(eventIdDaCompra('yampi:1000001'));
+  });
+});
+
+describe('desfazer — o estorno', () => {
+  const ESTORNADA = {
+    ...APROVADA,
+    status: 'estornada',
+    sent_at: '2026-09-21T12:00:00Z',
+    reverted_at: null,
+  };
+
+  it('manda refund ao GA4 quando a venda já tinha sido enviada', async () => {
+    maybeSingle.mockResolvedValue({ data: ESTORNADA });
+    await desfazerCompra('yampi:1000001');
+    expect(segredoDoGa4).toHaveBeenCalledWith('ga-1');
+
+    const gravado: unknown = update.mock.calls[0]?.[0];
+    expect(texto(gravado, 'reverted_at')).toBeTruthy();
+  });
+
+  it('chargeback também desfaz', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...ESTORNADA, status: 'chargeback' } });
+    await desfazerCompra('yampi:1000001');
+    expect(update).toHaveBeenCalled();
+  });
+
+  it.each(['aprovada', 'pendente', 'recusada'])('NÃO desfaz %s', async (status) => {
+    maybeSingle.mockResolvedValue({ data: { ...ESTORNADA, status } });
+    await desfazerCompra('yampi:1000001');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  /*
+   * A ordem dos eventos do gateway não é garantida — a Appmax diz isso com
+   * todas as letras. Estorno antes da aprovação não tem o que desfazer.
+   */
+  it('NÃO desfaz o que nunca foi enviado', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...ESTORNADA, sent_at: null } });
+    await desfazerCompra('yampi:1000001');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Os gateways reenviam o evento de estorno. Sem a trava, a receita
+   * ficaria negativa em cima de uma venda só.
+   */
+  it('NÃO desfaz duas vezes', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { ...ESTORNADA, reverted_at: '2026-09-21T13:00:00Z' },
+    });
+    await desfazerCompra('yampi:1000001');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  /*
+   * A Meta não tem evento de reversão. Registrar isso explicitamente evita
+   * que quem auditar daqui a um ano procure o que nunca existiu.
+   */
+  it('registra que a Meta não tem como reverter', async () => {
+    maybeSingle.mockResolvedValue({ data: ESTORNADA });
+    await desfazerCompra('yampi:1000001');
+
+    const gravado: unknown = update.mock.calls[0]?.[0];
+    expect(texto(objeto(gravado, 'response_ga4'), 'meta')).toContain('reversão');
+  });
+
+  it('sem client_id, não inventa — e diz por quê', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...ESTORNADA, ga_client_id: null } });
+    await desfazerCompra('yampi:1000001');
+    expect(segredoDoGa4).not.toHaveBeenCalled();
+
+    const gravado: unknown = update.mock.calls[0]?.[0];
+    expect(texto(objeto(gravado, 'response_ga4'), 'ga4')).toContain('_ga');
   });
 });

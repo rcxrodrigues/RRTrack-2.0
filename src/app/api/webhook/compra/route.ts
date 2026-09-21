@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { after, NextResponse, type NextRequest } from 'next/server';
 
-import { dispararCompra } from '@/lib/compras';
+import { desfazerCompra, dispararCompra } from '@/lib/compras';
 import { extrairGeo } from '@/lib/geo';
 import { hashEmail, hashTelefone } from '@/lib/hash';
 import { bucketPorIp, dentroDoLimite, LIMITE_WEBHOOK } from '@/lib/ratelimit';
@@ -147,7 +147,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // compra. Disparar antes mandaria a conversão sem identificação
     // nenhuma — a Meta aceitaria e o match seria quase zero.
     await casarComVisitante(compra);
+
+    // Disparar e desfazer se excluem por dentro: cada um checa o status e
+    // sai calado quando não é o seu caso. Chamar os dois é mais simples e
+    // mais seguro que decidir aqui — e a ordem dos eventos do gateway não
+    // é garantida, então o estorno pode chegar antes da aprovação.
     await dispararCompra(compra.transactionId);
+    await desfazerCompra(compra.transactionId);
   });
 
   return responder(200, { recebido: true, tratado: true });
