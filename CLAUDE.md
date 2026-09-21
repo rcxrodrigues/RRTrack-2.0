@@ -24,9 +24,8 @@ npm run check       # typecheck + lint + test — rode antes de todo commit
 ## Arquitetura de domínios
 
 O painel vive num **subdomínio da oferta**. Isso não é detalhe de hospedagem —
-é o que permite cookie de primeira parte:
-
-Primeira oferta em produção — DNS no Cloudflare, app na Vercel:
+é o que permite cookie de primeira parte. Primeira oferta em produção, com
+DNS no Cloudflare e app na Vercel:
 
 ```
 transforlar.com           LP / site de vendas (externo)
@@ -37,6 +36,12 @@ checkout externo          Hotmart / Kiwify / Eduzz — outro site
 
 - **Cookie `_trck` com `Domain=.transforlar.com`** vale na LP e no painel. É
   cookie de primeira parte: o Safari não descarta e o ITP não corta em 7 dias.
+- LP → painel é cross-**origin** (precisa de CORS) mas same-**site**, então o
+  cookie viaja com `SameSite=Lax` + `credentials: 'include'`.
+- O checkout é outro site, e por isso **o `trck_user_id` viaja na URL** do
+  checkout e nos links de WhatsApp. É essa a ponte cross-domain.
+
+CORS nunca fica aberto: a allowlist de origens é configurada no painel.
 
 > **Cloudflare na frente da Vercel — cuidado com o geo.** Se o registro
 > `track` ficar com o proxy ligado (nuvem laranja), a Vercel passa a ver o IP
@@ -46,12 +51,6 @@ checkout externo          Hotmart / Kiwify / Eduzz — outro site
 > registro. De todo modo `src/lib/geo.ts` detecta os dois conjuntos de
 > cabeçalhos (Vercel e `CF-Connecting-IP`/`CF-IPCountry`), então funciona nas
 > duas configurações e não quebra se mudar.
-- LP → painel é cross-**origin** (precisa de CORS) mas same-**site**, então o
-  cookie viaja com `SameSite=Lax` + `credentials: 'include'`.
-- O checkout é outro site, e por isso **o `trck_user_id` viaja na URL** do
-  checkout e nos links de WhatsApp. É essa a ponte cross-domain.
-
-CORS nunca fica aberto: a allowlist de origens é configurada no painel.
 
 ---
 
@@ -146,7 +145,7 @@ Nenhuma linha de código da aplicação muda.
 
 Só a infra do Supabase mora em variável de ambiente (`.env.example` lista as
 três). Tokens da Meta, `api_secret` do GA4 e o token de webhook são cadastrados
-**pelo painel** e ficam cifrados no banco:
+**pelo painel** e ficam guardados no cofre do Supabase:
 
 | Tabela | Conteúdo |
 |---|---|
@@ -158,24 +157,42 @@ três). Tokens da Meta, `api_secret` do GA4 e o token de webhook são cadastrado
 Os eventos são enviados a **todos** os destinos ativos, e a resposta de cada um
 é gravada no log do evento.
 
-### Cifra dos segredos — pgcrypto, e o seu limite
+### Cifra dos segredos — Supabase Vault
 
-Segredos são `bytea` via `pgp_sym_encrypt`. A chave **não fica numa tabela** —
-fica no catálogo do Postgres:
+Os tokens vivem no **Supabase Vault**. As tabelas guardam só o **UUID** que
+aponta para o segredo; o valor nunca passa por uma coluna nossa.
 
-```sql
-ALTER DATABASE postgres SET app.settings.encryption_key = '<chave forte>';
+```
+public.meta_pixels.capi_token_secret_id  ──▶  vault.secrets (cifrado em disco)
+                                              chave-mestra FORA do Postgres
 ```
 
-Lida com `current_setting(...)` dentro de funções `SECURITY DEFINER`, com
-`REVOKE` de `anon` e `authenticated`. O painel nunca recebe o segredo: lê
-`secret_last4` e mostra `••••••••4f2a`.
+Interface, toda `security definer` e só para o `service_role`:
 
-**O limite, dito com clareza:** um `pg_dump` das *tabelas* não decifra nada,
-porque a chave não está nelas. Mas um `pg_dumpall` inclui as configurações de
-banco e leva a chave junto. O Supabase Vault seria mais forte (chave-mestra
-fora do Postgres). A interface `set_*_secret` / `get_*_secret` foi desenhada
-para que trocar pgcrypto por Vault não toque em código de aplicação.
+| Função | Faz |
+|---|---|
+| `private.guardar_segredo(id_atual, nome, segredo)` | cria na primeira vez, atualiza depois — devolve o UUID |
+| `private.ler_segredo(id)` | abre o cofre |
+| `private.esquecer_segredo(id)` | remove do cofre |
+
+Apagar uma conta dispara um trigger que tira o segredo do cofre junto. Sem
+isso, cada conta removida deixaria um token vivo lá para sempre.
+
+**Por que não foi `pgp_sym_encrypt` com chave nossa**, como estava no plano:
+a ideia era guardar a chave no catálogo via
+`ALTER DATABASE ... SET app.settings.encryption_key`. **O Supabase não
+permite** — esse comando exige privilégio de dono do banco, que o role
+`postgres` de um projeto não tem (erro `42501`). Não há contorno.
+
+E o Vault é melhor do que a ideia original: a chave-mestra vive **fora** do
+Postgres, então nem `pg_dump`, nem `pg_dumpall`, nem um backup vazado
+decifram nada. Era exatamente o limite que a abordagem anterior aceitava.
+
+**Testando localmente:** o Vault não existe num Postgres comum, então
+`supabase/tests/00_ambiente_supabase.sql` traz um **substituto que NÃO cifra**
+— ele existe só para exercitar a lógica (guardar, ler, atualizar sem criar
+órfão, limpar ao apagar). A cifra em si é responsabilidade do Vault e se
+verifica no Supabase.
 
 ---
 

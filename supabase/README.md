@@ -3,8 +3,8 @@
 ## Atalho: instalar tudo de uma vez
 
 Cole o arquivo **[`INSTALAR.sql`](./INSTALAR.sql)** inteiro no SQL Editor e
-rode. Ele cobre os passos 1 a 3 (chave de cifra, migrations e verificação) e
-imprime um relatório no fim. É idempotente — rodar de novo não quebra nada.
+rode. Ele confere o cofre, aplica as migrations e imprime um relatório no
+fim. É idempotente — rodar de novo não quebra nada.
 
 Feito isso, pule para o **Passo 4**.
 
@@ -21,43 +21,24 @@ outro lugar.
 
 ---
 
-## Passo 1 · Gerar a chave de cifra
+## Passo 1 · Ativar o cofre (Supabase Vault)
 
-É com ela que os tokens da Meta e do GA4 ficam cifrados no banco.
+É onde os tokens da Meta e do GA4 ficam guardados, cifrados com uma
+chave-mestra que vive **fora** do banco.
 
-No **SQL Editor**, rode:
+**Database → Extensions** → procure **`supabase_vault`** → ative.
 
-```sql
-do $$
-declare
-  v_chave text;
-begin
-  -- Dois UUIDs v4 concatenados: 64 caracteres, ~244 bits de entropia.
-  v_chave := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
-  execute format(
-    'alter database %I set app.settings.encryption_key = %L',
-    current_database(), v_chave
-  );
-end;
-$$;
-```
-
-A chave é gerada e gravada **dentro do banco**. Ela nunca aparece na tela,
-nunca passa por e-mail, chat ou arquivo — não há como vazá-la por descuido.
-
-> **Guarde uma cópia?** Não precisa, e é melhor não. Se um dia ela se perder,
-> os segredos cifrados ficam ilegíveis — mas é só recadastrar os tokens no
-> painel, que leva dois minutos. Uma cópia em lugar errado é risco permanente;
-> recadastrar é um aborrecimento passageiro.
-
-**Conferir** — precisa devolver `64`:
+Costuma já vir ativo em projeto novo. Para conferir — precisa devolver
+`true`:
 
 ```sql
-select length(current_setting('app.settings.encryption_key', true));
+select exists (select 1 from pg_namespace where nspname = 'vault') as cofre_ativo;
 ```
 
-Se vier vazio ou `NULL`, abra uma aba nova do SQL Editor: a configuração só
-vale para conexões abertas depois do `ALTER DATABASE`.
+> **Por que não uma chave nossa?** O plano original guardava uma chave no
+> catálogo do Postgres com `ALTER DATABASE ... SET`. O Supabase bloqueia esse
+> comando (erro `42501`: exige dono do banco). O Vault resolve melhor: a
+> chave-mestra nem está no banco, então backup vazado não decifra nada.
 
 ---
 
@@ -86,12 +67,11 @@ Esperado: `events_log`, `ga4_accounts`, `meta_ad_accounts`,
 
 ---
 
-## Passo 3 · Conferir que a cifra funciona
+## Passo 3 · Conferir que o cofre funciona
 
 Vale gastar trinta segundos provando que o ciclo fecha:
 
 ```sql
--- Cria um pixel de teste, cifra um token e lê de volta.
 with novo as (
   insert into public.meta_pixels (label, pixel_id)
   values ('Teste', '999999999') returning id
@@ -99,12 +79,12 @@ with novo as (
 select public.set_meta_pixel_secret(id, 'token-de-teste-1234') from novo;
 
 select
-  public.get_meta_pixel_secret(id) as decifrado,   -- token-de-teste-1234
-  secret_last4                     as ultimos_4,   -- 1234
-  length(capi_token_enc)           as bytes_cifrados
+  public.get_meta_pixel_secret(id) as do_cofre,     -- token-de-teste-1234
+  secret_last4                     as ultimos_4,    -- 1234
+  capi_token_secret_id             as ponteiro      -- um uuid
 from public.meta_pixels where pixel_id = '999999999';
 
--- Limpa o teste.
+-- Apagar leva o segredo do cofre junto.
 delete from public.meta_pixels where pixel_id = '999999999';
 ```
 

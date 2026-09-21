@@ -43,10 +43,10 @@ declare
 begin
   for v_par in
     select * from (values
-      ('settings','webhook_token_enc'),
-      ('ga4_accounts','api_secret_enc'),
-      ('meta_pixels','capi_token_enc'),
-      ('meta_ad_accounts','ads_token_enc')
+      ('settings','webhook_token_secret_id'),
+      ('ga4_accounts','api_secret_secret_id'),
+      ('meta_pixels','capi_token_secret_id'),
+      ('meta_ad_accounts','ads_token_secret_id')
     ) as t(tabela, coluna)
   loop
     if has_column_privilege('anon', 'public.' || v_par.tabela, v_par.coluna, 'SELECT')
@@ -56,9 +56,9 @@ begin
   end loop;
 
   if array_length(v_vaza, 1) > 0 then
-    raise exception 'FALHA: coluna de segredo legível pelo painel: %', v_vaza;
+    raise exception 'FALHA: ponteiro de segredo legível pelo painel: %', v_vaza;
   end if;
-  raise notice 'OK 3/7 · Colunas cifradas fora do alcance do painel';
+  raise notice 'OK 3/7 · Ponteiros para o cofre fora do alcance do painel';
 end;
 $$;
 
@@ -104,14 +104,15 @@ begin
 end;
 $$;
 
--- 5) A cifra funciona de ponta a ponta ---------------------------------------
+-- 5) O cofre funciona de ponta a ponta -------------------------------------
 do $$
 declare
-  v_id       uuid;
-  v_segredo  text := 'EAAG-token-de-teste-super-secreto-1234';
-  v_lido     text;
-  v_bruto    bytea;
-  v_last4    text;
+  v_id        uuid;
+  v_segredo   text := 'EAAG-token-de-teste-super-secreto-1234';
+  v_lido      text;
+  v_ponteiro  uuid;
+  v_last4     text;
+  v_substituto boolean;
 begin
   insert into public.meta_pixels (label, pixel_id)
   values ('Teste', '123456789') returning id into v_id;
@@ -120,23 +121,44 @@ begin
 
   select public.get_meta_pixel_secret(v_id) into v_lido;
   if v_lido is distinct from v_segredo then
-    raise exception 'FALHA: decifrado (%) diferente do original', v_lido;
+    raise exception 'FALHA: lido do cofre (%) diferente do guardado', v_lido;
   end if;
 
-  select capi_token_enc, secret_last4 into v_bruto, v_last4
+  select capi_token_secret_id, secret_last4 into v_ponteiro, v_last4
     from public.meta_pixels where id = v_id;
 
-  -- O byte a byte não pode conter o segredo em claro.
-  if position(convert_to(v_segredo, 'UTF8') in v_bruto) > 0 then
-    raise exception 'FALHA: o segredo está em claro na coluna bytea!';
+  if v_ponteiro is null then
+    raise exception 'FALHA: a conta ficou sem ponteiro para o cofre';
   end if;
-
   if v_last4 <> '1234' then
     raise exception 'FALHA: last4 esperado 1234, veio %', v_last4;
   end if;
 
+  -- Trocar o token reaproveita o mesmo ponteiro: nada de segredo órfão.
+  perform public.set_meta_pixel_secret(v_id, 'novo-token-5678');
+  if (select capi_token_secret_id from public.meta_pixels where id = v_id) <> v_ponteiro then
+    raise exception 'FALHA: atualizar o token criou um segredo novo em vez de trocar';
+  end if;
+  if public.get_meta_pixel_secret(v_id) <> 'novo-token-5678' then
+    raise exception 'FALHA: o cofre não devolveu o token atualizado';
+  end if;
+
+  -- Apagar a conta tem que levar o segredo junto.
   delete from public.meta_pixels where id = v_id;
-  raise notice 'OK 5/7 · Cifra ida e volta; bytea sem texto em claro; last4 correto';
+  if exists (select 1 from vault.secrets where id = v_ponteiro) then
+    raise exception 'FALHA: o segredo continuou no cofre depois de apagar a conta';
+  end if;
+
+  select obj_description(oid, 'pg_namespace') like '%SUBSTITUTO%'
+    into v_substituto
+    from pg_namespace where nspname = 'vault';
+
+  if coalesce(v_substituto, false) then
+    raise notice 'OK 5/7 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice '         (substituto local — a cifra em si é do Vault, testada no Supabase)';
+  else
+    raise notice 'OK 5/7 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+  end if;
 end;
 $$;
 

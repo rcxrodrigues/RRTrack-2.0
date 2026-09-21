@@ -11,51 +11,65 @@
 -- ############################################################################
 
 -- ============================================================================
--- PARTE 0 · Chave de cifra
+-- PARTE 0 · Conferir o cofre
 -- ----------------------------------------------------------------------------
--- Gera a chave DENTRO do banco e grava no catálogo do Postgres. Ela nunca
--- aparece na tela: não há como vazá-la por descuido. Se já existir uma, é
--- mantida — senão os segredos já cifrados ficariam ilegíveis.
+-- Os tokens ficam no Supabase Vault, cuja chave-mestra vive FORA do banco.
+-- Se a extensão não estiver ativa, melhor parar aqui com uma instrução clara.
 -- ============================================================================
 do $$
-declare
-  v_chave text;
 begin
-  v_chave := current_setting('app.settings.encryption_key', true);
-
-  if v_chave is null or length(v_chave) < 32 then
-    v_chave := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
-    execute format(
-      'alter database %I set app.settings.encryption_key = %L',
-      current_database(), v_chave
-    );
-    raise notice 'Chave de cifra criada (64 caracteres).';
-  else
-    raise notice 'Chave de cifra já existia — mantida.';
+  if not exists (select 1 from pg_namespace where nspname = 'vault') then
+    raise exception using
+      errcode = 'undefined_schema',
+      message = 'O Supabase Vault não está ativo neste projeto',
+      hint    = 'Vá em Database → Extensions, ative "supabase_vault" e rode este arquivo de novo.';
   end if;
-
-  -- Vale para esta sessão também, para as verificações do fim rodarem agora.
-  perform set_config('app.settings.encryption_key', v_chave, false);
+  raise notice 'Cofre (Supabase Vault) disponível.';
 end;
 $$;
 
 
 -- ============================================================================
--- MIGRATION · 20260921120000_extensoes_e_cifra
+-- MIGRATION · 20260921120000_extensoes_e_segredos
 -- ============================================================================
 -- =============================================================================
--- 0001 · Extensões, schema privado e a cifra dos segredos (pgcrypto)
+-- 0001 · Extensões, schema privado e o cofre dos segredos
 -- =============================================================================
--- A chave de cifra NÃO fica em nenhuma tabela. Ela fica no catálogo do
--- Postgres, definida uma única vez por:
+-- Os tokens da Meta e o api_secret do GA4 ficam no SUPABASE VAULT.
 --
---   ALTER DATABASE postgres SET app.settings.encryption_key = '<chave forte>';
+-- Por que o Vault e não `pgp_sym_encrypt` com uma chave nossa:
 --
--- Assim, um dump das tabelas de dados não decifra nada. Ver o limite dessa
--- escolha no CLAUDE.md (um pg_dumpall leva a chave junto).
+--   O plano original guardava a chave no catálogo do Postgres, via
+--   `ALTER DATABASE ... SET app.settings.encryption_key`. O Supabase não
+--   permite: esse comando exige privilégio de dono do banco, e o role
+--   `postgres` de um projeto não o tem (erro 42501). Não é contornável.
+--
+--   O Vault resolve melhor do que a ideia original: a chave-mestra vive FORA
+--   do Postgres, gerenciada pela plataforma. Nem um `pg_dump`, nem um
+--   `pg_dumpall`, nem um backup vazado decifram coisa alguma — o que era
+--   justamente o limite que assumimos ao escolher a chave no catálogo.
+--
+--   Por baixo, o Vault também é cifra simétrica autenticada. Muda o lugar
+--   onde a chave mora, não o princípio.
+--
+-- As tabelas guardam apenas o UUID do segredo no cofre; o valor nunca passa
+-- por uma coluna nossa.
 -- =============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
+
+-- O Vault vem com o projeto. Se faltar, é melhor falhar aqui, com instrução,
+-- do que adiante com um erro obscuro.
+do $$
+begin
+  if not exists (select 1 from pg_namespace where nspname = 'vault') then
+    raise exception using
+      errcode = 'undefined_schema',
+      message = 'O schema "vault" não existe neste projeto',
+      hint    = 'Ative a extensão "supabase_vault" em Database → Extensions e rode de novo.';
+  end if;
+end;
+$$;
 
 -- Tudo que não é para ser tocado pelo painel mora aqui.
 create schema if not exists private;
@@ -63,10 +77,49 @@ revoke all on schema private from public, anon, authenticated;
 grant usage on schema private to service_role;
 
 -- -----------------------------------------------------------------------------
--- A chave. Falha alto e claro se não estiver configurada — melhor um erro
--- explícito do que gravar um segredo com chave vazia.
+-- Guardar um segredo. Devolve o UUID para a tabela de destino referenciar.
+--
+-- Cria na primeira vez e atualiza nas seguintes, de modo que trocar um token
+-- não deixa segredo órfão no cofre.
 -- -----------------------------------------------------------------------------
-create or replace function private.encryption_key()
+create or replace function private.guardar_segredo(
+  p_id_atual uuid,
+  p_nome     text,
+  p_segredo  text
+)
+returns uuid
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+begin
+  if p_segredo is null or length(trim(p_segredo)) = 0 then
+    raise exception 'segredo vazio';
+  end if;
+
+  if p_id_atual is null then
+    -- O nome carrega um sufixo aleatório: o Vault exige nome único, e dois
+    -- pixels podem ter o mesmo rótulo.
+    select vault.create_secret(
+      p_segredo,
+      p_nome || '_' || replace(gen_random_uuid()::text, '-', ''),
+      'RRTrack'
+    ) into v_id;
+    return v_id;
+  end if;
+
+  perform vault.update_secret(p_id_atual, p_segredo);
+  return p_id_atual;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Ler um segredo. Só o servidor chega aqui, via as funções public.get_*.
+-- -----------------------------------------------------------------------------
+create or replace function private.ler_segredo(p_id uuid)
 returns text
 language plpgsql
 stable
@@ -74,45 +127,36 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_key text;
+  v_segredo text;
 begin
-  v_key := current_setting('app.settings.encryption_key', true);
-
-  if v_key is null or length(v_key) < 32 then
-    raise exception using
-      errcode = 'config_file_error',
-      message = 'app.settings.encryption_key ausente ou com menos de 32 caracteres',
-      hint    = 'Rode: ALTER DATABASE postgres SET app.settings.encryption_key = ''<chave com 32+ caracteres>''; e depois reconecte.';
+  if p_id is null then
+    return null;
   end if;
 
-  return v_key;
+  select decrypted_secret into v_segredo
+    from vault.decrypted_secrets
+   where id = p_id;
+
+  return v_segredo;
 end;
 $$;
 
-create or replace function private.encrypt_secret(p_secret text)
-returns bytea
-language sql
+-- Apagar o segredo junto com a conta, para não acumular lixo no cofre.
+create or replace function private.esquecer_segredo(p_id uuid)
+returns void
+language plpgsql
 volatile
 security definer
 set search_path = ''
 as $$
-  select extensions.pgp_sym_encrypt(p_secret, private.encryption_key());
+begin
+  if p_id is not null then
+    delete from vault.secrets where id = p_id;
+  end if;
+end;
 $$;
 
-create or replace function private.decrypt_secret(p_enc bytea)
-returns text
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select case
-    when p_enc is null then null
-    else extensions.pgp_sym_decrypt(p_enc, private.encryption_key())
-  end;
-$$;
-
--- Os últimos 4 caracteres, para o painel mostrar ••••••••4f2a sem decifrar.
+-- Os últimos 4 caracteres, para o painel mostrar ••••••••4f2a sem abrir o cofre.
 create or replace function private.secret_last4(p_secret text)
 returns text
 language sql
@@ -125,10 +169,10 @@ as $$
   end;
 $$;
 
-revoke all on function private.encryption_key() from public, anon, authenticated;
-revoke all on function private.encrypt_secret(text) from public, anon, authenticated;
-revoke all on function private.decrypt_secret(bytea) from public, anon, authenticated;
-revoke all on function private.secret_last4(text) from public, anon, authenticated;
+revoke all on function private.guardar_segredo(uuid, text, text) from public, anon, authenticated;
+revoke all on function private.ler_segredo(uuid)                 from public, anon, authenticated;
+revoke all on function private.esquecer_segredo(uuid)            from public, anon, authenticated;
+revoke all on function private.secret_last4(text)                from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- updated_at automático
@@ -151,8 +195,9 @@ $$;
 -- =============================================================================
 -- 0002 · Configuração: settings + as contas de destino (N por tipo)
 -- =============================================================================
--- Credenciais entram pelo PAINEL, não por variável de ambiente. Os segredos
--- ficam cifrados em coluna bytea; o painel só enxerga os últimos 4 caracteres.
+-- Credenciais entram pelo PAINEL, não por variável de ambiente. O valor do
+-- segredo vive no Supabase Vault; estas tabelas guardam só o UUID que aponta
+-- para ele. O painel enxerga apenas os últimos 4 caracteres.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -160,13 +205,13 @@ $$;
 -- -----------------------------------------------------------------------------
 create table if not exists public.settings (
   id                        boolean primary key default true,
-  webhook_token_enc         bytea,
+  webhook_token_secret_id   uuid,
   webhook_token_last4       text,
   currency                  text not null default 'BRL',
   test_event_code           text,
   -- Origens autorizadas a chamar /api/identify e /api/event (CORS).
   allowed_origins           text[] not null default '{}',
-  -- Domínio do cookie _trck. Ex.: '.oferta.com' — vale na LP e no painel.
+  -- Domínio do cookie _trck. Ex.: '.transforlar.com' — vale na LP e no painel.
   cookie_domain             text,
   insights_cache_ttl_minutes integer not null default 360,
   created_at                timestamptz not null default now(),
@@ -185,7 +230,7 @@ create table if not exists public.ga4_accounts (
   id             uuid primary key default gen_random_uuid(),
   label          text not null,
   measurement_id text not null unique,
-  api_secret_enc bytea,
+  api_secret_secret_id uuid,
   secret_last4   text,
   is_active      boolean not null default true,
   created_at     timestamptz not null default now(),
@@ -197,7 +242,7 @@ create table if not exists public.meta_pixels (
   id             uuid primary key default gen_random_uuid(),
   label          text not null,
   pixel_id       text not null unique,
-  capi_token_enc bytea,
+  capi_token_secret_id uuid,
   secret_last4   text,
   is_active      boolean not null default true,
   created_at     timestamptz not null default now(),
@@ -210,7 +255,7 @@ create table if not exists public.meta_ad_accounts (
   label         text not null,
   -- Guardado SEM o prefixo act_; quem monta a URL é o código.
   ad_account_id text not null unique,
-  ads_token_enc bytea,
+  ads_token_secret_id uuid,
   secret_last4  text,
   is_active     boolean not null default true,
   created_at    timestamptz not null default now(),
@@ -245,8 +290,8 @@ create policy "meta_pixels: leitura autenticada"
 create policy "meta_ad_accounts: leitura autenticada"
   on public.meta_ad_accounts for select to authenticated using (true);
 
--- Defesa em profundidade: mesmo cifradas, as colunas de segredo ficam fora do
--- alcance do painel.
+-- O painel não precisa nem do ponteiro para o cofre. Ele lê o rótulo, o id da
+-- conta e os últimos 4 caracteres — nada mais.
 --
 -- ATENÇÃO à regra do Postgres que engana: privilégio de COLUNA não sobrepõe
 -- privilégio de TABELA. Como o Supabase concede SELECT na tabela inteira por
@@ -281,62 +326,78 @@ grant select (
 -- -----------------------------------------------------------------------------
 create or replace function public.set_webhook_token(p_secret text)
 returns void language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
 begin
+  select webhook_token_secret_id into v_id from public.settings where id;
+  v_id := private.guardar_segredo(v_id, 'rrtrack_webhook_token', p_secret);
+
   update public.settings
-     set webhook_token_enc   = private.encrypt_secret(p_secret),
-         webhook_token_last4 = private.secret_last4(p_secret)
+     set webhook_token_secret_id = v_id,
+         webhook_token_last4     = private.secret_last4(p_secret)
    where id;
 end;
 $$;
 
 create or replace function public.set_ga4_secret(p_id uuid, p_secret text)
 returns void language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
 begin
+  select api_secret_secret_id into v_id from public.ga4_accounts where id = p_id;
+  v_id := private.guardar_segredo(v_id, 'rrtrack_ga4', p_secret);
+
   update public.ga4_accounts
-     set api_secret_enc = private.encrypt_secret(p_secret),
-         secret_last4   = private.secret_last4(p_secret)
+     set api_secret_secret_id = v_id,
+         secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
 $$;
 
 create or replace function public.set_meta_pixel_secret(p_id uuid, p_secret text)
 returns void language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
 begin
+  select capi_token_secret_id into v_id from public.meta_pixels where id = p_id;
+  v_id := private.guardar_segredo(v_id, 'rrtrack_pixel', p_secret);
+
   update public.meta_pixels
-     set capi_token_enc = private.encrypt_secret(p_secret),
-         secret_last4   = private.secret_last4(p_secret)
+     set capi_token_secret_id = v_id,
+         secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
 $$;
 
 create or replace function public.set_meta_ad_account_secret(p_id uuid, p_secret text)
 returns void language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
 begin
+  select ads_token_secret_id into v_id from public.meta_ad_accounts where id = p_id;
+  v_id := private.guardar_segredo(v_id, 'rrtrack_ads', p_secret);
+
   update public.meta_ad_accounts
-     set ads_token_enc = private.encrypt_secret(p_secret),
-         secret_last4  = private.secret_last4(p_secret)
+     set ads_token_secret_id = v_id,
+         secret_last4 = private.secret_last4(p_secret)
    where id = p_id;
 end;
 $$;
 
 create or replace function public.get_webhook_token()
 returns text language sql security definer stable set search_path = '' as $$
-  select private.decrypt_secret(webhook_token_enc) from public.settings where id;
+  select private.ler_segredo(webhook_token_secret_id) from public.settings where id;
 $$;
 
 create or replace function public.get_ga4_secret(p_id uuid)
 returns text language sql security definer stable set search_path = '' as $$
-  select private.decrypt_secret(api_secret_enc) from public.ga4_accounts where id = p_id;
+  select private.ler_segredo(api_secret_secret_id) from public.ga4_accounts where id = p_id;
 $$;
 
 create or replace function public.get_meta_pixel_secret(p_id uuid)
 returns text language sql security definer stable set search_path = '' as $$
-  select private.decrypt_secret(capi_token_enc) from public.meta_pixels where id = p_id;
+  select private.ler_segredo(capi_token_secret_id) from public.meta_pixels where id = p_id;
 $$;
 
 create or replace function public.get_meta_ad_account_secret(p_id uuid)
 returns text language sql security definer stable set search_path = '' as $$
-  select private.decrypt_secret(ads_token_enc) from public.meta_ad_accounts where id = p_id;
+  select private.ler_segredo(ads_token_secret_id) from public.meta_ad_accounts where id = p_id;
 $$;
 
 do $$
@@ -358,6 +419,35 @@ begin
   end loop;
 end;
 $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Apagar uma conta tira o segredo do cofre junto. Sem isso, cada conta
+-- removida deixaria um token vivo no Vault para sempre.
+-- -----------------------------------------------------------------------------
+create or replace function private.limpar_segredo_da_conta()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  case tg_table_name
+    when 'ga4_accounts'     then perform private.esquecer_segredo(old.api_secret_secret_id);
+    when 'meta_pixels'      then perform private.esquecer_segredo(old.capi_token_secret_id);
+    when 'meta_ad_accounts' then perform private.esquecer_segredo(old.ads_token_secret_id);
+    else null;
+  end case;
+  return old;
+end;
+$$;
+
+create trigger ga4_accounts_limpa_segredo after delete on public.ga4_accounts
+  for each row execute function private.limpar_segredo_da_conta();
+create trigger meta_pixels_limpa_segredo after delete on public.meta_pixels
+  for each row execute function private.limpar_segredo_da_conta();
+create trigger meta_ad_accounts_limpa_segredo after delete on public.meta_ad_accounts
+  for each row execute function private.limpar_segredo_da_conta();
 
 
 -- ============================================================================
@@ -691,7 +781,7 @@ declare
   v_policy_escrita integer;
   v_id             uuid;
   v_lido           text;
-  v_bruto          bytea;
+  v_ponteiro       uuid;
   v_ok             boolean := true;
 begin
   raise notice '';
@@ -726,9 +816,9 @@ begin
     v_ok := false;
   end if;
 
-  if has_column_privilege('authenticated', 'public.meta_pixels', 'capi_token_enc', 'SELECT')
-     or has_column_privilege('anon', 'public.settings', 'webhook_token_enc', 'SELECT') then
-    raise notice '  [FALHA] coluna de segredo legível pelo painel';
+  if has_column_privilege('authenticated', 'public.meta_pixels', 'capi_token_secret_id', 'SELECT')
+     or has_column_privilege('anon', 'public.settings', 'webhook_token_secret_id', 'SELECT') then
+    raise notice '  [FALHA] ponteiro de segredo legível pelo painel';
     v_ok := false;
   else
     raise notice '  [ok]    Segredos fora do alcance do painel';
@@ -739,17 +829,23 @@ begin
 
   perform public.set_meta_pixel_secret(v_id, 'token-de-verificacao-1234');
   select public.get_meta_pixel_secret(v_id) into v_lido;
-  select capi_token_enc into v_bruto from public.meta_pixels where id = v_id;
+  select capi_token_secret_id into v_ponteiro from public.meta_pixels where id = v_id;
 
-  if v_lido = 'token-de-verificacao-1234'
-     and position(convert_to('token-de-verificacao-1234', 'UTF8') in v_bruto) = 0 then
-    raise notice '  [ok]    Cifra funcionando (e o bytea não tem texto em claro)';
+  if v_lido = 'token-de-verificacao-1234' and v_ponteiro is not null then
+    raise notice '  [ok]    Cofre guarda e devolve o segredo';
   else
-    raise notice '  [FALHA] a cifra não fechou o ciclo';
+    raise notice '  [FALHA] o cofre não fechou o ciclo';
     v_ok := false;
   end if;
 
+  -- Apagar a conta tem que levar o segredo junto, senão sobra token vivo.
   delete from public.meta_pixels where id = v_id;
+  if exists (select 1 from vault.secrets where id = v_ponteiro) then
+    raise notice '  [FALHA] o segredo ficou no cofre depois de apagar a conta';
+    v_ok := false;
+  else
+    raise notice '  [ok]    Apagar a conta remove o segredo do cofre';
+  end if;
 
   if public.check_rate_limit('__verificacao__', 1, 60)
      and not public.check_rate_limit('__verificacao__', 1, 60) then

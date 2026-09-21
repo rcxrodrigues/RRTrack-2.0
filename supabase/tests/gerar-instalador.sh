@@ -21,31 +21,20 @@ OUT="$RAIZ/supabase/INSTALAR.sql"
 -- ############################################################################
 
 -- ============================================================================
--- PARTE 0 · Chave de cifra
+-- PARTE 0 · Conferir o cofre
 -- ----------------------------------------------------------------------------
--- Gera a chave DENTRO do banco e grava no catálogo do Postgres. Ela nunca
--- aparece na tela: não há como vazá-la por descuido. Se já existir uma, é
--- mantida — senão os segredos já cifrados ficariam ilegíveis.
+-- Os tokens ficam no Supabase Vault, cuja chave-mestra vive FORA do banco.
+-- Se a extensão não estiver ativa, melhor parar aqui com uma instrução clara.
 -- ============================================================================
 do $$
-declare
-  v_chave text;
 begin
-  v_chave := current_setting('app.settings.encryption_key', true);
-
-  if v_chave is null or length(v_chave) < 32 then
-    v_chave := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
-    execute format(
-      'alter database %I set app.settings.encryption_key = %L',
-      current_database(), v_chave
-    );
-    raise notice 'Chave de cifra criada (64 caracteres).';
-  else
-    raise notice 'Chave de cifra já existia — mantida.';
+  if not exists (select 1 from pg_namespace where nspname = 'vault') then
+    raise exception using
+      errcode = 'undefined_schema',
+      message = 'O Supabase Vault não está ativo neste projeto',
+      hint    = 'Vá em Database → Extensions, ative "supabase_vault" e rode este arquivo de novo.';
   end if;
-
-  -- Vale para esta sessão também, para as verificações do fim rodarem agora.
-  perform set_config('app.settings.encryption_key', v_chave, false);
+  raise notice 'Cofre (Supabase Vault) disponível.';
 end;
 $$;
 
@@ -72,7 +61,7 @@ declare
   v_policy_escrita integer;
   v_id             uuid;
   v_lido           text;
-  v_bruto          bytea;
+  v_ponteiro       uuid;
   v_ok             boolean := true;
 begin
   raise notice '';
@@ -107,9 +96,9 @@ begin
     v_ok := false;
   end if;
 
-  if has_column_privilege('authenticated', 'public.meta_pixels', 'capi_token_enc', 'SELECT')
-     or has_column_privilege('anon', 'public.settings', 'webhook_token_enc', 'SELECT') then
-    raise notice '  [FALHA] coluna de segredo legível pelo painel';
+  if has_column_privilege('authenticated', 'public.meta_pixels', 'capi_token_secret_id', 'SELECT')
+     or has_column_privilege('anon', 'public.settings', 'webhook_token_secret_id', 'SELECT') then
+    raise notice '  [FALHA] ponteiro de segredo legível pelo painel';
     v_ok := false;
   else
     raise notice '  [ok]    Segredos fora do alcance do painel';
@@ -120,17 +109,23 @@ begin
 
   perform public.set_meta_pixel_secret(v_id, 'token-de-verificacao-1234');
   select public.get_meta_pixel_secret(v_id) into v_lido;
-  select capi_token_enc into v_bruto from public.meta_pixels where id = v_id;
+  select capi_token_secret_id into v_ponteiro from public.meta_pixels where id = v_id;
 
-  if v_lido = 'token-de-verificacao-1234'
-     and position(convert_to('token-de-verificacao-1234', 'UTF8') in v_bruto) = 0 then
-    raise notice '  [ok]    Cifra funcionando (e o bytea não tem texto em claro)';
+  if v_lido = 'token-de-verificacao-1234' and v_ponteiro is not null then
+    raise notice '  [ok]    Cofre guarda e devolve o segredo';
   else
-    raise notice '  [FALHA] a cifra não fechou o ciclo';
+    raise notice '  [FALHA] o cofre não fechou o ciclo';
     v_ok := false;
   end if;
 
+  -- Apagar a conta tem que levar o segredo junto, senão sobra token vivo.
   delete from public.meta_pixels where id = v_id;
+  if exists (select 1 from vault.secrets where id = v_ponteiro) then
+    raise notice '  [FALHA] o segredo ficou no cofre depois de apagar a conta';
+    v_ok := false;
+  else
+    raise notice '  [ok]    Apagar a conta remove o segredo do cofre';
+  end if;
 
   if public.check_rate_limit('__verificacao__', 1, 60)
      and not public.check_rate_limit('__verificacao__', 1, 60) then
