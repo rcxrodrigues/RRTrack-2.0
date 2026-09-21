@@ -68,13 +68,120 @@ Cadastrar o domínio em **Configuração → Geral → Domínios do checkout**. 
 faz o snippet pendurar o `trck_user_id` nos links. Sem isso, nenhum link é
 marcado — ver `src/lib/snippet.ts`.
 
+## Como rodar o teste, na prática
+
+### Antes: uma conta em pelo menos um gateway
+
+Os três têm cadastro gratuito. **Um só já basta** para destravar a Fase 5 — o
+adaptador dele sai junto com a interface comum, e os outros dois entram depois
+com poucas linhas cada. Melhor um funcionando de verdade que três adivinhados.
+
+### 1. Criar a URL que escuta (2 minutos, sem cadastro)
+
+Abrir **webhook.site**. Ele já mostra uma URL única no topo, tipo
+`https://webhook.site/8f3a...`. Copiar. **Deixar a aba aberta** — é nela que a
+entrega vai aparecer, ao vivo.
+
+### 2. Cadastrar a URL no gateway (ou no checkout)
+
+Procurar no painel dele por: *Webhooks*, *Notificações*, *Postback*,
+*Integrações* ou *Callbacks*. Colar a URL.
+
+Se pedir para escolher eventos, marcar **todos** — o excesso não atrapalha, e
+é assim que se descobre o que ele manda de verdade.
+
+> Vale para quem manda o webhook, seja o gateway ou a plataforma de checkout.
+> O procedimento é o mesmo.
+
+### 3. Montar o link de checkout COM o parâmetro
+
+Antes de comprar, acrescentar ao fim do link:
+
+```
+?trck_user_id=TESTE12345
+```
+
+Se o link já tiver `?`, usar `&` no lugar. É este valor que vamos procurar
+depois.
+
+### 4. Fazer a venda de teste
+
+Em ordem de preferência:
+
+| como | custo | observação |
+|---|---|---|
+| **Sandbox / modo teste** | zero | cartão fake que o próprio gateway fornece. O melhor, quando existe |
+| **PIX de R$ 1** | R$ 1 | você paga para você mesmo; cai na hora |
+| **Cartão de R$ 1** | R$ 1 | estornar depois — e o estorno serve ao passo 6 |
+
+### 5. Ler o que chegou
+
+No webhook.site, a entrega aparece sozinha na lista à esquerda. Abrir e ir na
+aba **Raw content** — é o JSON cru, que é o que interessa.
+
+Primeira coisa: **Ctrl+F por `TESTE12345`**.
+
+- **Achou** → o checkout repassa o parâmetro. Atribuição exata. É o melhor caso.
+- **Não achou** → cai para o plano B (e-mail). Ainda funciona, casa menos.
+
+Copiar o Raw content inteiro.
+
+### 6. O passo que todo mundo pula: testar o ESTORNO
+
+Estornar a venda de teste e ver se chega um **segundo** webhook, e com qual
+status.
+
+Sem tratar estorno, a venda cancelada continua contando como receita e o ROAS
+mente para cima — que é exatamente o problema que este sistema existe para
+resolver. Copiar esse segundo JSON também.
+
+---
+
+## O que enviar, de cada gateway
+
+Em ordem de importância. O item 1 sozinho já resolve a maior parte.
+
+### 1. O JSON de uma venda aprovada
+Página: *Webhooks*, *Postback* ou *Notificações* — ou, melhor, o payload real
+do teste acima.
+→ É de onde sai todo nome de campo. Sem isso não há adaptador.
+
+### 2. Como validar que o POST veio mesmo dele
+Mesma página, ou *Segurança* / *Autenticação*. Qual dos três:
+
+- **Assinatura**: qual header, qual algoritmo (HMAC-SHA256?), e sobre **o quê**
+  — corpo cru? corpo + timestamp?
+- **Token fixo** em header ou na URL
+- **Faixa de IP**
+
+→ Sem isso, quem descobrir a URL insere venda falsa no faturamento.
+
+### 3. Os status, escritos exatamente como ele manda
+Os cinco: aprovado, pendente, recusado, estornado, chargeback.
+→ Decide o que vira receita e o que **desfaz** receita.
+
+### 4. O valor vem em centavos ou em reais?
+`19750` ou `197.50`? Erro de 100× que **não dá erro nenhum** — só um ROAS
+absurdo que demora semanas para levantar suspeita. Junto: é bruto? inclui
+frete? já desconta cupom?
+
+### 5. O campo de dados livres na criação do pedido
+`metadata`, `custom_fields`, `external_reference` ou `custom_id` — e se ele
+**volta no webhook**. É a ponte da atribuição.
+
+### 6. Quantos webhooks, e se ele reenvia
+Uma URL por tipo de evento, ou uma URL só com um campo `event`? Reenvia em
+caso de erro? Quantas vezes?
+
+---
+
 ## Pendências para a Fase 5
 
 Ainda não dá para escrever os adaptadores de webhook. Falta:
 
 - [ ] **Nome da plataforma de checkout** escolhida (pode ser ela quem manda o
       webhook, não o gateway).
-- [ ] **Resultado do teste do `TESTE12345`.**
+- [ ] **Resultado do teste do `TESTE12345`** (ver o passo a passo acima).
 - [ ] **Documentação dos três gateways**, colada aqui ou em arquivo. As três
       URLs estão bloqueadas pela política de saída de rede do ambiente de
       desenvolvimento — `docs.appmax.com.br`, `developer.pagou.ai` e
