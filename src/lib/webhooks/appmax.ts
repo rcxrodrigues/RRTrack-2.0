@@ -189,6 +189,8 @@ export const appmax: Adaptador = {
       moeda: 'BRL',
       trckUserId: trckUserIdDe(corpo, dados),
       ...clienteDe(dados),
+      // A Appmax não manda IP do comprador em evento de pedido.
+      ipCliente: null,
       produtos: produtosDe(dados),
       ocorridoEm: texto(dados, 'paid_at') ?? texto(dados, 'created_at') ?? null,
     };

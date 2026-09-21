@@ -176,6 +176,8 @@ export const yampi: Adaptador = {
         null,
       primeiroNome,
       sobrenome,
+      // A Yampi não manda IP do comprador no payload de pedido.
+      ipCliente: null,
       produtos: produtosDe(recurso),
       ocorridoEm: texto(corpo, 'time') ?? null,
     };

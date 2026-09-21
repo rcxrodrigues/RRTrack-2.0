@@ -498,6 +498,37 @@ direções, e foi ele que pegou a colisão.
 | Yampi | `metadata.data[]` (chave/valor) ou `cart_token` |
 | Adoorei | **não documenta saco de metadados** — sobra `source_reference`. Em compensação, o pedido traz o cliente completo, então o plano B por e-mail funciona |
 
+### A compra indo para os destinos
+
+`src/lib/compras.ts`. É o fecho do sistema: a venda volta para a Meta
+carregando a identidade do visitante — `fbp`, `fbc` e os hashes — que
+nenhum gateway conhece.
+
+- **Só `aprovada` dispara.** Pendente ainda pode não acontecer; mandar antes
+  da hora ensina a Meta a otimizar para quem gera boleto e não paga.
+- **`sent_at` é o "já mandei?".** O gateway reenvia o mesmo evento e a
+  Appmax ainda tem retry próprio — sem essa trava, uma venda viraria três
+  conversões. É marcado **mesmo com falha num destino**: reenviar sozinho
+  duplicaria: a falha fica no log, para reenvio manual e deliberado.
+- **O `event_id` é derivado do `transaction_id`**, portanto estável. Reenvio
+  gera o mesmo id e a Meta deduplica.
+- **O casamento roda ANTES do disparo, em série.** É ele que copia `fbp`,
+  `fbc` e `ga_client_id` do visitante para a linha da compra. Disparar antes
+  mandaria a conversão sem identificação — a Meta aceitaria, e o match seria
+  quase zero.
+- **Sem `ga_client_id` o GA4 não recebe nada**, e o motivo fica gravado.
+  Inventar um faria a compra abrir sessão nova e aparecer como tráfego
+  direto, desligada do anúncio que a trouxe.
+
+### O geo da compra vem do VISITANTE, nunca da requisição
+
+A requisição do webhook vem do **servidor do gateway**. Usar o IP dela
+marcaria toda venda com o datacenter da Appmax — e mandaria esse IP para a
+Conversions API, onde ele só atrapalha o match.
+
+O `ip` da compra é o do comprador **quando o gateway manda** (só a Adoorei e
+a Pagou mandam); o geo vem do visitante, copiado no casamento.
+
 ### Nada que chega se perde
 
 Todo webhook é gravado em `webhooks_recebidos` **antes** de qualquer

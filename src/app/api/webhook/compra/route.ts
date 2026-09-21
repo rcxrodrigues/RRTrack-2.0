@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { after, NextResponse, type NextRequest } from 'next/server';
 
+import { dispararCompra } from '@/lib/compras';
 import { extrairGeo } from '@/lib/geo';
 import { hashEmail, hashTelefone } from '@/lib/hash';
 import { bucketPorIp, dentroDoLimite, LIMITE_WEBHOOK } from '@/lib/ratelimit';
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { compra } = leitura;
 
   try {
-    await gravarCompra(supabase, compra, corpo, geo);
+    await gravarCompra(supabase, compra, corpo);
   } catch (erro) {
     console.error(
       '[webhook] falha ao gravar:',
@@ -141,7 +142,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Depois da resposta — os 5 segundos são do gateway, não nossos.
   after(async () => {
+    // O casamento vem ANTES do disparo, e em série: é ele que copia o
+    // `fbp`, o `fbc` e o `ga_client_id` do visitante para a linha da
+    // compra. Disparar antes mandaria a conversão sem identificação
+    // nenhuma — a Meta aceitaria e o match seria quase zero.
     await casarComVisitante(compra);
+    await dispararCompra(compra.transactionId);
   });
 
   return responder(200, { recebido: true, tratado: true });
@@ -193,7 +199,6 @@ async function gravarCompra(
   supabase: ReturnType<typeof criarClienteAdmin>,
   compra: CompraNormalizada,
   cru: unknown,
-  geo: ReturnType<typeof extrairGeo>,
 ): Promise<void> {
   const registro = {
     transaction_id: compra.transactionId,
@@ -210,9 +215,13 @@ async function gravarCompra(
     currency: compra.moeda,
     status: compra.status,
     platform: compra.plataforma,
-    geo_country: geo.pais,
-    geo_region: geo.regiao,
-    geo_city: geo.cidade,
+    /*
+     * O IP do COMPRADOR, quando o gateway manda — nunca o da requisição.
+     * A requisição vem do servidor do gateway, e gravar aquele IP marcaria
+     * toda venda com o datacenter dele. O geo da compra vem do VISITANTE,
+     * preenchido no casamento, que é onde existe o dado de verdade.
+     */
+    ip: compra.ipCliente,
     raw_webhook: cru,
     updated_at: new Date().toISOString(),
   };
@@ -259,7 +268,7 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
       // eslint-disable-next-line no-await-in-loop
       const { data } = await supabase
         .from('visitors')
-        .select('trck_user_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbp, fbc, ga_client_id, ga_session_id')
+        .select('trck_user_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbp, fbc, ga_client_id, ga_session_id, geo_country, geo_region, geo_city')
         .eq(tentativa.coluna, tentativa.valor)
         // Mais de um visitante pode ter o mesmo e-mail (dois aparelhos, duas
         // visitas). O mais recente é o que trouxe a venda.
@@ -284,6 +293,10 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
           fbc: data.fbc,
           ga_client_id: data.ga_client_id,
           ga_session_id: data.ga_session_id,
+          // O geo REAL do comprador: o da visita, não o do gateway.
+          geo_country: data.geo_country,
+          geo_region: data.geo_region,
+          geo_city: data.geo_city,
           match_method: tentativa.metodo,
           match_reason: `casou por ${tentativa.coluna}`,
         })

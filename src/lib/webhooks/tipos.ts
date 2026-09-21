@@ -65,6 +65,15 @@ export type CompraNormalizada = {
 
   produtos: ProdutoComprado[];
 
+  /**
+   * O IP do COMPRADOR, quando o gateway informa.
+   *
+   * Nunca o da requisição do webhook: aquele é o do servidor do gateway.
+   * Usá-lo marcaria toda venda com o datacenter dele — e, pior, mandaria
+   * esse IP para a Conversions API, onde ele só atrapalha o match.
+   */
+  ipCliente: string | null;
+
   /** Quando a venda aconteceu, se o gateway informar. ISO-8601. */
   ocorridoEm: string | null;
 };

@@ -48,21 +48,29 @@ const TTL_TOKEN_MS = 60_000;
 const cacheTokens = new Map<string, { valor: string | null; expiraEm: number }>();
 
 async function tokenDoPixel(contaId: string): Promise<string | null> {
-  const guardado = cacheTokens.get(contaId);
+  return segredoDaConta('get_meta_pixel_secret', contaId);
+}
+
+/** O `api_secret` de uma propriedade GA4, com o mesmo cache. */
+export async function segredoDoGa4(contaId: string): Promise<string | null> {
+  return segredoDaConta('get_ga4_secret', contaId);
+}
+
+async function segredoDaConta(rpc: string, contaId: string): Promise<string | null> {
+  const chave = `${rpc}:${contaId}`;
+  const guardado = cacheTokens.get(chave);
   if (guardado && guardado.expiraEm > Date.now()) return guardado.valor;
 
   try {
-    const { data, error } = await criarClienteAdmin().rpc('get_meta_pixel_secret', {
-      p_id: contaId,
-    });
+    const { data, error } = await criarClienteAdmin().rpc(rpc, { p_id: contaId });
     if (error) throw new Error(error.message);
 
     const valor = typeof data === 'string' && data.length > 0 ? data : null;
-    cacheTokens.set(contaId, { valor, expiraEm: Date.now() + TTL_TOKEN_MS });
+    cacheTokens.set(chave, { valor, expiraEm: Date.now() + TTL_TOKEN_MS });
     return valor;
   } catch (erro) {
     console.error(
-      '[destinos] não consegui ler o token do pixel:',
+      `[destinos] não consegui ler o segredo (${rpc}):`,
       erro instanceof Error ? erro.message : erro,
     );
     // Sem cache negativo aqui: um erro de leitura não deve calar o pixel por
@@ -90,10 +98,26 @@ export function invalidarTokens(): void {
  */
 export async function dispararEvento(evento: EventoCapi): Promise<void> {
   const config = await carregarConfiguracao();
-
   if (config.pixels.length === 0) return;
 
   const payload = montarPayload(evento, config.settings.testEventCode);
+  const respostas = await enviarParaTodosOsPixels(payload);
+
+  await gravarResposta(evento.event_id, payload, respostas);
+}
+
+/**
+ * O fan-out em si, sem saber onde a resposta vai ser guardada.
+ *
+ * Separado porque evento de site e compra de webhook mandam o MESMO payload
+ * para os MESMOS pixels, e só divergem no destino da resposta — um grava em
+ * `events_log`, o outro em `purchases`. Duplicar isto seria garantir que um
+ * dia as duas cópias divergem.
+ */
+export async function enviarParaTodosOsPixels(
+  payload: ReturnType<typeof montarPayload>,
+): Promise<RespostasDestinos> {
+  const config = await carregarConfiguracao();
 
   const envios = await Promise.allSettled(
     config.pixels.map(async (pixel) => {
@@ -120,7 +144,7 @@ export async function dispararEvento(evento: EventoCapi): Promise<void> {
     }
   }
 
-  await gravarResposta(evento.event_id, payload, respostas);
+  return respostas;
 }
 
 /**

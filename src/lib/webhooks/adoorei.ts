@@ -155,6 +155,8 @@ export const adoorei: Adaptador = {
       telefone: texto(cliente, 'phone') ?? null,
       primeiroNome: texto(cliente, 'first_name') ?? null,
       sobrenome: texto(cliente, 'last_name') ?? null,
+      // A Adoorei é a única das quatro que manda o IP do comprador.
+      ipCliente: texto(cliente, 'ip') ?? null,
       produtos: produtosDe(recurso),
       ocorridoEm: texto(corpo, 'time') ?? null,
     };

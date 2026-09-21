@@ -165,6 +165,7 @@ export const pagou: Adaptador = {
       moeda: texto(dados, 'currency') ?? 'BRL',
       trckUserId: trckUserIdDe(dados, corpo),
       ...compradorDe(dados),
+      ipCliente: texto(dados, 'ip_address') ?? null,
       produtos: produtosDe(dados),
       ocorridoEm: texto(dados, 'paid_at') ?? texto(dados, 'created_at') ?? null,
     };
