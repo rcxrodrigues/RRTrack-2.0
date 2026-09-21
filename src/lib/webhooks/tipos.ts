@@ -87,6 +87,24 @@ export type Adaptador = {
    * Ignorar não é erro: é a maioria dos eventos.
    */
   normalizar(corpo: unknown): CompraNormalizada | null;
+
+  /**
+   * Confere a assinatura do gateway — quando ele assina.
+   *
+   * Ausente significa "este gateway não assina", e aí só o token da URL
+   * protege. Hoje: a Appmax declara que não envia assinatura nenhuma, o
+   * OpenAPI da Pagou não documenta, e a MillionsPay gera um secret
+   * HMAC-SHA256 por endpoint.
+   *
+   * Recebe o corpo CRU, em texto. Não é capricho: HMAC é sobre os bytes
+   * exatos que chegaram, e `JSON.parse` seguido de `JSON.stringify` muda
+   * espaçamento e ordem de chaves — a assinatura nunca bateria.
+   */
+  verificarAssinatura?(entrada: {
+    corpoCru: string;
+    headers: Headers;
+    segredo: string;
+  }): boolean;
 };
 
 /** Centavos inteiros para unidade de moeda, com duas casas exatas. */

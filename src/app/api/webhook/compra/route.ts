@@ -79,7 +79,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return responder(401, { erro: 'nao autorizado' });
   }
 
-  const corpo: unknown = await request.json().catch(() => null);
+  /*
+   * Lido como TEXTO, não como JSON.
+   *
+   * Parece detalhe e não é: HMAC assina os bytes exatos que chegaram. Um
+   * `request.json()` descarta o texto original, e reconstruí-lo com
+   * `JSON.stringify` muda espaçamento e ordem de chaves — a assinatura
+   * nunca mais bateria. A MillionsPay assina (HMAC-SHA256 por endpoint),
+   * então o corpo cru precisa sobreviver até a verificação.
+   */
+  const corpoCru = await request.text().catch(() => '');
+  let corpo: unknown = null;
+  try {
+    corpo = corpoCru.length > 0 ? JSON.parse(corpoCru) : null;
+  } catch {
+    console.warn('[webhook] corpo não é JSON válido');
+    return responder(202, { recebido: true, tratado: false });
+  }
+
   const leitura = lerWebhook(corpo);
 
   if (leitura.tipo === 'desconhecido') {
