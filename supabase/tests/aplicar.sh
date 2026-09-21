@@ -41,3 +41,22 @@ if echo "$saida" | grep -q "ERROR"; then
   echo "asserção de segurança falhou" >&2
   exit 1
 fi
+
+echo "── instalador de uso único ──"
+"$RAIZ/supabase/tests/02_instalador_atualizado.sh"
+
+# E ele precisa funcionar de verdade num banco do zero: é o arquivo que a
+# pessoa cola no SQL Editor do Supabase.
+"${PSQL[@]}" -q -d postgres -c "drop database if exists ${DB}_instalar;" \
+                             -c "create database ${DB}_instalar;"
+"${PSQL[@]}" -q -d "${DB}_instalar" -f "$RAIZ/supabase/tests/00_ambiente_supabase.sql" >/dev/null
+relatorio="$("${PSQL[@]}" -d "${DB}_instalar" -f "$RAIZ/supabase/INSTALAR.sql" 2>&1)" || {
+  echo "$relatorio" | sed 's/^/  /'; exit 1;
+}
+echo "$relatorio" | grep -E "\[ok\]|\[FALHA\]|TUDO CERTO|ALGO FALHOU" \
+  | sed -E 's/^[^:]*:[0-9]+: NOTICE:  //' | sed 's/^/  /'
+
+if echo "$relatorio" | grep -q "FALHA"; then
+  echo "o instalador não passou na própria verificação" >&2
+  exit 1
+fi

@@ -1,5 +1,18 @@
 # Ligando o Supabase
 
+## Atalho: instalar tudo de uma vez
+
+Cole o arquivo **[`INSTALAR.sql`](./INSTALAR.sql)** inteiro no SQL Editor e
+rode. Ele cobre os passos 1 a 3 (chave de cifra, migrations e verificação) e
+imprime um relatório no fim. É idempotente — rodar de novo não quebra nada.
+
+Feito isso, pule para o **Passo 4**.
+
+O passo a passo abaixo existe para quem prefere ir por partes ou precisa
+entender o que cada pedaço faz.
+
+---
+
 Sete passos, em ordem. Cada um tem como conferir se deu certo antes de
 seguir para o próximo.
 
@@ -126,11 +139,14 @@ criado à mão.
 
 **Authentication → URL Configuration**
 
-- **Site URL**: `http://localhost:3000` enquanto desenvolve; depois o domínio
-  do painel (`https://dash.suaoferta.com`)
+- **Site URL**: `https://track.transforlar.com`
 - **Redirect URLs**, some as duas:
+  - `https://track.transforlar.com/auth/callback`
   - `http://localhost:3000/auth/callback`
-  - `https://dash.suaoferta.com/auth/callback`
+
+> No Cloudflare, deixe o registro `track` como **DNS only** (nuvem cinza). Com
+> o proxy ligado, a Vercel passa a ver o IP do Cloudflare e o geo do visitante
+> se perde — ver a nota em `CLAUDE.md`.
 
 Sem isso o link do e-mail chega, mas o Supabase recusa o retorno.
 

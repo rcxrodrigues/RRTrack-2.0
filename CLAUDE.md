@@ -26,15 +26,26 @@ npm run check       # typecheck + lint + test — rode antes de todo commit
 O painel vive num **subdomínio da oferta**. Isso não é detalhe de hospedagem —
 é o que permite cookie de primeira parte:
 
+Primeira oferta em produção — DNS no Cloudflare, app na Vercel:
+
 ```
-oferta.com          LP / site de vendas (externo)
-                    roda <script src="https://dash.oferta.com/t.js">
-dash.oferta.com     ESTE app: painel + APIs de captura + webhook
-checkout externo    Hotmart / Kiwify / Eduzz — outro site
+transforlar.com           LP / site de vendas (externo)
+                          roda <script src="https://track.transforlar.com/t.js">
+track.transforlar.com     ESTE app: painel + APIs de captura + webhook
+checkout externo          Hotmart / Kiwify / Eduzz — outro site
 ```
 
-- **Cookie `_trck` com `Domain=.oferta.com`** vale na LP e no painel. É cookie
-  de primeira parte: o Safari não descarta e o ITP não corta em 7 dias.
+- **Cookie `_trck` com `Domain=.transforlar.com`** vale na LP e no painel. É
+  cookie de primeira parte: o Safari não descarta e o ITP não corta em 7 dias.
+
+> **Cloudflare na frente da Vercel — cuidado com o geo.** Se o registro
+> `track` ficar com o proxy ligado (nuvem laranja), a Vercel passa a ver o IP
+> do Cloudflare e os cabeçalhos `x-vercel-ip-*` deixam de valer: perde-se o
+> mapa por região e, pior, vai o IP errado para a Conversions API, o que
+> degrada o match na Meta. O recomendado é **DNS only** (nuvem cinza) nesse
+> registro. De todo modo `src/lib/geo.ts` detecta os dois conjuntos de
+> cabeçalhos (Vercel e `CF-Connecting-IP`/`CF-IPCountry`), então funciona nas
+> duas configurações e não quebra se mudar.
 - LP → painel é cross-**origin** (precisa de CORS) mas same-**site**, então o
   cookie viaja com `SameSite=Lax` + `credentials: 'include'`.
 - O checkout é outro site, e por isso **o `trck_user_id` viaja na URL** do
