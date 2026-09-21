@@ -1,0 +1,97 @@
+/**
+ * A forma única que toda venda assume depois de normalizada.
+ *
+ * Cada gateway fala o seu dialeto — centavos ou reais, status em português ou
+ * em inglês, cliente dentro do pedido ou num evento à parte. Tudo isso morre
+ * no adaptador; daqui para dentro do sistema existe só esta forma.
+ */
+
+/**
+ * O que a venda significa para o faturamento.
+ *
+ * Deliberadamente pequeno: o gateway tem dezenas de eventos, e o painel
+ * precisa de cinco respostas. O evento original continua guardado em
+ * `evento`, para auditoria.
+ */
+export type StatusCompra =
+  | 'aprovada'
+  | 'pendente'
+  | 'recusada'
+  /** Devolvida ao cliente — DESFAZ receita já contada. */
+  | 'estornada'
+  /** Contestada no cartão — também desfaz. */
+  | 'chargeback';
+
+/** Status que tiram dinheiro do caixa depois de já terem entrado. */
+export const STATUS_QUE_DESFAZEM: readonly StatusCompra[] = ['estornada', 'chargeback'];
+
+export type ProdutoComprado = {
+  id: string | null;
+  nome: string | null;
+  /** Em unidade de moeda, nunca em centavos. */
+  preco: number | null;
+  quantidade: number;
+};
+
+export type CompraNormalizada = {
+  /** `appmax`, `pagou`, `millionspay`… */
+  plataforma: string;
+
+  /**
+   * Único e estável por PEDIDO, não por evento.
+   *
+   * Um pedido de cartão dispara quatro eventos com o mesmo número; é uma
+   * venda só e tem de virar uma linha só. Vai prefixado pela plataforma
+   * porque `3531` da Appmax e `3531` da Pagou não são o mesmo pedido.
+   */
+  transactionId: string;
+
+  /** O evento original do gateway, palavra por palavra. Para auditoria. */
+  evento: string;
+
+  status: StatusCompra;
+
+  /** Em unidade de moeda (reais), nunca em centavos. */
+  valor: number | null;
+  moeda: string;
+
+  /** O vínculo com a visita, quando o checkout repassa. */
+  trckUserId: string | null;
+
+  email: string | null;
+  telefone: string | null;
+  primeiroNome: string | null;
+  sobrenome: string | null;
+
+  produtos: ProdutoComprado[];
+
+  /** Quando a venda aconteceu, se o gateway informar. ISO-8601. */
+  ocorridoEm: string | null;
+};
+
+export type Adaptador = {
+  nome: string;
+
+  /**
+   * Reconhece o formato pelo FORMATO, não por configuração.
+   *
+   * Um endpoint só recebe todos os gateways, e pedir para o usuário declarar
+   * qual é qual no painel seria mais uma coisa para ele errar às três da
+   * manhã. A assinatura do envelope de cada gateway é distinta o bastante.
+   */
+  reconhece(corpo: unknown): boolean;
+
+  /**
+   * Traduz. Devolve `null` quando o evento não interessa ao faturamento —
+   * cliente criado, produto de assinatura alterado, e assim por diante.
+   * Ignorar não é erro: é a maioria dos eventos.
+   */
+  normalizar(corpo: unknown): CompraNormalizada | null;
+};
+
+/** Centavos inteiros para unidade de moeda, com duas casas exatas. */
+export function deCentavos(centavos: unknown): number | null {
+  return typeof centavos === 'number' && Number.isFinite(centavos)
+    ? Math.round(centavos) / 100
+    : null;
+}

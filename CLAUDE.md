@@ -407,6 +407,72 @@ para a instância que atendeu, e é por isso que os TTLs são curtos.
 
 ---
 
+## Webhook de compra — o que os gateways impõem
+
+`/api/webhook/compra?token=…`. Um endpoint só para todos os gateways; quem
+reconhece o formato é o adaptador, não configuração no painel — pedir para
+alguém declarar qual gateway é qual seria mais uma coisa para errar às três da
+manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
+
+- **O token vai na URL.** Não é preferência: a Appmax **não envia header de
+  assinatura nem token**, e o OpenAPI da Pagou não documenta nenhum. A URL é o
+  único lugar onde um segredo cabe. Comparação em tempo constante
+  (`timingSafeEqual` sobre SHA-256 dos dois), senão o tempo de resposta vaza o
+  prefixo correto e o token se reconstrói caractere a caractere.
+- **Responder ANTES de trabalhar.** A Appmax dá **5 segundos**; estourou, ela
+  reenvia, e depois de 4 tentativas descarta em definitivo **sem avisar**.
+  Casar a venda e disparar os destinos acontece em `after()`.
+- **Os códigos de resposta são deliberados**, porque cada um comanda o retry
+  do gateway:
+
+| situação | resposta | porquê |
+|---|---|---|
+| token errado | **401** | recusa mesmo, e retry não conserta |
+| formato que nenhum adaptador lê | **202** | reenviar 4 vezes o que não sabemos ler falha 4 vezes igual |
+| evento que não é venda | **200** | tratado, e não havia nada a fazer |
+| falha nossa ao gravar | **500** | aqui o retry é exatamente o que queremos |
+
+- **Uma linha por PEDIDO, não por evento.** Um cartão na Appmax dispara
+  `order_authorized` → `order_approved` → `order_paid` → `order_integrated`,
+  todos com o mesmo `order_id`. Upsert por `transaction_id`, prefixado pela
+  plataforma (`appmax:3531`), porque o pedido 3531 da Appmax e o da Pagou não
+  são o mesmo.
+- **Campo vazio não apaga o que já estava:** o evento de estorno pode vir sem
+  os dados do cliente que o de aprovação trouxe.
+- **A ordem dos eventos não é garantida** — a Appmax diz isso com todas as
+  letras. `order_refund` pode chegar antes de `order_approved`.
+
+### Valores: sempre centavos, com uma exceção
+
+Appmax e Pagou mandam tudo em centavos (`25990` = R$ 259,90). **A exceção:** em
+evento de ASSINATURA da Appmax, `products[].price` vem em **reais** (`100.0`).
+Mesma chave, unidade diferente, mesmo gateway. É por isso que a conversão fica
+em `deCentavos()` e os eventos de assinatura são ignorados.
+
+### Status: quem manda é o evento na Appmax, o campo na Pagou
+
+A Appmax documenta **40 eventos** exaustivamente e **não publica a lista de
+status** — nos exemplos só aparecem `aprovado` e `aguardando_pagamento`.
+Decidir por um campo cuja enumeração ninguém conhece é escolher ser
+surpreendido, então o adaptador decide pelo `event`.
+
+A Pagou é o contrário: o OpenAPI publica os **17 status** numa enumeração
+fechada, e aí o campo é confiável.
+
+### A ponte da atribuição, por gateway
+
+| gateway | onde o `trck_user_id` volta |
+|---|---|
+| Appmax | `client_key` / `external_key` — no envelope e dentro de `data` |
+| Pagou | `informations[]` (chave/valor, documentado como "echo on the webhook") ou `correlation_id` |
+
+O acerto é por **regex de 32 hexadecimais**, não por igualdade: o checkout pode
+devolver o valor embrulhado em texto. E o exemplo da Appmax traz
+`client_key: "merchant-key-123"` — chave do lojista, não da visita. Aceitar
+qualquer texto ali ligaria **todas** as vendas ao mesmo fantasma.
+
+---
+
 ## Autenticação — o que não pode quebrar
 
 - **`setAll` recebe DOIS parâmetros** no `@supabase/ssr` 0.12: `(cookies,
