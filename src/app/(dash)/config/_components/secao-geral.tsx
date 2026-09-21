@@ -9,7 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { MOEDAS } from '@/lib/moedas';
 import { gerarWebhookToken, salvarSettings } from '../actions';
 
 export type Settings = {
@@ -114,17 +122,25 @@ export function SecaoGeral({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <Label htmlFor="currency">Moeda</Label>
-              <Input
-                id="currency"
-                name="currency"
-                defaultValue={settings.currency}
-                placeholder="BRL"
-                maxLength={3}
-                className="font-mono uppercase"
-                required
-              />
+              <Select name="currency" defaultValue={settings.currency}>
+                <SelectTrigger id="currency">
+                  <SelectValue placeholder="Escolha a moeda" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOEDAS.map((moeda) => (
+                    <SelectItem key={moeda.codigo} value={moeda.codigo}>
+                      <span className="flex items-center gap-2">
+                        <code className="font-mono text-xs">{moeda.codigo}</code>
+                        <span className="text-muted-foreground">
+                          {moeda.simbolo} · {moeda.nome}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-muted-foreground text-xs">
-                Código ISO de 3 letras. Vai em toda conversão enviada.
+                Vai em toda conversão enviada à Meta e ao GA4.
               </p>
             </div>
 

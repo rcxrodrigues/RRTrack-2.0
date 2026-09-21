@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { CODIGOS_MOEDA } from '@/lib/moedas';
+
 /**
  * Validação dos formulários de configuração.
  *
@@ -56,11 +58,17 @@ export const adAccountSchema = z.object({
 });
 
 export const settingsSchema = z.object({
+  // Lista fechada, não regex: "XYZ" passaria no formato e seria recusado
+  // pela Meta na hora de enviar a conversão.
+  //
+  // O toUpperCase antes do enum é tolerância de entrada: pelo seletor o
+  // valor sempre chega certo, mas a action também pode ser chamada
+  // diretamente, e recusar "brl" seria rigor sem propósito.
   currency: z
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z]{3}$/, { error: 'Use o código ISO de 3 letras, como BRL.' }),
+    .pipe(z.enum(CODIGOS_MOEDA, { error: 'Escolha uma das moedas disponíveis.' })),
   test_event_code: z.string().trim().max(60).optional(),
   cookie_domain: z
     .string()

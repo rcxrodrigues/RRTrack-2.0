@@ -72,11 +72,23 @@ describe('settingsSchema', () => {
     if (r.success) expect(r.data.currency).toBe('BRL');
   });
 
-  it('recusa moeda fora do ISO de 3 letras', () => {
-    for (const c of ['REAL', 'R$', 'BR', '']) {
-      expect(settingsSchema.safeParse({ currency: c, allowed_origins: '' }).success).toBe(
-        false,
-      );
+  it('recusa moeda fora da lista suportada', () => {
+    // 'XYZ' tem o formato de um código ISO e mesmo assim não serve: a Meta
+    // recusaria a conversão lá na frente.
+    for (const c of ['REAL', 'R$', 'BR', '', 'XYZ', 'JPY']) {
+      expect(
+        settingsSchema.safeParse({ currency: c, allowed_origins: '' }).success,
+        `moeda "${c}" deveria ser recusada`,
+      ).toBe(false);
+    }
+  });
+
+  it('aceita as quatro moedas de trabalho', () => {
+    for (const c of ['BRL', 'USD', 'EUR', 'GBP']) {
+      expect(
+        settingsSchema.safeParse({ currency: c, allowed_origins: '' }).success,
+        `moeda "${c}" deveria ser aceita`,
+      ).toBe(true);
     }
   });
 
