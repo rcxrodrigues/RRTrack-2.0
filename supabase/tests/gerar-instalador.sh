@@ -69,13 +69,26 @@ begin
   raise notice '  RRTrack · relatório de instalação';
   raise notice '═══════════════════════════════════════════════════════';
 
+  -- Confere as tabelas pelo NOME, não pela contagem. Contagem quebra a cada
+  -- migration nova sem dizer o que faltou; nome diz exatamente qual sumiu.
+  select array_agg(t) into v_sem_rls from unnest(array[
+    'settings', 'ga4_accounts', 'meta_pixels', 'meta_ad_accounts',
+    'visitors', 'events_log', 'purchases',
+    'rate_limits', 'meta_insights_cache', 'webhooks_recebidos'
+  ]) as t
+  where not exists (
+    select 1 from pg_tables where schemaname = 'public' and tablename = t
+  );
+
   select count(*) into v_tabelas from pg_tables where schemaname = 'public';
-  if v_tabelas = 9 then
-    raise notice '  [ok]    9 tabelas criadas';
+
+  if v_sem_rls is null then
+    raise notice '  [ok]    % tabelas criadas', v_tabelas;
   else
-    raise notice '  [FALHA] esperava 9 tabelas, encontrei %', v_tabelas;
+    raise notice '  [FALHA] faltaram tabelas: %', v_sem_rls;
     v_ok := false;
   end if;
+  v_sem_rls := null;
 
   select array_agg(c.relname order by c.relname) into v_sem_rls
     from pg_class c join pg_namespace n on n.oid = c.relnamespace

@@ -459,12 +459,55 @@ surpreendido, então o adaptador decide pelo `event`.
 A Pagou é o contrário: o OpenAPI publica os **17 status** numa enumeração
 fechada, e aí o campo é confiável.
 
+### Centavos OU reais — depende do gateway
+
+**Não existe regra global.** Cada adaptador decide, e errar é invisível:
+
+| gateway | unidade | exemplo |
+|---|---|---|
+| Appmax | **centavos** | `25990` = R$ 259,90 |
+| Pagou | **centavos** | `25990` = R$ 259,90 |
+| **Yampi** | **reais** | `199.90` = R$ 199,90 |
+| **Adoorei** | **reais** | `110.00` = R$ 110,00 |
+
+Aplicar `deCentavos()` num valor em reais dá R$ 1,10 no lugar de R$ 110,00 —
+erro de 100× que não quebra nada e só aparece semanas depois, num ROAS
+absurdo que ninguém sabe explicar. Cada `*.test.ts` trava a unidade do seu.
+
+### Yampi e Adoorei usam o MESMO envelope
+
+As duas mandam `{event, time, merchant, resource}` com eventos `order.*`.
+Um adaptador engoliria o payload do outro e leria tudo errado — valor num
+campo que não existe, cliente vazio, status que não bate.
+
+O que separa: a **Yampi embrulha toda relação em `.data`**
+(`status.data`, `customer.data`, `items.data`); na Adoorei `status` é texto
+puro e `customer` é objeto plano.
+
+Os dois `reconhece` checam isso **explicitamente**, nos dois sentidos —
+depender da ordem do registro seria frágil, bastaria alguém reordenar a
+lista para quebrar em silêncio. `yampi.test.ts` prova a separação nas duas
+direções, e foi ele que pegou a colisão.
+
 ### A ponte da atribuição, por gateway
 
 | gateway | onde o `trck_user_id` volta |
 |---|---|
 | Appmax | `client_key` / `external_key` — no envelope e dentro de `data` |
 | Pagou | `informations[]` (chave/valor, documentado como "echo on the webhook") ou `correlation_id` |
+| Yampi | `metadata.data[]` (chave/valor) ou `cart_token` |
+| Adoorei | **não documenta saco de metadados** — sobra `source_reference`. Em compensação, o pedido traz o cliente completo, então o plano B por e-mail funciona |
+
+### Nada que chega se perde
+
+Todo webhook é gravado em `webhooks_recebidos` **antes** de qualquer
+interpretação — reconhecido ou não, JSON válido ou não. Antes disso, um
+checkout sem adaptador levava 202 e o payload era descartado: a venda sumia
+sem deixar rastro.
+
+É também como se escreve adaptador direito: o payload real aparece no
+painel, e o adaptador é escrito contra ele, não contra documentação. Os
+cabeçalhos vão junto — é neles que se descobre como o gateway assina.
 
 O acerto é por **regex de 32 hexadecimais**, não por igualdade: o checkout pode
 devolver o valor embrulhado em texto. E o exemplo da Appmax traz

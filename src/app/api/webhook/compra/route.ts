@@ -99,6 +99,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const leitura = lerWebhook(corpo);
 
+  /*
+   * Grava ANTES de interpretar, sempre.
+   *
+   * Sem isto, um checkout cujo adaptador ainda não existe levava 202 e o
+   * payload era DESCARTADO — a venda sumia e ninguém ficava sabendo. Agora
+   * fica guardado inteiro: dá para reprocessar quando o adaptador chegar, e
+   * o formato real aparece no painel, que é como se escreve o adaptador
+   * certo — contra o payload que chegou, não contra documentação.
+   */
+  const adaptador = leitura.tipo === 'desconhecido' ? null : leitura.adaptador;
+  const transactionId = leitura.tipo === 'venda' ? leitura.compra.transactionId : null;
+  after(async () => {
+    await registrarRecebido(corpo, corpoCru, request.headers, geo.ip, adaptador, transactionId);
+  });
+
   if (leitura.tipo === 'desconhecido') {
     // 202 e não 400: o gateway reenviaria 4 vezes um payload que nós não
     // sabemos ler, e as quatro falhariam igual. Fica registrado no log.
@@ -130,6 +145,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   });
 
   return responder(200, { recebido: true, tratado: true });
+}
+
+/**
+ * Guarda o webhook cru, reconhecido ou não.
+ *
+ * Roda em `after()` porque o gateway tem pressa (5s na Appmax) e este
+ * registro é auditoria, não caminho crítico. Falhar aqui nunca derruba o
+ * processamento da venda.
+ */
+async function registrarRecebido(
+  corpo: unknown,
+  corpoCru: string,
+  headers: Headers,
+  ip: string | null,
+  adaptador: string | null,
+  transactionId: string | null,
+): Promise<void> {
+  try {
+    await criarClienteAdmin().from('webhooks_recebidos').insert({
+      adaptador,
+      corpo: corpo ?? null,
+      // Guardado só quando NÃO é JSON: payload quebrado também é informação.
+      corpo_texto: corpo === null ? corpoCru.slice(0, 20_000) : null,
+      // É aqui que se descobre como o gateway assina — o header da
+      // MillionsPay e o X-Adoorei-hash aparecem neste objeto.
+      headers: Object.fromEntries(headers.entries()),
+      ip,
+      transaction_id: transactionId,
+    });
+  } catch (erro) {
+    console.error(
+      '[webhook] não consegui registrar o recebido:',
+      erro instanceof Error ? erro.message : erro,
+    );
+  }
 }
 
 /**
