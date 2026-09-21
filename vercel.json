@@ -3,8 +3,6 @@
 
   "framework": "nextjs",
 
-  "regions": ["gru1"],
-
   "headers": [
     {
       "source": "/(.*)",
