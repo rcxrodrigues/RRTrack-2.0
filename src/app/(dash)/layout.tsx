@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/dash/sidebar';
 import { MobileNav } from '@/components/dash/mobile-nav';
 import { Topbar } from '@/components/dash/topbar';
 import { MenuUsuario } from '@/components/dash/menu-usuario';
+import { Toaster } from '@/components/ui/toaster';
 
 export default async function DashLayout({
   children,
@@ -31,6 +32,7 @@ export default async function DashLayout({
       </div>
 
       <MobileNav />
+      <Toaster />
     </div>
   );
 }

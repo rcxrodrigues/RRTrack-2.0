@@ -55,16 +55,53 @@ export async function enviarLinkDeAcesso(
     },
   });
 
-  // Erro de configuração merece aparecer; "esse e-mail não tem conta" não.
-  if (error && error.status !== 400 && error.code !== 'otp_disabled') {
-    console.error('[login] falha ao enviar link:', error.message);
+  if (!error) return { status: 'enviado' };
+
+  // "Esse e-mail não tem conta" NÃO vira mensagem: é o que impede a tela de
+  // virar um verificador de quem tem acesso. Já problema de infraestrutura
+  // precisa aparecer, e dizendo o que fazer.
+  const ehUsuarioInexistente =
+    error.status === 400 || error.code === 'otp_disabled';
+
+  if (ehUsuarioInexistente) return { status: 'enviado' };
+
+  console.error(
+    `[login] envio falhou — code=${error.code ?? '?'} status=${error.status ?? '?'}: ${error.message}`,
+  );
+
+  // O SMTP embutido do Supabase é para desenvolvimento e tem um limite
+  // baixíssimo por hora. Vale dizer isso em vez de um "tente de novo" vago
+  // que manda a pessoa bater na mesma porta.
+  if (error.code === 'over_email_send_rate_limit' || error.status === 429) {
     return {
       status: 'erro',
-      mensagem: 'Não consegui enviar o e-mail agora. Tente de novo em instantes.',
+      mensagem:
+        'Limite de e-mails do Supabase atingido. Espere alguns minutos — ' +
+        'ou configure um SMTP próprio para deixar de depender do limite dele.',
     };
   }
 
-  return { status: 'enviado' };
+  if (error.code === 'email_provider_disabled') {
+    return {
+      status: 'erro',
+      mensagem:
+        'O envio de e-mail está desligado no Supabase (Authentication → Sign In / Providers → Email).',
+    };
+  }
+
+  if (error.code === 'validation_failed' || error.status === 422) {
+    return {
+      status: 'erro',
+      mensagem:
+        'O Supabase recusou o endereço de retorno. Confira se a URL está em ' +
+        'Authentication → URL Configuration → Redirect URLs.',
+    };
+  }
+
+  return {
+    status: 'erro',
+    mensagem: `Falha no envio (${error.code ?? error.status ?? 'erro'}). Veja os logs da Vercel para o detalhe.`,
+  };
 }
 
 /** Encerra a sessão e devolve para a tela de login. */

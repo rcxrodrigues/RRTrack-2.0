@@ -2,6 +2,8 @@ import 'server-only';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import type { Database } from '@/lib/supabase/tipos';
+
 import { envPublico, envServiceRole } from '@/lib/env';
 
 /**
@@ -16,10 +18,10 @@ import { envPublico, envServiceRole } from '@/lib/env';
  * Não usa @supabase/ssr porque aqui não existe sessão de usuário: é acesso de
  * serviço, sem cookie e sem refresh.
  */
-export function criarClienteAdmin(): SupabaseClient {
+export function criarClienteAdmin(): SupabaseClient<Database> {
   const { url } = envPublico();
 
-  return createClient(url, envServiceRole(), {
+  return createClient<Database>(url, envServiceRole(), {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
