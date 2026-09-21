@@ -44,7 +44,7 @@ function SelectContent({
         position="popper"
         sideOffset={4}
         className={cn(
-          'glass relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg shadow-lg',
+          'flutuante relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
           'data-[side=bottom]:slide-in-from-top-1',

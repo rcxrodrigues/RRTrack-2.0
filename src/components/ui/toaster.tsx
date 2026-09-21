@@ -13,7 +13,7 @@ export function Toaster() {
       closeButton
       toastOptions={{
         classNames: {
-          toast: 'glass !rounded-lg',
+          toast: 'flutuante !rounded-lg',
           title: '!text-sm !font-medium',
           description: '!text-muted-foreground !text-xs',
         },

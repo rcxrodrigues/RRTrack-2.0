@@ -77,6 +77,7 @@
   --mesh-2: 190 90% 45%;
   --noise-opacity: 0.02;
   --glass-shadow-alpha: 0.1;
+  --flutuante-shadow-alpha: 0.18;
 
   color-scheme: light;
 }
@@ -280,6 +281,27 @@
     box-shadow:
       0 1px 0 0 hsl(0 0% 100% / 0.04) inset,
       0 8px 24px -12px hsl(222 60% 2% / var(--glass-shadow-alpha, 0.5));
+  }
+
+  /*
+   * Camada flutuante: menu, diálogo, toast.
+   *
+   * Mesma linguagem do .glass — mesma cor, mesma borda — mas OPACA. O que
+   * flutua por cima de texto não pode deixar o texto de baixo aparecer: o
+   * menu de moedas ficou ilegível com os 55% do .glass, com o formulário
+   * atravessando as opções. O .glass é para cartão de conteúdo, que assenta
+   * no fundo da página e não tem nada escrito atrás.
+   *
+   * A cor é a do vidro e não --popover de propósito: no escuro o vidro (13%)
+   * é mais claro que o cartão (8%) e que o fundo (5%), então a camada lê
+   * como elevada. Com --popover (7%) ela pareceria um buraco no cartão.
+   */
+  .flutuante {
+    background-color: hsl(var(--glass));
+    border: 1px solid hsl(var(--glass-border) / var(--glass-border-alpha));
+    box-shadow:
+      0 1px 0 0 hsl(0 0% 100% / 0.04) inset,
+      0 16px 40px -12px hsl(222 60% 2% / var(--flutuante-shadow-alpha, 0.65));
   }
 
   /* Rola horizontalmente no celular sem barra feia (tabelas densas). */

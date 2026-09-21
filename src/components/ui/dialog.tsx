@@ -26,7 +26,7 @@ function DialogContent({
       />
       <DialogPrimitive.Content
         className={cn(
-          'glass fixed z-50 flex flex-col gap-4 p-5 shadow-xl',
+          'flutuante fixed z-50 flex flex-col gap-4 p-5',
           // No celular vira um drawer colado embaixo — alcance do polegar.
           'inset-x-0 bottom-0 max-h-[90dvh] overflow-y-auto rounded-t-xl',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',

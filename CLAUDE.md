@@ -255,8 +255,16 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   grande fica nela: mais legível em corpo grande que a monoespaçada.
   **Todo número usa `font-variant-numeric: tabular-nums`** (classe `.tabular`
   ou `data-slot="metric"`), para a métrica não dançar ao atualizar.
-- `.glass`: blur + borda translúcida + brilho interno. Use em cartão de
-  conteúdo, não em tudo.
+- **Duas camadas, e a diferença importa.** `.glass` é translúcido (55% no
+  escuro) e serve a **cartão de conteúdo**, que assenta no fundo da página.
+  `.flutuante` é a mesma cor e a mesma borda, porém **opaca**, e serve ao que
+  flutua sobre texto: menu, diálogo, toast. O seletor de moeda nasceu com
+  `.glass` e o formulário aparecia through das opções.
+  Ao trazer um componente que abre por cima de algo, é `.flutuante`.
+- **Sombra vem da camada, não de uma utilitária.** `.flutuante` vive em
+  `@layer components`, e as utilitárias do Tailwind (`shadow-lg`) vêm depois
+  — pôr as duas no mesmo elemento faz a utilitária vencer e a elevação
+  desaparecer.
 - **Mobile-first.** Alvos de toque ≥ 44px (o `size="default"` do Button já dá
   `h-11` no celular). Sidebar no desktop, barra inferior no celular —
   `src/lib/nav.ts` é a fonte única das duas.

@@ -57,6 +57,9 @@ const SUPERFICIES: [string, string][] = [
   ['destructive', 'destructive-foreground'],
   ['card', 'card-foreground'],
   ['popover', 'popover-foreground'],
+  // O .flutuante (menu, diálogo, toast) pinta --glass OPACO e põe o texto
+  // do corpo em cima. Como superfície de verdade, entra na auditoria.
+  ['glass', 'foreground'],
   ['secondary', 'secondary-foreground'],
 ];
 
