@@ -33,7 +33,7 @@ export function MobileNav() {
                 className={cn(
                   'flex min-h-14 flex-col items-center justify-center gap-1 px-1 text-[11px] transition-colors',
                   active
-                    ? 'text-primary font-medium'
+                    ? 'text-primary-vivid font-medium'
                     : 'text-muted-foreground',
                 )}
               >

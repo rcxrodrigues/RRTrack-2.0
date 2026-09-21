@@ -17,7 +17,7 @@ export function MetricCard({
   accent?: 'primary' | 'cyan' | 'amber' | 'muted';
 }) {
   const accentClass = {
-    primary: 'text-primary',
+    primary: 'text-primary-vivid',
     cyan: 'text-cyan',
     amber: 'text-amber',
     muted: 'text-muted-foreground',

@@ -14,7 +14,7 @@ export function PhaseNotice({
   return (
     <Card className="border-dashed">
       <div className="flex flex-col gap-2 px-5 py-8 text-center sm:py-12">
-        <span className="text-primary/80 font-mono text-xs tracking-wide uppercase">
+        <span className="text-primary-vivid/80 font-mono text-xs tracking-wide uppercase">
           {phase}
         </span>
         <p className="text-muted-foreground mx-auto max-w-prose text-sm">

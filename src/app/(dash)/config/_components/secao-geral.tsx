@@ -177,7 +177,7 @@ export function SecaoGeral({
           </div>
 
           {erro && (
-            <p role="alert" className="text-destructive text-sm">
+            <p role="alert" className="text-destructive-vivid text-sm">
               {erro}
             </p>
           )}

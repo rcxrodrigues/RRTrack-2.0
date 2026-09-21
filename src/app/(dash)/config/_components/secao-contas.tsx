@@ -133,7 +133,7 @@ function LinhaConta({ conta, config }: { conta: Conta; config: ConfigSecao }) {
           disabled={pendente}
           aria-label={`Remover ${conta.label}`}
           title="Remover"
-          className="hover:text-destructive"
+          className="hover:text-destructive-vivid"
         >
           <Trash2 className="size-4" />
         </Button>

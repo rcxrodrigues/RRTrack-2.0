@@ -8,7 +8,7 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary/12 text-primary ring-primary/20 ring-1',
+        default: 'bg-primary/12 text-primary-vivid ring-primary/20 ring-1',
         muted: 'bg-muted text-muted-foreground ring-border ring-1',
         success: 'bg-success/12 text-success ring-success/20 ring-1',
         warning: 'bg-warning/12 text-warning ring-warning/25 ring-1',

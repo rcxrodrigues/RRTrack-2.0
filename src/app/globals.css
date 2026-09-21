@@ -24,8 +24,13 @@
   /* Azul royal do logo (hsl 226 100% 50%), escurecido até passar no
      contraste sobre fundo claro: 8.4:1 contra o fundo, 8.6:1 com texto
      branco em cima. */
+  /* Superfície: é o fundo do botão, então o que precisa contrastar é o
+     texto branco por cima (8.6:1). */
   --primary: 226 95% 42%;
   --primary-foreground: 0 0% 100%;
+  /* Texto na cor da marca SOBRE o fundo da página. No tema claro o mesmo
+     tom serve aos dois papéis (8.4:1); no escuro, não — ver lá embaixo. */
+  --primary-vivid: 226 95% 42%;
 
   --secondary: 215 16% 94%;
   --secondary-foreground: 225 35% 14%;
@@ -39,23 +44,29 @@
   /* A outra ponta do gradiente do logo. */
   --cyan: 190 90% 30%;
   --cyan-foreground: 0 0% 100%;
-  --amber: 32 92% 40%;
+  /* 34% e não 40%: em 40% o âmbar dava 3.73:1 sobre o fundo claro, que
+     reprova para texto normal. */
+  --amber: 32 92% 34%;
   --amber-foreground: 0 0% 100%;
 
   --destructive: 0 72% 44%;
   --destructive-foreground: 0 0% 100%;
+  --destructive-vivid: 0 72% 44%;
   --success: 152 65% 30%;
-  --warning: 32 92% 40%;
+  --warning: 32 92% 34%;
 
   --border: 215 16% 88%;
   --input: 215 16% 88%;
   --ring: 226 95% 42%;
 
-  --chart-1: 226 95% 46%;
-  --chart-2: 190 90% 32%;
-  --chart-3: 32 90% 44%;
-  --chart-4: 265 60% 52%;
-  --chart-5: 340 70% 46%;
+  /* Paleta de séries validada pelo script da skill dataviz: banda de
+     luminosidade OKLCH, piso de croma, separação sob daltonismo e contraste
+     com a superfície. Não altere no olho — rode o validador. */
+  --chart-1: 224 100% 62%;
+  --chart-2: 182 100% 31%;
+  --chart-3: 46 87% 33%;
+  --chart-4: 282 99% 53%;
+  --chart-5: 329 96% 46%;
 
   /* Superfície "glass" e a malha de fundo */
   --glass: 0 0% 100%;
@@ -80,11 +91,15 @@
   --popover: 225 40% 7%;
   --popover-foreground: 213 25% 96%;
 
-  /* Azul do logo clareado até o ponto em que ele aparece no fundo escuro
-     (4.4:1) E ainda aceita texto branco por cima (4.5:1). Mais claro, o
-     texto do botão falha; mais escuro, o botão some. */
+  /* A primária tem dois papéis com exigências OPOSTAS, e nenhum tom único
+     atende aos dois: em 60% o botão funciona (4.54:1 com o texto branco)
+     mas o texto colorido reprova (4.36:1 no fundo); em 62% inverte. As
+     faixas não se cruzam, então são dois tokens.
+        superfície de botão →  --primary
+        texto sobre o fundo →  --primary-vivid                             */
   --primary: 224 100% 60%;
   --primary-foreground: 0 0% 100%;
+  --primary-vivid: 224 100% 64%;
 
   --secondary: 222 28% 14%;
   --secondary-foreground: 213 25% 96%;
@@ -100,8 +115,12 @@
   --amber: 38 95% 58%;
   --amber-foreground: 32 90% 8%;
 
-  --destructive: 0 72% 58%;
+  /* Mesmo conflito da primária: 50% funciona como fundo de botão (4.89:1
+     com o texto branco) e 58% como texto de erro (4.89:1 no fundo). Nenhum
+     valor serve aos dois. */
+  --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
+  --destructive-vivid: 0 72% 58%;
   --success: 152 65% 52%;
   --warning: 38 95% 58%;
 
@@ -109,11 +128,14 @@
   --input: 222 26% 19%;
   --ring: 224 100% 60%;
 
-  --chart-1: 224 100% 64%;
-  --chart-2: 185 85% 60%;
-  --chart-3: 38 95% 58%;
-  --chart-4: 265 85% 70%;
-  --chart-5: 330 80% 66%;
+  /* Paleta de séries validada pelo script da skill dataviz — ver a nota no
+     tema claro. Os matizes deslocaram alguns graus em relação aos tokens de
+     interface: o que importa numa série é a separação entre elas. */
+  --chart-1: 224 100% 59%;
+  --chart-2: 183 97% 32%;
+  --chart-3: 43 97% 31%;
+  --chart-4: 290 97% 44%;
+  --chart-5: 343 100% 44%;
 
   --glass: 222 32% 13%;
   --glass-opacity: 0.55;
@@ -141,6 +163,7 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-vivid: hsl(var(--primary-vivid));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));
@@ -153,6 +176,7 @@
   --color-amber-foreground: hsl(var(--amber-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-vivid: hsl(var(--destructive-vivid));
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
   --color-border: hsl(var(--border));

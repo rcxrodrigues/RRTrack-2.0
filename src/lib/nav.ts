@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
+  Palette,
   BarChart3,
   Globe2,
   LayoutDashboard,
@@ -44,6 +45,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     shortLabel: 'Config',
     icon: Settings,
   },
+  { href: '/estilo', label: 'Estilo', shortLabel: 'Estilo', icon: Palette },
 ] as const;
 
 /** A barra inferior do celular não comporta seis itens com conforto. */

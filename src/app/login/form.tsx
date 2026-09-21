@@ -27,7 +27,7 @@ export function FormularioLogin({ proximo }: { proximo: string }) {
   if (estado.status === 'enviado') {
     return (
       <div className="flex flex-col items-center gap-3 py-4 text-center">
-        <CheckCircle2 className="text-primary size-8" />
+        <CheckCircle2 className="text-primary-vivid size-8" />
         <p className="text-sm font-medium">Link enviado</p>
         <p className="text-muted-foreground max-w-xs text-sm">
           Se esse e-mail tiver acesso ao painel, o link de entrada chega em
@@ -58,7 +58,7 @@ export function FormularioLogin({ proximo }: { proximo: string }) {
       </div>
 
       {estado.status === 'erro' && estado.mensagem ? (
-        <p id="erro-login" role="alert" className="text-destructive text-sm">
+        <p id="erro-login" role="alert" className="text-destructive-vivid text-sm">
           {estado.mensagem}
         </p>
       ) : null}
