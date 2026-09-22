@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ehObjeto } from '@/lib/json';
-import type { CompraNormalizada } from '@/lib/webhooks/tipos';
+import type { CompraNormalizada, StatusCompra } from '@/lib/webhooks/tipos';
 
 /**
  * O que acontece com a venda entre o adaptador e os destinos.
@@ -17,6 +17,8 @@ const ordem: string[] = [];
 const upsert = vi.fn();
 const update = vi.fn();
 const buscas: { coluna: string; valor: string }[] = [];
+/** O estado que sobrevive entre chamadas — é ele que a escada consulta. */
+const banco = new Map<string, Record<string, unknown>>();
 /** Devolve o visitante para a coluna que a cascata estiver tentando agora. */
 const visitantePor = vi.fn<(coluna: string) => unknown>();
 
@@ -40,41 +42,86 @@ vi.mock('@/lib/compras', () => ({
  * lint não reclama de thenable improvisado.
  */
 vi.mock('@/lib/supabase/admin', () => {
-  function consulta(): Promise<unknown> {
+  function consultaVisitante(): Promise<unknown> {
     const encadeaveis = Object.fromEntries(
       ['gte', 'limit', 'neq', 'not', 'order', 'returns', 'select'].map(
-        (metodo) => [metodo, () => consulta()],
+        (metodo) => [metodo, () => consultaVisitante()],
       ),
     );
     return Object.assign(Promise.resolve({ data: [], error: null }), encadeaveis, {
       eq: (coluna: string, valor: string) => {
         buscas.push({ coluna, valor });
-        return consulta();
+        return consultaVisitante();
       },
       maybeSingle: () =>
         Promise.resolve({ data: visitantePor(buscas.at(-1)?.coluna ?? '') }),
     });
   }
 
+  /**
+   * O `update` do banco de mentira.
+   *
+   * `select()` é preguiçoso de propósito: é ele que aplica os filtros, e
+   * `.in('status', …)` só é chamado DEPOIS do `.eq(…)`. Aplicar na
+   * construção da promessa avaliaria a escada antes de saber qual é.
+   */
+  function consultaUpdate(valores: Record<string, unknown>) {
+    let transactionId: string | undefined;
+    let statusAceitos: readonly string[] | undefined;
+
+    function aplicar(): { transaction_id: string }[] {
+      if (transactionId === undefined) return [];
+      const linha = banco.get(transactionId);
+      if (!linha) return [];
+      if (statusAceitos && !statusAceitos.includes(String(linha.status))) return [];
+      Object.assign(linha, valores);
+      return [{ transaction_id: transactionId }];
+    }
+
+    const encadeavel = {
+      in: (coluna: string, aceitos: readonly string[]) => {
+        if (coluna === 'status') statusAceitos = aceitos;
+        return encadeavel;
+      },
+      select: () => Promise.resolve({ data: aplicar(), error: null }),
+    };
+
+    return {
+      eq: (coluna: string, valor: string) => {
+        if (coluna === 'transaction_id') transactionId = valor;
+        buscas.push({ coluna, valor });
+        ordem.push('casar');
+        update(valores);
+        // Aguardável direto para o casamento, que não pede `select`.
+        return Object.assign(Promise.resolve({ error: null }), encadeavel);
+      },
+    };
+  }
+
   return {
     criarClienteAdmin: () => ({
-      from: (tabela: string) => ({
-        select: () => consulta(),
-        upsert: (valores: unknown, opcoes: unknown) => {
+      from: () => ({
+        select: () => consultaVisitante(),
+        upsert: (
+          valores: Record<string, unknown>,
+          opcoes: { ignoreDuplicates?: boolean },
+        ) => {
           ordem.push('upsert');
           upsert(valores, opcoes);
-          return Promise.resolve({ error: null });
-        },
-        update: (valores: unknown) => {
-          ordem.push('casar');
-          update(tabela, valores);
+          const id = String(valores.transaction_id);
+          const existe = banco.has(id);
+          if (!existe) banco.set(id, { ...valores });
           return {
-            eq: (coluna: string, valor: string) => {
-              buscas.push({ coluna, valor });
-              return Promise.resolve({ error: null });
-            },
+            // O conflito devolve LISTA VAZIA — é assim que o código de
+            // verdade sabe se a linha é nova.
+            select: () =>
+              Promise.resolve({
+                data: existe ? [] : [{ transaction_id: id }],
+                error: null,
+              }),
           };
         },
+        update: (valores: Record<string, unknown>) => consultaUpdate(valores),
       }),
     }),
   };
@@ -112,11 +159,17 @@ function gravado(): Record<string, unknown> {
 }
 
 function atualizado(): Record<string, unknown> {
-  const [, valores] = update.mock.calls.at(-1) ?? [];
+  const [valores] = update.mock.calls.at(-1) ?? [];
   return ehObjeto(valores) ? valores : {};
 }
 
+/** Como a linha ficou no banco de mentira. */
+function noBanco(id = 'yampi:1000001'): Record<string, unknown> {
+  return banco.get(id) ?? {};
+}
+
 beforeEach(() => {
+  banco.clear();
   ordem.length = 0;
   buscas.length = 0;
   upsert.mockClear();
@@ -152,7 +205,13 @@ describe('gravarCompra', () => {
     await gravarCompra(compra(), null);
 
     const [, opcoes] = upsert.mock.calls.at(-1) ?? [];
-    expect(opcoes).toEqual({ onConflict: 'transaction_id' });
+    // `ignoreDuplicates` é o que faz o conflito devolver lista vazia — é
+    // assim que se sabe se a linha é nova, e a escada de status depende
+    // dessa distinção.
+    expect(opcoes).toEqual({
+      onConflict: 'transaction_id',
+      ignoreDuplicates: true,
+    });
     expect(gravado().transaction_id).toBe('yampi:1000001');
   });
 
@@ -277,5 +336,106 @@ describe('concluirCompra', () => {
     await concluirCompra(compra({ email: 'ninguem@exemplo.com' }));
 
     expect(ordem).toContain('disparar:yampi:1000001');
+  });
+});
+
+/*
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ A ordem de chegada dos webhooks NÃO é garantida, e todos os gateways   │
+ * │ reenviam — a Appmax até quatro vezes. "O último evento vence" erra o   │
+ * │ faturamento nos DOIS sentidos, e sempre em silêncio.                   │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Estes testes usam o banco de mentira de verdade: gravam, regravam, e
+ * conferem o que sobrou na linha. Ler o código não provaria nada aqui,
+ * porque o que decide é um `where` que roda no Postgres.
+ */
+describe('a escada de status', () => {
+  const PEDIDO = 'yampi:1000001';
+
+  async function chegam(...statuses: StatusCompra[]): Promise<unknown> {
+    for (const status of statuses) {
+      // eslint-disable-next-line no-await-in-loop
+      await gravarCompra(compra({ status }), null);
+    }
+    return noBanco(PEDIDO).status;
+  }
+
+  it('o primeiro evento cria a linha com o status dele', async () => {
+    expect(await chegam('pendente')).toBe('pendente');
+  });
+
+  it('pendente → aprovada: avança', async () => {
+    expect(await chegam('pendente', 'aprovada')).toBe('aprovada');
+  });
+
+  it('recusada → aprovada: a segunda tentativa de cartão pode dar certo', async () => {
+    expect(await chegam('recusada', 'aprovada')).toBe('aprovada');
+  });
+
+  it('aprovada → estornada: o dinheiro saiu depois de entrar', async () => {
+    expect(await chegam('aprovada', 'estornada')).toBe('estornada');
+  });
+
+  it('estornada → chargeback: o mais grave ganha', async () => {
+    expect(await chegam('estornada', 'chargeback')).toBe('chargeback');
+  });
+
+  /*
+   * PERDE RECEITA. Um pedido com duas tentativas de cartão: a primeira
+   * recusada, a segunda aprovada. Se a recusa chegar DEPOIS da aprovação, a
+   * venda sairia do faturamento — e o ROAS que vale é sobre `aprovada`.
+   */
+  it('aprovada NÃO volta para recusada — recusa atrasada de outro cartão', async () => {
+    expect(await chegam('aprovada', 'recusada')).toBe('aprovada');
+  });
+
+  it('aprovada NÃO volta para pendente', async () => {
+    expect(await chegam('aprovada', 'pendente')).toBe('aprovada');
+  });
+
+  /*
+   * INFLA RECEITA, e é o pior dos dois. O estorno chega, o `refund` vai
+   * para o GA4 e o `reverted_at` é marcado. Depois o gateway REENVIA o
+   * evento de aprovação. Sem a escada, a linha voltaria a `aprovada` com o
+   * `reverted_at` preenchido: estado incoerente, e uma venda devolvida ao
+   * cliente reaparecendo no faturamento.
+   */
+  it('estornada NÃO volta para aprovada — o reenvio não ressuscita a venda', async () => {
+    expect(await chegam('estornada', 'aprovada')).toBe('estornada');
+  });
+
+  it('chargeback NÃO volta para estornada nem para aprovada', async () => {
+    expect(await chegam('chargeback', 'estornada')).toBe('chargeback');
+    banco.clear();
+    expect(await chegam('chargeback', 'aprovada')).toBe('chargeback');
+  });
+
+  it('o mesmo evento reenviado não muda nada', async () => {
+    expect(await chegam('aprovada', 'aprovada', 'aprovada')).toBe('aprovada');
+  });
+
+  /*
+   * O status trava; o resto dos dados, não. Um evento atrasado ainda pode
+   * trazer o cliente que o anterior não trouxe — e descartá-lo junto com o
+   * status perderia informação de graça.
+   */
+  it('evento que não avança o status AINDA atualiza os outros campos', async () => {
+    await gravarCompra(compra({ status: 'aprovada' }), null);
+    await gravarCompra(
+      compra({ status: 'recusada', email: 'ana@exemplo.com' }),
+      null,
+    );
+
+    const linha = noBanco(PEDIDO);
+    expect(linha.status).toBe('aprovada');
+    expect(linha.email).toBe('ana@exemplo.com');
+  });
+
+  it('e o campo vazio continua não apagando o que já estava', async () => {
+    await gravarCompra(compra({ status: 'aprovada', email: 'ana@exemplo.com' }), null);
+    await gravarCompra(compra({ status: 'recusada', email: null }), null);
+
+    expect(noBanco(PEDIDO).email).toBe('ana@exemplo.com');
   });
 });

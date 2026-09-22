@@ -25,6 +25,44 @@ export type StatusCompra =
 /** Status que tiram dinheiro do caixa depois de já terem entrado. */
 export const STATUS_QUE_DESFAZEM: readonly StatusCompra[] = ['estornada', 'chargeback'];
 
+/**
+ * Que status cada um tem autoridade para sobrescrever.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────┐
+ * │ A ordem de chegada dos webhooks NÃO é garantida — a Appmax diz isso  │
+ * │ com todas as letras, e todos reenviam. Sem esta escada, "o último    │
+ * │ evento vence" e o número do faturamento fica errado nos dois         │
+ * │ sentidos.                                                             │
+ * └───────────────────────────────────────────────────────────────────────┘
+ *
+ * Os dois estragos que isto impede, ambos silenciosos e ambos em cima do
+ * número que o painel existe para acertar:
+ *
+ * **Infla a receita.** O estorno chega, a linha vira `estornada` e o
+ * `refund` vai para o GA4. Depois o gateway REENVIA o evento de aprovação —
+ * a Appmax reenvia até quatro vezes. Sem a escada, a linha volta a
+ * `aprovada` com o `reverted_at` já preenchido: estado incoerente, e uma
+ * venda devolvida ao cliente reaparece no faturamento.
+ *
+ * **Perde a receita.** Um pedido com duas tentativas de cartão: a primeira
+ * recusada, a segunda aprovada. Se o evento de recusa chegar DEPOIS do de
+ * aprovação, a venda vira `recusada` e sai do faturamento — e o ROAS que
+ * vale é calculado sobre `status = 'aprovada'`.
+ *
+ * `recusada` sobrescreve `pendente` porque a tentativa falhou de verdade; e
+ * `aprovada` sobrescreve `recusada` porque a segunda tentativa pode dar
+ * certo. Ninguém sobrescreve para trás.
+ */
+export const SUBSTITUI: Record<StatusCompra, readonly StatusCompra[]> = {
+  /** Provisório: nunca sobrescreve nada já decidido. */
+  pendente: [],
+  recusada: ['pendente'],
+  aprovada: ['pendente', 'recusada'],
+  estornada: ['pendente', 'recusada', 'aprovada'],
+  /** O mais grave de todos: contestado no cartão, com a bandeira no meio. */
+  chargeback: ['pendente', 'recusada', 'aprovada', 'estornada'],
+};
+
 /** Os cinco, para validar o que vem do cadastro do painel. */
 export const STATUS_COMPRA: readonly StatusCompra[] = [
   'aprovada',

@@ -478,6 +478,25 @@ manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
   os dados do cliente que o de aprovação trouxe.
 - **A ordem dos eventos não é garantida** — a Appmax diz isso com todas as
   letras. `order_refund` pode chegar antes de `order_approved`.
+- **O status só AVANÇA — nunca volta.** `SUBSTITUI`, em
+  `src/lib/webhooks/tipos.ts`, diz o que cada status tem autoridade para
+  sobrescrever, e o filtro vai no `where` do update (atômico no Postgres),
+  não num `if` depois de ler. "O último evento vence" erra o faturamento nos
+  dois sentidos:
+
+  | o que acontece | sem a escada | efeito |
+  |---|---|---|
+  | estorno, e depois o gateway REENVIA a aprovação | volta a `aprovada` com `reverted_at` preenchido | **infla** a receita: venda devolvida reaparece |
+  | duas tentativas de cartão, e a recusa chega depois da aprovação | vira `recusada` | **perde** a receita: sai do ROAS, que é sobre `aprovada` |
+
+  `recusada` sobrescreve `pendente`, e `aprovada` sobrescreve `recusada` —
+  a segunda tentativa de cartão pode dar certo. Para trás, ninguém passa.
+
+  **O status trava; o resto dos dados, não.** Um evento atrasado ainda pode
+  trazer o cliente que o anterior não trouxe, e é gravado — só não mexe no
+  status. `processar.test.ts` exercita a escada contra um banco de mentira
+  que guarda estado, porque o que decide é um `where` que roda no banco:
+  ler o código não provaria nada.
 
 ### Valores: sempre centavos, com uma exceção
 

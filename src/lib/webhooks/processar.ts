@@ -1,8 +1,9 @@
 import { hashEmail, hashTelefone } from '@/lib/hash';
 import { desfazerCompra, dispararCompra } from '@/lib/compras';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
+import type { LinhaGenerica } from '@/lib/supabase/tipos';
 import { normalizarTrckUserId } from '@/lib/trck';
-import type { CompraNormalizada } from '@/lib/webhooks/tipos';
+import { SUBSTITUI, type CompraNormalizada } from '@/lib/webhooks/tipos';
 
 /**
  * O que acontece com uma venda depois que o adaptador a traduziu.
@@ -57,13 +58,56 @@ export async function gravarCompra(
 
   // Campo vazio não apaga o que já estava: o evento de estorno pode vir sem
   // os dados do cliente que o de aprovação trouxe.
-  const paraGravar = Object.fromEntries(
+  const paraGravar: LinhaGenerica = Object.fromEntries(
     Object.entries(registro).filter(([, v]) => v !== null && v !== undefined),
   );
 
-  const { error } = await criarClienteAdmin()
+  const supabase = criarClienteAdmin();
+
+  /*
+   * 1. Tenta criar. `ignoreDuplicates` com `.select()` é como se sabe se a
+   *    linha é nova: o conflito devolve lista vazia.
+   */
+  const { data: criada, error: erroInsert } = await supabase
     .from('purchases')
-    .upsert(paraGravar, { onConflict: 'transaction_id' });
+    .upsert(paraGravar, { onConflict: 'transaction_id', ignoreDuplicates: true })
+    .select('transaction_id');
+
+  if (erroInsert) throw new Error(erroInsert.message);
+  if ((criada ?? []).length > 0) return;
+
+  /*
+   * 2. Já existe. O status só entra se tiver AUTORIDADE para sobrescrever o
+   *    que está lá — ver `SUBSTITUI`. O filtro vai no `where`, e não num
+   *    `if` depois de ler, porque assim a decisão é atômica no Postgres:
+   *    dois eventos do mesmo pedido chegando juntos não se atropelam.
+   */
+  const { data: avancou, error: erroUpdate } = await supabase
+    .from('purchases')
+    .update(paraGravar)
+    .eq('transaction_id', compra.transactionId)
+    .in('status', SUBSTITUI[compra.status])
+    .select('transaction_id');
+
+  if (erroUpdate) throw new Error(erroUpdate.message);
+  if ((avancou ?? []).length > 0) return;
+
+  /*
+   * 3. O status não avança — mas o resto dos dados, sim.
+   *
+   * Um evento atrasado ainda pode trazer o cliente que o anterior não
+   * trouxe. O que ele não pode é mexer no status: era assim que o reenvio
+   * da aprovação ressuscitava uma venda estornada.
+   */
+  const semStatus: LinhaGenerica = Object.fromEntries(
+    Object.entries(paraGravar).filter(([chave]) => chave !== 'status'),
+  );
+
+  const { error } = await supabase
+    .from('purchases')
+    .update(semStatus)
+    .eq('transaction_id', compra.transactionId)
+    .select('transaction_id');
 
   if (error) throw new Error(error.message);
 }
