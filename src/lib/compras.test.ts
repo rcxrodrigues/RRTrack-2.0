@@ -14,8 +14,23 @@ const segredoDoGa4 = vi.fn();
 const maybeSingle = vi.fn();
 const update = vi.fn();
 const duplicata = vi.fn();
+const ga4Enviado = vi.fn();
 
 vi.mock('@/lib/settings', () => ({ carregarConfiguracao: () => carregarConfiguracao() }));
+/*
+ * Só o ENVIO é substituído; `montarPayloadGa4` segue o de verdade, porque é
+ * a forma do payload que estes testes querem conferir.
+ */
+vi.mock('@/lib/ga4/mp', async (original) => {
+  const real = await original<typeof import('@/lib/ga4/mp')>();
+  return {
+    ...real,
+    enviarParaGa4: (id: string, _segredo: string, payload: unknown) => {
+      ga4Enviado(id, payload);
+      return Promise.resolve({ ok: true, status: 204 });
+    },
+  };
+});
 vi.mock('@/lib/destinos', () => ({
   enviarParaTodosOsPixels: (p: unknown) => enviarParaTodosOsPixels(p),
   segredoDoGa4: (id: string) => segredoDoGa4(id),
@@ -94,6 +109,13 @@ const CONFIG = {
 };
 
 /** O evento que foi para a Meta, lido com os guards de verdade. */
+/** Os params do primeiro evento mandado ao GA4. */
+function paramsGa4(): Record<string, unknown> {
+  const payload: unknown = ga4Enviado.mock.calls[0]?.[1];
+  const [evento] = lista(payload, 'events');
+  return objeto(evento, 'params') ?? {};
+}
+
 function payloadMeta(): unknown {
   const corpo: unknown = enviarParaTodosOsPixels.mock.calls[0]?.[0];
   return lista(corpo, 'data')[0];
@@ -250,6 +272,38 @@ describe('desfazer — o estorno', () => {
 
     const gravado: unknown = update.mock.calls[0]?.[0];
     expect(texto(gravado, 'reverted_at')).toBeTruthy();
+  });
+
+  /*
+   * ESTORNO PARCIAL. Nenhum dos cinco gateways documenta se o valor que
+   * manda no evento de reversão é o total original ou só o pedaço
+   * devolvido — então as duas leituras têm de estar certas, e por isso o
+   * valor da reversão mora em coluna separada da venda.
+   */
+  it('o refund usa o valor DEVOLVIDO, não o da venda', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { ...ESTORNADA, value: 200, reverted_value: 20 },
+    });
+    await desfazerCompra('yampi:1000001');
+
+    // Mandar os 200 subtrairia a venda inteira por uma devolução de 20.
+    expect(paramsGa4().value).toBe(20);
+  });
+
+  it('sem valor de reversão informado, desfaz o total — é a única suposição', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { ...ESTORNADA, value: 200, reverted_value: null },
+    });
+    await desfazerCompra('yampi:1000001');
+
+    expect(paramsGa4().value).toBe(200);
+  });
+
+  it('o refund leva o MESMO transaction_id — é por ele que o GA4 desfaz', async () => {
+    maybeSingle.mockResolvedValue({ data: ESTORNADA });
+    await desfazerCompra('yampi:1000001');
+
+    expect(paramsGa4().transaction_id).toBe('yampi:1000001');
   });
 
   it('chargeback também desfaz', async () => {

@@ -3,7 +3,11 @@ import { desfazerCompra, dispararCompra } from '@/lib/compras';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import type { LinhaGenerica } from '@/lib/supabase/tipos';
 import { normalizarTrckUserId } from '@/lib/trck';
-import { SUBSTITUI, type CompraNormalizada } from '@/lib/webhooks/tipos';
+import {
+  STATUS_QUE_DESFAZEM,
+  SUBSTITUI,
+  type CompraNormalizada,
+} from '@/lib/webhooks/tipos';
 
 /**
  * O que acontece com uma venda depois que o adaptador a traduziu.
@@ -30,6 +34,9 @@ export async function gravarCompra(
   compra: CompraNormalizada,
   cru: unknown,
 ): Promise<void> {
+  // Reversão é outro assunto: o valor dela não é o valor da venda.
+  const desfaz = STATUS_QUE_DESFAZEM.includes(compra.status);
+
   const registro = {
     transaction_id: compra.transactionId,
     trck_user_id: normalizarTrckUserId(compra.trckUserId),
@@ -41,7 +48,17 @@ export async function gravarCompra(
     last_name: compra.sobrenome,
     product_id: compra.produtos[0]?.id ?? null,
     product_name: compra.produtos[0]?.nome ?? null,
-    value: compra.valor,
+    /*
+     * O valor da VENDA, e só dela.
+     *
+     * Num evento de reversão o valor vai para `reverted_value`, nunca para
+     * cá: nenhum gateway documenta se o que manda ali é o total original ou
+     * só o pedaço devolvido, e gravar sobre `value` faria uma venda de
+     * R$ 200 com estorno de R$ 20 passar a valer R$ 20 no faturamento.
+     */
+    value: desfaz ? null : compra.valor,
+    /** O que o evento de reversão trouxe. Vazio em qualquer outro evento. */
+    reverted_value: desfaz ? compra.valor : null,
     currency: compra.moeda,
     status: compra.status,
     platform: compra.plataforma,

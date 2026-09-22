@@ -656,6 +656,22 @@ apaga por intervalo de tempo — um machado onde se precisa de bisturi.
 calculado sobre `status = 'aprovada'`. O da Meta fica otimista por desenho
 dela, não por descuido nosso. Quando os dois divergirem, o certo é o nosso.
 
+**Estorno parcial: `value` é da venda, `reverted_value` é da devolução.**
+Nenhum dos cinco gateways documenta se o valor que manda no evento de
+reversão é o total original ou só o pedaço devolvido — e as duas leituras
+erram de formas opostas, as duas caladas:
+
+| se o gateway manda | e a gente tratasse como | resultado |
+|---|---|---|
+| o pedaço (R$ 20) | valor da venda | a venda de R$ 200 passa a valer R$ 20 no faturamento |
+| o total (R$ 200) | valor devolvido | um estorno de R$ 20 subtrai R$ 200 no GA4 |
+
+A saída **não passa por descobrir qual é**: são colunas separadas. Evento de
+reversão nunca toca `value`; o `refund` do GA4 usa `reverted_value ?? value`,
+caindo para o total quando o gateway não informa nada — a única suposição
+disponível, e a certa para o estorno total, que é o caso comum. Funciona sem
+saber o que cada gateway faz, o que é o ponto.
+
 `reverted_at` é o par de `sent_at`: um responde "já mandei a venda?", o outro
 "já desfiz?". Sem ele, cada reenvio do evento de estorno — e a Appmax reenvia
 até quatro vezes — mandaria outro `refund` e a receita ficaria negativa em

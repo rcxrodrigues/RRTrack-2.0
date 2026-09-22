@@ -142,7 +142,15 @@ async function acharDuplicataDeOutraCamada(
   compra: LinhaCompra,
 ): Promise<string | null> {
   const emailHash = texto(compra, 'email_hash');
-  const valor = compra.value;
+  /*
+   * O valor DEVOLVIDO, não o da venda.
+   *
+   * Cai para o valor da venda quando o gateway não informou nada — é a
+   * única suposição disponível, e é a certa para o estorno total, que é o
+   * caso comum. Com estorno parcial informado, vai o pedaço: mandar o
+   * total subtrairia R$ 200 de uma devolução de R$ 20.
+   */
+  const valor = compra.reverted_value ?? compra.value;
   const plataforma = texto(compra, 'platform');
 
   // Sem e-mail ou sem valor não há como comparar com segurança, e chutar
@@ -198,7 +206,7 @@ export async function desfazerCompra(transactionId: string): Promise<void> {
       .from('purchases')
       .select(
         'transaction_id, status, value, currency, product_id, product_name, ' +
-          'ga_client_id, ga_session_id, sent_at, reverted_at',
+          'ga_client_id, ga_session_id, sent_at, reverted_at, reverted_value',
       )
       .eq('transaction_id', transactionId)
       .returns<LinhaCompra[]>()
@@ -247,7 +255,15 @@ async function enviarRefundGa4(compra: LinhaCompra): Promise<unknown> {
     return { meta: 'a Meta não tem reversão', ga4: 'a visita não tinha _ga' };
   }
 
-  const valor = compra.value;
+  /*
+   * O valor DEVOLVIDO, não o da venda.
+   *
+   * Cai para o valor da venda quando o gateway não informou nada — é a
+   * única suposição disponível, e é a certa para o estorno total, que é o
+   * caso comum. Com estorno parcial informado, vai o pedaço: mandar o
+   * total subtrairia R$ 200 de uma devolução de R$ 20.
+   */
+  const valor = compra.reverted_value ?? compra.value;
   const payload = montarPayloadGa4({
     clientId,
     sessionId: texto(compra, 'ga_session_id'),
@@ -302,7 +318,15 @@ async function enviarParaMeta(compra: LinhaCompra, eventId: string): Promise<unk
   const config = await carregarConfiguracao();
   if (config.pixels.length === 0) return { ignorado: 'nenhum pixel ativo' };
 
-  const valor = compra.value;
+  /*
+   * O valor DEVOLVIDO, não o da venda.
+   *
+   * Cai para o valor da venda quando o gateway não informou nada — é a
+   * única suposição disponível, e é a certa para o estorno total, que é o
+   * caso comum. Com estorno parcial informado, vai o pedaço: mandar o
+   * total subtrairia R$ 200 de uma devolução de R$ 20.
+   */
+  const valor = compra.reverted_value ?? compra.value;
 
   const payload = montarPayload(
     {
@@ -365,7 +389,15 @@ async function enviarParaGa4Mp(compra: LinhaCompra, eventId: string): Promise<un
     return { ignorado: 'a visita não tinha _ga; sem client_id o GA4 recusa' };
   }
 
-  const valor = compra.value;
+  /*
+   * O valor DEVOLVIDO, não o da venda.
+   *
+   * Cai para o valor da venda quando o gateway não informou nada — é a
+   * única suposição disponível, e é a certa para o estorno total, que é o
+   * caso comum. Com estorno parcial informado, vai o pedaço: mandar o
+   * total subtrairia R$ 200 de uma devolução de R$ 20.
+   */
+  const valor = compra.reverted_value ?? compra.value;
   const payload = montarPayloadGa4({
     clientId,
     sessionId: texto(compra, 'ga_session_id'),

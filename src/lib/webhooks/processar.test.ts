@@ -432,6 +432,35 @@ describe('a escada de status', () => {
     expect(linha.email).toBe('ana@exemplo.com');
   });
 
+  /*
+   * O estorno parcial, do outro lado. Nenhum gateway documenta se o valor
+   * do evento de reversão é o total ou o pedaço, então `value` (a venda) e
+   * `reverted_value` (a devolução) são colunas separadas: aí as duas
+   * perguntas têm resposta independente e nenhuma leitura erra.
+   */
+  it('o evento de reversão NÃO sobrescreve o valor da venda', async () => {
+    await gravarCompra(compra({ status: 'aprovada', valor: 200 }), null);
+    await gravarCompra(compra({ status: 'estornada', valor: 20 }), null);
+
+    const linha = noBanco(PEDIDO);
+    expect(linha.value).toBe(200);
+    expect(linha.reverted_value).toBe(20);
+  });
+
+  it('venda não grava valor de reversão', async () => {
+    await gravarCompra(compra({ status: 'aprovada', valor: 200 }), null);
+    expect(noBanco(PEDIDO)).not.toHaveProperty('reverted_value');
+  });
+
+  it('chargeback também guarda o valor à parte', async () => {
+    await gravarCompra(compra({ status: 'aprovada', valor: 200 }), null);
+    await gravarCompra(compra({ status: 'chargeback', valor: 200 }), null);
+
+    const linha = noBanco(PEDIDO);
+    expect(linha.value).toBe(200);
+    expect(linha.reverted_value).toBe(200);
+  });
+
   it('e o campo vazio continua não apagando o que já estava', async () => {
     await gravarCompra(compra({ status: 'aprovada', email: 'ana@exemplo.com' }), null);
     await gravarCompra(compra({ status: 'recusada', email: null }), null);
