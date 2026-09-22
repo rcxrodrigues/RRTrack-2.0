@@ -16,7 +16,7 @@ begin
   if v_faltando is not null then
     raise exception 'FALHA: tabelas sem RLS: %', v_faltando;
   end if;
-  raise notice 'OK 1/7 · RLS ligada em todas as tabelas';
+  raise notice 'OK 1/8 · RLS ligada em todas as tabelas';
 end;
 $$;
 
@@ -31,7 +31,7 @@ begin
   if v_escrita is not null then
     raise exception 'FALHA: existe policy de escrita: %', v_escrita;
   end if;
-  raise notice 'OK 2/7 · Nenhuma policy de escrita — só service_role grava';
+  raise notice 'OK 2/8 · Nenhuma policy de escrita — só service_role grava';
 end;
 $$;
 
@@ -58,7 +58,7 @@ begin
   if array_length(v_vaza, 1) > 0 then
     raise exception 'FALHA: ponteiro de segredo legível pelo painel: %', v_vaza;
   end if;
-  raise notice 'OK 3/7 · Ponteiros para o cofre fora do alcance do painel';
+  raise notice 'OK 3/8 · Ponteiros para o cofre fora do alcance do painel';
 end;
 $$;
 
@@ -151,7 +151,7 @@ begin
   if array_length(v_pode, 1) > 0 then
     raise exception 'FALHA: função sensível executável: %', v_pode;
   end if;
-  raise notice 'OK 4/7 · Funções de segredo só para o service_role';
+  raise notice 'OK 4/8 · Funções de segredo só para o service_role';
 end;
 $$;
 
@@ -205,10 +205,10 @@ begin
     from pg_namespace where nspname = 'vault';
 
   if coalesce(v_substituto, false) then
-    raise notice 'OK 5/7 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/8 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
     raise notice '         (substituto local — a cifra em si é do Vault, testada no Supabase)';
   else
-    raise notice 'OK 5/7 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/8 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
   end if;
 end;
 $$;
@@ -235,7 +235,7 @@ begin
   end if;
 
   delete from public.rate_limits where bucket like 'teste:%';
-  raise notice 'OK 6/7 · Rate limit corta no limite e isola por bucket';
+  raise notice 'OK 6/8 · Rate limit corta no limite e isola por bucket';
 end;
 $$;
 
@@ -255,6 +255,65 @@ begin
     when check_violation then null;  -- esperado
   end;
 
-  raise notice 'OK 7/7 · settings trancada em uma linha';
+  raise notice 'OK 7/8 · settings trancada em uma linha';
+end;
+$$;
+
+-- 8) as consultas do painel rodam com a RLS de QUEM CHAMA --------------------
+-- Uma função `security definer` roda com os privilégios de quem a CRIOU e
+-- ignora a RLS das tabelas por baixo. Nas do cofre isso é o ponto; nas do
+-- painel seria um buraco que devolve agregado de dados que a política nega —
+-- sem erro, sem aviso, parecendo funcionar. Vale para views também, que por
+-- padrão rodam como o dono a não ser que tenham `security_invoker = true`.
+do $$
+declare
+  v_definer text[];
+  v_frouxas text[];
+  v_anon    text[];
+begin
+  select coalesce(array_agg(p.proname order by p.proname), '{}')
+    into v_definer
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname like 'painel\_%'
+    and p.prosecdef;
+
+  if array_length(v_definer, 1) > 0 then
+    raise exception 'FALHA: função do painel é security definer (ignora RLS): %', v_definer;
+  end if;
+
+  -- `anon` é o role da chave que vai no bundle do navegador. Função nova
+  -- nasce com execute para PUBLIC, que o inclui.
+  select coalesce(array_agg(p.proname order by p.proname), '{}')
+    into v_anon
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname like 'painel\_%'
+    and has_function_privilege('anon', p.oid, 'execute');
+
+  if array_length(v_anon, 1) > 0 then
+    raise exception 'FALHA: anon executa consulta do painel: %', v_anon;
+  end if;
+
+  select coalesce(array_agg(c.relname order by c.relname), '{}')
+    into v_frouxas
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'v'
+    and not coalesce(
+      (select option_value = 'true'
+         from pg_options_to_table(c.reloptions)
+        where option_name = 'security_invoker'),
+      false
+    );
+
+  if array_length(v_frouxas, 1) > 0 then
+    raise exception 'FALHA: view sem security_invoker (ignora RLS): %', v_frouxas;
+  end if;
+
+  raise notice 'OK 8/8 · Consultas do painel respeitam a RLS de quem chama';
 end;
 $$;
