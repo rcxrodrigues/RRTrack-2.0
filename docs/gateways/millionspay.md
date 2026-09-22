@@ -1,97 +1,99 @@
-# MillionsPay — o que se sabe (21/09/2026)
+# MillionsPay — webhooks (doc oficial, recebida em 22/09/2026)
 
-> **Estado: INCOMPLETO.** O que chegou foram 16 páginas do portal, todas no
-> formato `<APIPage document="./openapi.json" operations="[…]" />` — um
-> marcador que o site renderiza a partir do `openapi.json`. O conteúdo em si
-> (campos, payloads, headers) **não veio**. Falta o arquivo.
+> Fonte: `docs.millionspay.io/docs/guia/webhooks/visao-geral`, colada pelo
+> usuário. O domínio é inacessível do ambiente (`EGRESS_BLOCKED`).
 
-## O que já dá para afirmar
+## Envelope
 
-### Assinatura HMAC-SHA256 — a única das três que assina
+O objeto de dados tem o **nome do prefixo do evento** — `charge.*` traz
+`charge`, `withdrawal.*` traz `withdrawal`, e assim por diante.
 
-> *"Um secret HMAC-SHA256 é gerado automaticamente e retornado **apenas na
-> criação**."* — `POST /v1/postbacks/endpoints`
+```json
+{
+  "id": "uuid-do-delivery-log",
+  "event": "charge.captured",
+  "charge": { "..." },
+  "occurred_at": "2026-02-24T10:00:00.000Z"
+}
+```
+
+| campo | |
+|---|---|
+| `id` | id único da ENTREGA (delivery log) — a chave de deduplicação |
+| `event` | `charge.*`, `submerchant.*`, `withdrawal.*`, `infraction.*` |
+| `charge` / `withdrawal` / … | o objeto, nomeado pelo prefixo do evento |
+| `occurred_at` | ISO 8601 |
+
+Só `charge.*` interessa ao faturamento. `submerchant` é cadastro,
+`withdrawal` é saque (dinheiro saindo) e `infraction` é MED — o Mecanismo
+Especial de Devolução do Pix, o mesmo que a Pagou chama de `med`.
+
+## Headers — e a assinatura
+
+| header | |
+|---|---|
+| **`X-SoarLabz-Signature`** | **HMAC-SHA256 do payload**, no formato `sha256=abc123…` |
+| `X-SoarLabz-Event` | o nome do evento, repetido |
+| `X-SoarLabz-Delivery-Id` | o id da entrega, repetido |
+| `User-Agent` | `SoarLabz-Postback/1.0` |
+
+Cada endpoint tem **secret próprio**, o que permite apontar sistemas
+diferentes com chaves diferentes.
+
+> ⚠️ **O formato `sha256=<hex>` é a convenção do GitHub**, e nela o HMAC é
+> calculado sobre o **corpo cru**, em hexadecimal. É a leitura
+> esmagadoramente provável — mas a doc diz só "do payload", sem a fórmula.
 >
-> *"Gera um novo secret HMAC-SHA256 para o endpoint. O secret anterior é
-> invalidado imediatamente."* — `POST /v1/postbacks/endpoints/{id}/secret/regenerate`
+> **Confirmar antes de ligar a verificação.** Se a fórmula for outra (corpo
+> + timestamp, por exemplo), a verificação falharia em 100% dos webhooks e
+> toda venda seria recusada com 401. É por isso que a rota já preserva o
+> corpo cru: `request.text()` antes do `JSON.parse`.
 
-Isso muda o desenho: o token na URL vira o **piso**, não o teto. Onde há
-assinatura, é ela que vale — o token na URL prova apenas que alguém conhece a
-URL; a assinatura prova que o corpo não foi alterado no caminho.
+## Retentativa
 
-**Consequência já implementada:** a rota lê o corpo como **texto cru**, não com
-`request.json()`. HMAC assina os bytes exatos que chegaram, e reconstruir o
-JSON com `JSON.stringify` muda espaçamento e ordem de chaves — a assinatura
-nunca bateria. Ver `verificarAssinatura` em `src/lib/webhooks/tipos.ts`.
+Backoff exponencial, documentado em `/docs/guia/webhooks/retentativas`.
+Resposta esperada: **2xx**.
 
-**Ainda falta, e sem isso não dá para verificar nada:**
+## O que ainda falta
 
-- **Qual header** carrega a assinatura
-- **O que exatamente é assinado** — o corpo cru? corpo + timestamp? há proteção
-  contra replay?
-- Codificação: hex ou base64?
+- [ ] **O objeto `charge`** — a doc mostra `{ "..." }`. Sem os campos não há
+      como ler valor, status, cliente nem campo livre.
+      Página: `/docs/guia/webhooks/eventos/cobrancas`
+- [ ] **A lista de eventos `charge.*`** — só vimos `charge.captured` e
+      `charge.refunded` citados de passagem. Mesma página.
+- [ ] **A fórmula exata do HMAC** — sobre o corpo cru? corpo + timestamp?
+      Procurar a página de verificação de assinatura.
+- [ ] **Centavos ou reais** — está no objeto `charge`.
+- [ ] **Campo livre** (`metadata`, `external_reference`) que volte no
+      webhook. Está na criação da cobrança, `POST /v1/charges`.
 
-### O recurso é `charge`, e tem autorização separada da captura
+## Endpoints de gerenciamento (já conhecidos)
+
+```
+POST   /v1/postbacks/endpoints                          cria (devolve o secret UMA vez)
+GET    /v1/postbacks/endpoints                          lista
+GET    /v1/postbacks/endpoints/{id}                     busca
+PATCH  /v1/postbacks/endpoints/{id}                     atualiza url, eventos ou status
+DELETE /v1/postbacks/endpoints/{id}                     remove
+POST   /v1/postbacks/endpoints/{id}/secret/regenerate   rotaciona o secret
+GET    /v1/postbacks/delivery-logs                      histórico, com o payload real
+POST   /v1/postbacks/delivery-logs/{id}/resend          reenvia uma entrega
+```
+
+O par **delivery-logs + resend** é como testar sem sandbox: qualquer cobrança
+que já passou por lá deixou o payload guardado, e dá para reenviá-la ao
+nosso endpoint depois que ele estiver no ar.
+
+## Cobranças (do que já se sabia)
 
 ```
 POST   /v1/charges                 cria (o body varia por método de pagamento)
 GET    /v1/charges/{id}            busca
-GET    /v1/charges                 lista, com paginação e filtros
-POST   /v1/charges/{id}/capture    captura uma cobrança AUTORIZADA (parcial opcional)
-POST   /v1/charges/{id}/refund     estorna uma capturada (parcial + motivo opcionais)
+GET    /v1/charges                 lista
+POST   /v1/charges/{id}/capture    captura uma AUTORIZADA (parcial opcional)
+POST   /v1/charges/{id}/refund     estorna uma capturada (parcial + motivo)
 ```
 
-Autorizado **não é** dinheiro em caixa: só a captura conta como receita. E
-existem **captura parcial** e **estorno parcial**, então o valor da linha muda
-ao longo da vida da cobrança — o adaptador não pode assumir que o valor
-inicial é o final.
-
-### Os webhooks são gerenciados por API, não por campo no painel
-
-```
-POST   /v1/postbacks/endpoints                    cria (devolve o secret UMA vez)
-GET    /v1/postbacks/endpoints                    lista
-GET    /v1/postbacks/endpoints/{id}               busca
-PATCH  /v1/postbacks/endpoints/{id}               atualiza url, eventos ou status
-DELETE /v1/postbacks/endpoints/{id}               remove
-POST   /v1/postbacks/endpoints/{id}/secret/regenerate   rotaciona o secret
-```
-
-### Log de entregas + reenvio — é por aqui que se testa de graça
-
-```
-GET  /v1/postbacks/delivery-logs           histórico, com paginação e filtros
-POST /v1/postbacks/delivery-logs/{id}/resend   reenvia uma que falhou ou esgotou
-```
-
-Isso resolve o teste sem sandbox e sem gastar R$ 1:
-
-1. Qualquer cobrança que já tenha passado por lá deixou o **payload real** no
-   log de entregas. É só abrir e copiar.
-2. Depois que o nosso endpoint estiver no ar, **reenviar** aquela mesma
-   notificação para ele — teste de ponta a ponta com dado de produção.
-
-### Irrelevante para nós
-
-`/v1/banks`, `/v1/banks/code/{code}`, `/v1/banks/ispb/{ispb}` — consulta de
-bancos, usada em transferência. Não toca venda.
-
-## O que falta — e como conseguir de uma vez
-
-Todas as 16 páginas são **geradas** do mesmo arquivo:
-
-```
-scripts/generate-openapi.ts  →  openapi.json  →  as páginas
-```
-
-**Pegar o `openapi.json`** resolve tudo de uma vez: campos, payloads, headers,
-enumerações de status e de evento. É um arquivo só.
-
-Se não houver como baixá-lo, o que falta é:
-
-1. A página sobre **receber e validar** postbacks (não as de gerenciar
-   endpoints) — payload de exemplo e o header da assinatura.
-2. A **lista de eventos** que um endpoint pode assinar.
-3. A **lista de status** de uma cobrança.
-4. Se os valores vêm em **centavos** (as outras duas vêm).
-5. Se há campo de **dados livres** na criação da cobrança que volte no webhook.
+Autorizado **não é** dinheiro em caixa: só a captura conta — e daí o evento
+se chamar `charge.captured`, não `charge.paid`. Há captura e estorno
+**parciais**, então o valor da cobrança muda ao longo da vida dela.
