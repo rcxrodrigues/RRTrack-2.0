@@ -135,11 +135,20 @@ export function SecaoInstalacao({
             </p>
             {temCheckout ? (
               <ul className="flex flex-col gap-1">
-                {estado.dominiosCheckout.map((d) => (
-                  <li key={d} className="text-muted-foreground font-mono text-xs">
-                    {d}
-                  </li>
-                ))}
+                {estado.dominiosCheckout.map((entrada) => {
+                  const [dominio = '', parametro = ''] = entrada.split('|');
+                  return (
+                    <li key={entrada} className="font-mono text-xs">
+                      <span className="text-muted-foreground">{dominio}</span>
+                      <span className="text-muted-foreground"> → </span>
+                      {/* O nome do parâmetro é o que decide se a ponte
+                          funciona: mandar o errado não dá erro, o checkout
+                          só ignora. Por isso ele aparece, não fica
+                          escondido no cadastro. */}
+                      <span>?{parametro || 'trck_user_id'}=</span>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="text-destructive-vivid text-xs">

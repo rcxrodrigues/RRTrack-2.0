@@ -163,7 +163,9 @@ export function SecaoGeral({
               id="checkout_domains"
               name="checkout_domains"
               defaultValue={settings.checkout_domains.join('\n')}
-              placeholder={'seguro.minhaloja.com\ncheckout.minhaloja.com'}
+              placeholder={
+                'seguro.minhaloja.com\nseguro.yampi.com.br|metadata[trck_user_id]'
+              }
               className="font-mono text-xs"
               rows={3}
             />
@@ -173,6 +175,14 @@ export function SecaoGeral({
               checkout, que é outro site e não recebe o cookie. Sem isso, a
               venda chega órfã e só casa por e-mail. Pode colar a URL inteira:
               eu fico com o domínio.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Depois do <code>|</code>, o nome do parâmetro que{' '}
+              <strong>aquele</strong> checkout aceita — cada plataforma tem o
+              seu, e mandar o errado não dá erro: o checkout ignora e a venda
+              entra sem atribuição. A Yampi só aceita{' '}
+              <code>metadata[trck_user_id]</code>. Sem o <code>|</code> vale{' '}
+              <code>trck_user_id</code>.
             </p>
           </div>
 

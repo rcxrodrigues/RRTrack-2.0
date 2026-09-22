@@ -19,8 +19,28 @@ export type Settings = {
   cookieDomain: string | null;
   origensPermitidas: string[];
   /** Domínios do checkout — o snippet marca os links que apontam para eles. */
-  dominiosCheckout: string[];
+  dominiosCheckout: DominioCheckout[];
 };
+
+/**
+ * Um destino de checkout: o domínio e **como ele quer receber o vínculo**.
+ *
+ * O nome do parâmetro não é igual em todo lugar, e errar não dá erro: o
+ * checkout simplesmente ignora o que não conhece, a venda entra sem
+ * atribuição e o ROAS por campanha fica cego. A Yampi só aceita
+ * `metadata[trck_user_id]`; a Zedy usa `src`/`sck`.
+ *
+ * É configuração pelo mesmo motivo que o domínio é: cada oferta usa o
+ * checkout que quiser, e trocar não pode pedir deploy.
+ */
+export type DominioCheckout = {
+  dominio: string;
+  /** O nome do parâmetro na query do checkout. */
+  parametro: string;
+};
+
+/** Quando o cadastro não diz o parâmetro, é este. */
+export const PARAMETRO_CHECKOUT_PADRAO = 'trck_user_id';
 
 export type DestinoGa4 = { id: string; measurementId: string };
 export type DestinoPixel = { id: string; pixelId: string };
@@ -68,6 +88,24 @@ function listaDeTexto(valor: unknown): string[] {
     : [];
 }
 
+/**
+ * Lê as linhas `dominio|parametro` do cadastro.
+ *
+ * O separador é `|` porque ele não pode aparecer num hostname — então não há
+ * como uma linha ambígua passar por engano. Sem a segunda parte, vale o
+ * padrão.
+ */
+function dominiosCheckoutDe(valor: unknown): DominioCheckout[] {
+  return listaDeTexto(valor).flatMap((entrada) => {
+    const [bruto = '', parametro = ''] = entrada.split('|');
+    const dominio = bruto.trim().toLowerCase();
+    if (dominio.length === 0) return [];
+    return [
+      { dominio, parametro: parametro.trim() || PARAMETRO_CHECKOUT_PADRAO },
+    ];
+  });
+}
+
 async function buscar(): Promise<Configuracao> {
   const supabase = criarClienteAdmin();
 
@@ -94,7 +132,7 @@ async function buscar(): Promise<Configuracao> {
       testEventCode: texto(linha?.test_event_code),
       cookieDomain: texto(linha?.cookie_domain),
       origensPermitidas: listaDeTexto(linha?.allowed_origins),
-      dominiosCheckout: listaDeTexto(linha?.checkout_domains),
+      dominiosCheckout: dominiosCheckoutDe(linha?.checkout_domains),
     },
     ga4: (ga4.data ?? []).flatMap((l) => {
       const id = texto(l.id);

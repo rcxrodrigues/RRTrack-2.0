@@ -158,4 +158,46 @@ describe('o vínculo com a visita', () => {
   it('NÃO confunde cart_id do exemplo com identificador de visita', () => {
     expect(yampi.normalizar(PEDIDO)?.trckUserId).toBeNull();
   });
+
+  /*
+   * O suporte da Yampi confirmou (22/09/2026) que o `cart_token` é só o
+   * identificador do carrinho e nunca carrega valor nosso. Mas ele é um
+   * hash, e hash tem hexadecimal de sobra: aceitá-lo faria TODA venda sem
+   * metadata nascer com um vínculo inventado. Não casaria com visitante
+   * nenhum, e a linha ficaria com cara de atribuída sendo órfã.
+   */
+  it('IGNORA o cart_token, mesmo quando ele parece um identificador', () => {
+    const c = yampi.normalizar({
+      ...PEDIDO,
+      resource: { ...PEDIDO.resource, cart_token: ID, metadata: { data: [] } },
+    });
+    expect(c?.trckUserId).toBeNull();
+  });
+
+  it('só aceita o valor de uma chave nossa, não de qualquer chave', () => {
+    // A Yampi devolve o saco inteiro: `cart_id` e o que mais o checkout
+    // tiver posto lá. Ler o primeiro valor que pareça um hash ligaria a
+    // venda a um fantasma.
+    const c = yampi.normalizar({
+      ...PEDIDO,
+      resource: {
+        ...PEDIDO.resource,
+        metadata: { data: [{ key: 'session_hash', value: ID }] },
+      },
+    });
+    expect(c?.trckUserId).toBeNull();
+  });
+
+  it('aceita o id embrulhado em texto', () => {
+    // O checkout pode devolver o valor com prefixo. O acerto é por regex de
+    // 32 hexadecimais, não por igualdade.
+    const c = yampi.normalizar({
+      ...PEDIDO,
+      resource: {
+        ...PEDIDO.resource,
+        metadata: { data: [{ key: 'trck_user_id', value: `rr-${ID}` }] },
+      },
+    });
+    expect(c?.trckUserId).toBe(ID);
+  });
 });

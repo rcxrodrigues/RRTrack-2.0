@@ -66,7 +66,12 @@ o funil: │ Yampi · Adoorei · Zedy  │ → │ AppMax · Pagou · MillionsPa
 - O checkout é outro site, e por isso **o `trck_user_id` viaja na URL** do
   checkout e nos links de WhatsApp. É essa a ponte cross-domain.
 - **Os domínios do checkout são configuração, não código** (`settings.
-  checkout_domains`, cadastrados no painel). Nasceram como uma regex fixa de
+  checkout_domains`, cadastrados no painel), **e o nome do parâmetro junto
+  com eles**: cada linha é `dominio` ou `dominio|parametro`. A Yampi só
+  aceita `metadata[trck_user_id]`; a Zedy usa `src`/`sck`. Mandar o nome
+  errado **não dá erro** — o checkout ignora, a venda entra e chega sem
+  atribuição. Cravar o nome no código repetiria, numa porta nova, o erro que
+  o parágrafo seguinte descreve. Nasceram como uma regex fixa de
   plataformas de infoproduto dentro do snippet — errado duas vezes: nenhuma
   delas aparece num funil Shopify, e cada oferta futura usa o checkout que
   quiser. O WhatsApp continua no código porque é universal e porque lá o id vai
@@ -533,9 +538,20 @@ direções, e foi ele que pegou a colisão.
 |---|---|
 | Appmax | `client_key` / `external_key` — no envelope e dentro de `data` |
 | Pagou | `informations[]` (chave/valor, documentado como "echo on the webhook") ou `correlation_id` |
-| Yampi | `metadata.data[]` (chave/valor) ou `cart_token` |
+| Yampi | `metadata.data[]` — e **só** ele. O link tem de levar `?metadata[trck_user_id]=…`, **na URL do checkout**; na da loja não vale. Confirmado pelo suporte em 22/09/2026 |
 | Zedy | `trackingParameters.src` ou `.sck` — genéricos, ao lado das cinco UTMs |
 | Adoorei | **não documenta saco de metadados** — sobra `source_reference`. Em compensação, o pedido traz o cliente completo, então o plano B por e-mail funciona |
+
+> **O `cart_token` da Yampi NÃO serve de ponte, e aceitá-lo faz estrago.**
+> Ele é o identificador do carrinho — mas é um hash, e hash tem hexadecimal
+> de sobra para casar com a regex de 32. Aceitá-lo faria **toda** venda sem
+> `metadata` nascer com um vínculo inventado: não casaria com visitante
+> nenhum, e a linha ficaria com cara de atribuída sendo órfã. É a mesma
+> armadilha do `client_key: "merchant-key-123"` da Appmax, por outra porta.
+>
+> E o saco `metadata` volta inteiro, com o `cart_id` e o que mais o checkout
+> tiver posto lá: o valor só vale se a **chave** for nossa. Ler o primeiro
+> que pareça um hash ligaria a venda a um fantasma.
 
 ### A mesma venda pelas duas camadas
 

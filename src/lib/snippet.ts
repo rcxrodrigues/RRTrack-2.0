@@ -26,7 +26,12 @@ export function montarSnippet(base: string, config: Configuracao): string {
     params: PARAMS_TRCK,
     ga4: config.ga4.map((c) => c.measurementId),
     pixels: config.pixels.map((p) => p.pixelId),
-    checkout: config.settings.dominiosCheckout,
+    // `d` = domínio, `p` = nome do parâmetro. Abreviado porque isto vai
+    // embutido em todo pageview do site, e o snippet é servido inteiro.
+    checkout: config.settings.dominiosCheckout.map((c) => ({
+      d: c.dominio,
+      p: c.parametro,
+    })),
   };
 
   return `/* RRTrack 2.0 */
@@ -127,13 +132,30 @@ export function montarSnippet(base: string, config: Configuracao): string {
   /* Compara por HOST, não por pedaço de texto no href.
      Um "indexOf" cru casaria com https://golpe.com/?volta=checkout.loja.com,
      e aí o identificador do visitante iria embora para o site errado. */
-  function ehCheckout(url) {
+  function paramDoCheckout(url) {
     var host = url.hostname.toLowerCase();
     for (var i = 0; i < CFG.checkout.length; i++) {
-      var alvo = String(CFG.checkout[i]).toLowerCase();
-      if (host === alvo || host.slice(-(alvo.length + 1)) === '.' + alvo) return true;
+      var alvo = String(CFG.checkout[i].d).toLowerCase();
+      if (host === alvo || host.slice(-(alvo.length + 1)) === '.' + alvo) {
+        return CFG.checkout[i].p;
+      }
     }
-    return false;
+    return null;
+  }
+
+  /* O URLSearchParams escapa colchete: metadata[trck_user_id] vira
+     metadata%5Btrck_user_id%5D. A Yampi documenta a forma LITERAL, e é ela
+     que devolvemos — o link fica idêntico ao que o checkout publica, em vez
+     de depender de o servidor deles decodificar antes de montar o array.
+
+     A troca é só da CHAVE escapada seguida de "=", nunca do href inteiro:
+     desescapar tudo mexeria no valor de outro parâmetro que por acaso
+     trouxesse um colchete. */
+  function comChaveLiteral(url, parametro) {
+    var href = url.toString();
+    var escapada = encodeURIComponent(parametro);
+    if (escapada === parametro) return href;
+    return href.split(escapada + '=').join(parametro + '=');
   }
 
   function marcarLinks() {
@@ -143,10 +165,9 @@ export function montarSnippet(base: string, config: Configuracao): string {
       var a = links[i];
       try {
         var href = a.getAttribute('href') || '';
-        if (href.indexOf('trck_user_id=') !== -1) continue;
-
         var destino = new URL(href, w.location.href);
-        if (!WHATSAPP.test(destino.hostname) && !ehCheckout(destino)) continue;
+        var parametro = paramDoCheckout(destino);
+        if (!WHATSAPP.test(destino.hostname) && !parametro) continue;
 
         /* Link de WhatsApp leva o id no TEXTO da mensagem: o wa.me ignora
            parâmetros que não conhece, e o texto é o que chega para quem
@@ -160,8 +181,12 @@ export function montarSnippet(base: string, config: Configuracao): string {
           continue;
         }
 
-        destino.searchParams.set('trck_user_id', trckUserId);
-        a.setAttribute('href', destino.toString());
+        /* Já marcado: sai. A conferência é pelo NOME configurado, não por
+           uma string fixa — o link da Yampi não tem "trck_user_id=" solto. */
+        if (destino.searchParams.has(parametro)) continue;
+
+        destino.searchParams.set(parametro, trckUserId);
+        a.setAttribute('href', comChaveLiteral(destino, parametro));
       } catch (e) { /* link malformado: deixa como está */ }
     }
   }

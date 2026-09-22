@@ -68,6 +68,21 @@ function soHost(linha: string): string {
   }
 }
 
+/**
+ * Normaliza `dominio` ou `dominio|parametro`.
+ *
+ * O host passa pelo `soHost` (que aceita URL colada inteira); o parâmetro
+ * vai como veio, só sem espaços — maiúscula ali pode ser significativa, ao
+ * contrário do domínio.
+ */
+function hostComParametro(linha: string): string {
+  const [bruto = '', parametro = ''] = linha.split('|');
+  const host = soHost(bruto);
+  if (host.length === 0) return '';
+  const nome = parametro.trim();
+  return nome.length > 0 ? `${host}|${nome}` : host;
+}
+
 export const settingsSchema = z.object({
   // Lista fechada, não regex: "XYZ" passaria no formato e seria recusado
   // pela Meta na hora de enviar a conversão.
@@ -92,6 +107,11 @@ export const settingsSchema = z.object({
   // Uma por linha no formulário. Aceita domínio puro ou URL colada inteira:
   // quem copia o endereço do checkout traz "https://seguro.loja.com/abc", e
   // recusar isso seria rigor sem propósito — o que importa é o host.
+  //
+  // Depois do `|`, opcionalmente, o NOME DO PARÂMETRO que aquele checkout
+  // aceita: `seguro.yampi.com.br|metadata[trck_user_id]`. Sem ele vale
+  // `trck_user_id`. O nome muda por plataforma, e mandar o errado não dá
+  // erro — o checkout ignora e a venda chega sem atribuição.
   checkout_domains: z
     .string()
     .trim()
@@ -99,15 +119,16 @@ export const settingsSchema = z.object({
     .transform((v) =>
       (v ?? '')
         .split('\n')
-        .map((linha) => soHost(linha))
+        .map((linha) => hostComParametro(linha))
         .filter((linha) => linha.length > 0),
     )
     .pipe(
       z.array(
         z
           .string()
-          .regex(/^([a-z0-9-]+\.)+[a-z]{2,}$/i, {
-            error: 'Use um domínio como seguro.minhaloja.com',
+          .regex(/^([a-z0-9-]+\.)+[a-z]{2,}(\|[A-Za-z0-9_.[\]-]+)?$/, {
+            error:
+              'Use seguro.minhaloja.com, ou seguro.minhaloja.com|nome_do_parametro',
           }),
       ),
     ),

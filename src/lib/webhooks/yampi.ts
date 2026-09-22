@@ -69,28 +69,30 @@ function produtosDe(recurso: unknown): ProdutoComprado[] {
 }
 
 /**
- * O vínculo com a visita, no saco `metadata`.
+ * O vínculo com a visita, no saco `metadata` — e só nele.
  *
- * A Yampi devolve `metadata: { data: [{key, value}] }` — o exemplo traz
- * `cart_id`. É o lugar natural para o `trck_user_id`, se o checkout
- * permitir gravar lá. Também olhamos `cart_token`, que às vezes carrega
- * o que veio na URL.
+ * CONFIRMADO pelo suporte da Yampi (22/09/2026): o único jeito de mandar
+ * algo nosso é `?metadata[trck_user_id]=…`, **na URL do checkout** (na da
+ * loja não vale), e ele volta em `resource.metadata.data[]` como
+ * `{key, value}`. Não existe campo customizado dedicado, e as cinco UTMs
+ * da Yampi são da vitrine, não do checkout.
+ *
+ * **O `cart_token` NÃO entra aqui.** Ele é o identificador do carrinho e
+ * nunca carrega o nosso valor — mas é um hash, e um hash pode ter 32
+ * hexadecimais seguidos. Aceitá-lo faria toda venda sem `metadata` nascer
+ * com um `trck_user_id` inventado: não casaria com visitante nenhum, e a
+ * linha ficaria com cara de atribuída sendo órfã. É a mesma armadilha do
+ * `client_key: "merchant-key-123"` da Appmax, por outra porta.
  */
 function trckUserIdDe(recurso: unknown): string | null {
-  const candidatos: (string | undefined)[] = [];
-
   const meta = dados(recurso, 'metadata');
+
   for (const item of Array.isArray(meta) ? meta : []) {
     const chave = texto(item, 'key')?.toLowerCase();
-    if (chave === 'trck_user_id' || chave === 'trck' || chave === 'trck_id') {
-      candidatos.push(texto(item, 'value'));
+    if (chave !== 'trck_user_id' && chave !== 'trck' && chave !== 'trck_id') {
+      continue;
     }
-  }
-  candidatos.push(texto(recurso, 'cart_token'));
-
-  for (const bruto of candidatos) {
-    if (!bruto) continue;
-    const achado = /[0-9a-f]{32}/i.exec(bruto);
+    const achado = /[0-9a-f]{32}/i.exec(texto(item, 'value') ?? '');
     if (achado) return achado[0].toLowerCase();
   }
   return null;

@@ -10,7 +10,7 @@ const CONFIG: Configuracao = {
     testEventCode: 'TEST123',
     cookieDomain: '.transforlar.com',
     origensPermitidas: ['https://transforlar.com'],
-    dominiosCheckout: ['seguro.transforlar.com'],
+    dominiosCheckout: [{ dominio: 'seguro.transforlar.com', parametro: 'trck_user_id' }],
   },
   ga4: [
     { id: '1', measurementId: 'G-ABC123' },
