@@ -50,18 +50,25 @@ function emUtc(iso: string): string {
  * que acabou de disparar a venda de teste.
  */
 function Quando({ iso }: { iso: string }) {
-  const [texto, setTexto] = React.useState(() => emUtc(iso));
-
-  React.useEffect(() => {
-    setTexto(
-      new Date(iso).toLocaleString('pt-BR', {
-        day: '2-digit', month: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      }),
-    );
-  }, [iso]);
+  // `useSyncExternalStore` existe exatamente para isto: ele aceita um
+  // retrato do SERVIDOR e outro do CLIENTE. O servidor entrega UTC, a
+  // hidratação casa, e o cliente passa a mostrar o fuso de quem olha — sem
+  // `setState` em efeito, que dispara render em cascata.
+  const texto = React.useSyncExternalStore(
+    // Nunca muda depois de montado: não há a que assinar.
+    () => () => {},
+    () => formatarLocal(iso),
+    () => emUtc(iso),
+  );
 
   return <>{texto}</>;
+}
+
+function formatarLocal(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
 }
 
 export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
