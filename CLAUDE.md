@@ -281,6 +281,13 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   `@layer components`, e as utilitárias do Tailwind (`shadow-lg`) vêm depois
   — pôr as duas no mesmo elemento faz a utilitária vencer e a elevação
   desaparecer.
+- **Data em componente que passa por SSR: nunca `toLocaleString` direto.** O
+  servidor roda em UTC (a Vercel roda) e o navegador no fuso de quem olha —
+  os dois produzem textos diferentes para a mesma linha e a hidratação
+  quebra. O padrão é renderizar algo **determinístico** (UTC derivado do
+  texto ISO, sem passar por `Date`) e trocar pelo horário local **depois da
+  montagem**, num `useEffect`. Ver `Quando` em
+  `src/app/(dash)/eventos/_components/webhook-recebido.tsx`.
 - **Mobile-first.** Alvos de toque ≥ 44px (o `size="default"` do Button já dá
   `h-11` no celular). Sidebar no desktop, barra inferior no celular —
   `src/lib/nav.ts` é a fonte única das duas.
