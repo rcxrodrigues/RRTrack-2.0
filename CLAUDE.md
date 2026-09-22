@@ -423,9 +423,12 @@ reconhece o formato é o adaptador, não configuração no painel — pedir para
 alguém declarar qual gateway é qual seria mais uma coisa para errar às três da
 manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
 
-- **O token vai na URL.** Não é preferência: a Appmax **não envia header de
-  assinatura nem token**, e o OpenAPI da Pagou não documenta nenhum. A URL é o
-  único lugar onde um segredo cabe. Comparação em tempo constante
+- **O token é aceito em TRÊS lugares**, porque cada gateway escolheu o seu:
+  `?token=` (Appmax e Pagou, que não mandam header nenhum),
+  `x-webhook-token` (para quem não deixa pôr query na URL) e
+  `Authorization: Bearer` (a Zedy documenta assim). Nem todo painel deixa
+  escolher, e é isso que permite um endpoint só atender a todos.
+  Comparação em tempo constante
   (`timingSafeEqual` sobre SHA-256 dos dois), senão o tempo de resposta vaza o
   prefixo correto e o token se reconstrói caractere a caractere.
 - **Responder ANTES de trabalhar.** A Appmax dá **5 segundos**; estourou, ela
@@ -476,8 +479,14 @@ fechada, e aí o campo é confiável.
 |---|---|---|
 | Appmax | **centavos** | `25990` = R$ 259,90 |
 | Pagou | **centavos** | `25990` = R$ 259,90 |
+| **Zedy** | **centavos** | `9700` = R$ 97,00 (`priceInCents`) |
 | **Yampi** | **reais** | `199.90` = R$ 199,90 |
 | **Adoorei** | **reais** | `110.00` = R$ 110,00 |
+
+**Bruto, nunca líquido.** A Zedy manda os dois: `totalPriceInCents` é o que o
+cliente pagou, `userCommissionInCents` é o que sobra depois da taxa. Para
+ROAS vale o bruto — usar o líquido faria o retorno parecer menor do que é e
+a campanha ser cortada à toa.
 
 Aplicar `deCentavos()` num valor em reais dá R$ 1,10 no lugar de R$ 110,00 —
 erro de 100× que não quebra nada e só aparece semanas depois, num ROAS
@@ -505,7 +514,17 @@ direções, e foi ele que pegou a colisão.
 | Appmax | `client_key` / `external_key` — no envelope e dentro de `data` |
 | Pagou | `informations[]` (chave/valor, documentado como "echo on the webhook") ou `correlation_id` |
 | Yampi | `metadata.data[]` (chave/valor) ou `cart_token` |
+| Zedy | `trackingParameters.src` ou `.sck` — genéricos, ao lado das cinco UTMs |
 | Adoorei | **não documenta saco de metadados** — sobra `source_reference`. Em compensação, o pedido traz o cliente completo, então o plano B por e-mail funciona |
+
+### Pedido de teste não vira conversão
+
+A Zedy marca com `isTest`. Mandar um teste à Meta como `Purchase` ensina o
+otimizador a perseguir venda que não existe, e infla o faturamento do painel.
+O adaptador descarta com aviso; o payload fica em `webhooks_recebidos`.
+
+Os outros quatro não documentam marca de teste — quando algum documentar,
+o descarte entra no adaptador dele do mesmo jeito.
 
 ### A compra indo para os destinos
 

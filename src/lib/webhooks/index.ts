@@ -2,6 +2,7 @@ import { adoorei } from '@/lib/webhooks/adoorei';
 import { appmax } from '@/lib/webhooks/appmax';
 import { pagou } from '@/lib/webhooks/pagou';
 import { yampi } from '@/lib/webhooks/yampi';
+import { zedy } from '@/lib/webhooks/zedy';
 import type { Adaptador, CompraNormalizada } from '@/lib/webhooks/tipos';
 
 export * from '@/lib/webhooks/tipos';
@@ -14,7 +15,7 @@ export * from '@/lib/webhooks/tipos';
  * usam `{event, time, merchant, resource}` com eventos `order.*`, e o que
  * separa é o embrulho `.data` da Yampi, que o `reconhece` dela exige. Adaptador novo entra aqui e em mais lugar nenhum.
  */
-export const ADAPTADORES: readonly Adaptador[] = [appmax, pagou, yampi, adoorei];
+export const ADAPTADORES: readonly Adaptador[] = [appmax, pagou, yampi, adoorei, zedy];
 
 export type Leitura =
   | { tipo: 'venda'; adaptador: string; compra: CompraNormalizada }

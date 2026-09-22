@@ -61,12 +61,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const supabase = criarClienteAdmin();
 
-  // O token aceita os dois lugares porque nem todo painel de gateway deixa
-  // pôr query string no campo de URL.
+  /*
+   * O token aceita TRÊS lugares, porque cada gateway escolheu o seu:
+   *
+   *   ?token=…                    Appmax e Pagou (não mandam header nenhum)
+   *   x-webhook-token: …          alternativa para quem não deixa pôr query
+   *   Authorization: Bearer …     a Zedy documenta assim
+   *
+   * Nem todo painel deixa pôr query string no campo de URL, e nem todo
+   * gateway deixa escolher o header. Aceitar os três é o que permite um
+   * endpoint só atender a todos.
+   */
+  const autorizacao = request.headers.get('authorization') ?? '';
   const recebido =
     request.nextUrl.searchParams.get('token') ??
     request.headers.get('x-webhook-token') ??
-    '';
+    (autorizacao.toLowerCase().startsWith('bearer ')
+      ? autorizacao.slice(7).trim()
+      : '');
 
   const { data: esperado } = await supabase.rpc('get_webhook_token');
 
