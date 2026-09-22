@@ -13,30 +13,56 @@ const enviarParaTodosOsPixels = vi.fn();
 const segredoDoGa4 = vi.fn();
 const maybeSingle = vi.fn();
 const update = vi.fn();
+const duplicata = vi.fn();
 
 vi.mock('@/lib/settings', () => ({ carregarConfiguracao: () => carregarConfiguracao() }));
 vi.mock('@/lib/destinos', () => ({
   enviarParaTodosOsPixels: (p: unknown) => enviarParaTodosOsPixels(p),
   segredoDoGa4: (id: string) => segredoDoGa4(id),
 }));
-vi.mock('@/lib/supabase/admin', () => ({
-  criarClienteAdmin: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({ returns: () => ({ maybeSingle }) }),
+/**
+ * O cliente falso.
+ *
+ * O construtor de consulta do supabase-js é encadeável e aguardável ao mesmo
+ * tempo. Aqui isso vira uma **Promise de verdade** com os métodos pendurados
+ * nela: promessa já tem `then` por natureza, então o lint não reclama de
+ * thenable improvisado — e `await` funciona igual ao cliente real.
+ *
+ * `maybeSingle()` serve à busca da compra; aguardar direto serve à busca da
+ * duplicata, que devolve lista.
+ */
+vi.mock('@/lib/supabase/admin', () => {
+  function consulta(): Promise<unknown> {
+    // `Object.assign` numa promessa devolve o tipo combinado sem afirmação:
+    // o compilador infere, em vez de acreditar num `as`.
+    const encadeaveis = Object.fromEntries(
+      ['eq', 'neq', 'not', 'gte', 'limit', 'order', 'returns', 'select'].map(
+        (metodo) => [metodo, () => consulta()],
+      ),
+    );
+    return Object.assign(Promise.resolve(duplicata()), encadeaveis, {
+      maybeSingle: () => maybeSingle(),
+    });
+  }
+
+  return {
+    criarClienteAdmin: () => ({
+      from: () => ({
+        select: () => consulta(),
+        update: (v: unknown) => {
+          update(v);
+          return { eq: () => Promise.resolve({ error: null }) };
+        },
       }),
-      update: (v: unknown) => {
-        update(v);
-        return { eq: () => Promise.resolve({ error: null }) };
-      },
     }),
-  }),
-}));
+  };
+});
 
 const { desfazerCompra, dispararCompra, eventIdDaCompra } = await import('./compras');
 
 const APROVADA = {
   transaction_id: 'yampi:1000001',
+  platform: 'yampi',
   status: 'aprovada',
   value: 199.9,
   currency: 'BRL',
@@ -79,6 +105,7 @@ beforeEach(() => {
   enviarParaTodosOsPixels.mockResolvedValue({ '111111111111111': { ok: true, status: 200 } });
   segredoDoGa4.mockResolvedValue('segredo-ga4');
   maybeSingle.mockResolvedValue({ data: APROVADA });
+  duplicata.mockReturnValue({ data: [] });
 });
 
 describe('quando dispara', () => {
@@ -277,5 +304,61 @@ describe('desfazer — o estorno', () => {
 
     const gravado: unknown = update.mock.calls[0]?.[0];
     expect(texto(objeto(gravado, 'response_ga4'), 'ga4')).toContain('_ga');
+  });
+});
+
+describe('a mesma venda pelas DUAS camadas do funil', () => {
+  /*
+   * O funil é checkout (Yampi, Adoorei, Zedy) em cima do gateway (Appmax,
+   * Pagou, MillionsPay). Com os dois apontando o webhook para cá, a mesma
+   * venda entra duas vezes com ids diferentes — e vira DUAS conversões na
+   * Meta, porque cada event_id sai do seu próprio transaction_id.
+   *
+   * A Appmax confirma que o risco é real: ela suprime o webhook dela
+   * quando o pedido veio da Yampi, de propósito.
+   */
+  it('NÃO envia de novo quando a outra camada já enviou', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, platform: 'appmax' } });
+    duplicata.mockReturnValue({ data: [{ transaction_id: 'zedy:Z-13CEM05RWG261' }] });
+
+    await dispararCompra('appmax:3531');
+
+    expect(enviarParaTodosOsPixels).not.toHaveBeenCalled();
+
+    const gravado: unknown = update.mock.calls[0]?.[0];
+    expect(texto(objeto(gravado, 'response_meta'), 'duplicata_de')).toBe(
+      'zedy:Z-13CEM05RWG261',
+    );
+    // Marcado para o reenvio do gateway não tentar de novo a cada vez.
+    expect(texto(gravado, 'sent_at')).toBeTruthy();
+  });
+
+  it('envia normalmente quando não há duplicata', async () => {
+    maybeSingle.mockResolvedValue({ data: APROVADA });
+    duplicata.mockReturnValue({ data: [] });
+
+    await dispararCompra('yampi:1000001');
+    expect(enviarParaTodosOsPixels).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * Sem e-mail não há como comparar com segurança, e chutar aqui
+   * significaria descartar venda boa. O silêncio é deliberado: erra-se para
+   * o lado de ENVIAR quando não dá para ter certeza.
+   */
+  it('sem e-mail, não tenta adivinhar — envia', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, email_hash: null } });
+    duplicata.mockReturnValue({ data: [{ transaction_id: 'zedy:qualquer' }] });
+
+    await dispararCompra('appmax:3531');
+    expect(enviarParaTodosOsPixels).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem valor, também envia', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, value: null } });
+    duplicata.mockReturnValue({ data: [{ transaction_id: 'zedy:qualquer' }] });
+
+    await dispararCompra('appmax:3531');
+    expect(enviarParaTodosOsPixels).toHaveBeenCalledTimes(1);
   });
 });

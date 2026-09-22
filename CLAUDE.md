@@ -31,9 +31,29 @@ DNS no Cloudflare e app na Vercel:
 transforlar.com           loja Shopify (externa)
                           roda <script src="https://track.transforlar.com/t.js">
 track.transforlar.com     ESTE app: painel + APIs de captura + webhook
-checkout de terceiro      plataforma própria de checkout — outro site
-gateway                   AppMax / Pagou.ai / MillionsPay processam o pagamento
+
+         ┌─ CHECKOUT ──────────────┐   ┌─ GATEWAY ────────────────────┐
+o funil: │ Yampi · Adoorei · Zedy  │ → │ AppMax · Pagou · MillionsPay │
+         └─────────────────────────┘   └──────────────────────────────┘
+           dono da página de pagamento   processa o dinheiro
 ```
+
+> **São DUAS camadas, e as duas mandam webhook.** É a distinção que mais
+> importa aqui. O checkout é dono da página onde a pessoa digita o cartão; o
+> gateway processa. O payload da Adoorei confirma, trazendo
+> `"gateway": "appmax|mercadopago|pagarme|…"` dentro do pedido.
+>
+> **Configure o webhook em UMA camada só — a do checkout.** Ele está mais
+> perto do comprador: tem as UTMs, tem o campo livre da atribuição
+> (`src`/`sck`, `metadata`, `informations`) e tem os dados do cliente. O
+> gateway muitas vezes não vê nada disso.
+>
+> Com as duas apontando para cá, a mesma venda entra duas vezes com ids
+> diferentes e vira **duas conversões na Meta**. A Appmax confirma que o
+> risco é real: ela **suprime** o webhook dela quando o pedido veio da
+> Yampi, de propósito. `acharDuplicataDeOutraCamada` em
+> `src/lib/compras.ts` é a rede de segurança para quando a configuração
+> escapar.
 
 > **A primeira loja é Shopify com checkout de terceiro**, não infoproduto. Isso
 > não é detalhe: quem manda o webhook de venda é o checkout ou o gateway, não a
@@ -516,6 +536,23 @@ direções, e foi ele que pegou a colisão.
 | Yampi | `metadata.data[]` (chave/valor) ou `cart_token` |
 | Zedy | `trackingParameters.src` ou `.sck` — genéricos, ao lado das cinco UTMs |
 | Adoorei | **não documenta saco de metadados** — sobra `source_reference`. Em compensação, o pedido traz o cliente completo, então o plano B por e-mail funciona |
+
+### A mesma venda pelas duas camadas
+
+Checkout e gateway podem os dois mandar webhook do mesmo pedido, com
+`transaction_id` diferente — e o `event_id` de cada um sai do seu próprio
+id, então a Meta **não** deduplica: contam duas.
+
+`acharDuplicataDeOutraCamada` exige que **quatro** coisas batam: mesmo
+e-mail, mesmo valor, plataforma diferente e dentro de meia hora. Exigir as
+quatro é deliberado — duas compras iguais, do mesmo e-mail, pelo mesmo
+valor, em camadas diferentes e em trinta minutos é configuração duplicada,
+não cliente entusiasmado.
+
+Faltando e-mail ou valor, **envia**: errar para o lado de não enviar custa
+aprendizado; enviar duas vezes custa aprendizado ERRADO e ainda infla o
+faturamento. A linha continua gravada nos dois casos — o que não sai duas
+vezes é a conversão.
 
 ### Pedido de teste não vira conversão
 

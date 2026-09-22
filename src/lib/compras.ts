@@ -63,6 +63,41 @@ export async function dispararCompra(transactionId: string): Promise<void> {
     // Appmax ainda tem retry próprio. `sent_at` é o "já mandei?".
     if (texto(data, 'sent_at')) return;
 
+    /*
+     * A mesma venda chegando pelas DUAS camadas.
+     *
+     * O funil tem checkout (Yampi, Adoorei, Zedy) em cima do gateway
+     * (Appmax, Pagou, MillionsPay). Se os dois estiverem apontando o
+     * webhook para cá, a mesma venda entra duas vezes, com ids diferentes
+     * — e vira DUAS conversões na Meta, porque o `event_id` de cada uma é
+     * derivado do seu próprio `transaction_id`.
+     *
+     * A Appmax confirma que o risco é real: ela suprime o webhook dela
+     * quando o pedido veio da Yampi, de propósito.
+     *
+     * A linha continua gravada (auditoria), mas a conversão não sai duas
+     * vezes.
+     */
+    const duplicata = await acharDuplicataDeOutraCamada(supabase, data);
+    if (duplicata) {
+      console.warn(
+        `[compras] ${transactionId} parece a mesma venda de ${duplicata} ` +
+          '— conversão não enviada de novo',
+      );
+      await supabase
+        .from('purchases')
+        .update({
+          response_meta: {
+            ignorado: 'mesma venda já enviada pela outra camada do funil',
+            duplicata_de: duplicata,
+          },
+          // Marcado para não tentar de novo a cada reenvio do gateway.
+          sent_at: new Date().toISOString(),
+        })
+        .eq('transaction_id', transactionId);
+      return;
+    }
+
     const eventId = eventIdDaCompra(transactionId);
     const [respostaMeta, respostaGa4] = await Promise.all([
       enviarParaMeta(data, eventId),
@@ -87,6 +122,48 @@ export async function dispararCompra(transactionId: string): Promise<void> {
       erro instanceof Error ? erro.message : erro,
     );
   }
+}
+
+/**
+ * Procura a mesma venda já enviada por OUTRA plataforma.
+ *
+ * Quatro coisas precisam bater: mesmo e-mail, mesmo valor, plataforma
+ * diferente e dentro de meia hora. Exigir as quatro é deliberado — duas
+ * compras iguais, do mesmo e-mail, pelo mesmo valor, em camadas diferentes
+ * e em trinta minutos é a configuração duplicada, não um cliente
+ * entusiasmado.
+ *
+ * Errar para o lado de não enviar é melhor: uma conversão a menos custa
+ * aprendizado; uma a mais custa aprendizado ERRADO, e ainda infla o
+ * faturamento.
+ */
+async function acharDuplicataDeOutraCamada(
+  supabase: ReturnType<typeof criarClienteAdmin>,
+  compra: LinhaCompra,
+): Promise<string | null> {
+  const emailHash = texto(compra, 'email_hash');
+  const valor = compra.value;
+  const plataforma = texto(compra, 'platform');
+
+  // Sem e-mail ou sem valor não há como comparar com segurança, e chutar
+  // aqui significaria descartar venda boa.
+  if (!emailHash || typeof valor !== 'number' || !plataforma) return null;
+
+  const meiaHoraAtras = new Date(Date.now() - 30 * 60_000).toISOString();
+
+  const { data } = await supabase
+    .from('purchases')
+    .select('transaction_id')
+    .eq('email_hash', emailHash)
+    .eq('value', valor)
+    .eq('status', 'aprovada')
+    .neq('platform', plataforma)
+    .not('sent_at', 'is', null)
+    .gte('created_at', meiaHoraAtras)
+    .limit(1)
+    .returns<LinhaCompra[]>();
+
+  return texto(data?.[0], 'transaction_id') ?? null;
 }
 
 // ---------------------------------------------------------------------------
