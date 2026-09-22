@@ -45,6 +45,7 @@ function configCom(pixels: { id: string; pixelId: string }[], testEventCode: str
       cookieDomain: null,
       origensPermitidas: [],
       dominiosCheckout: [],
+      statusPorAlias: {},
     },
     ga4: [{ id: 'ga-1', measurementId: 'G-ABC' }],
     pixels,

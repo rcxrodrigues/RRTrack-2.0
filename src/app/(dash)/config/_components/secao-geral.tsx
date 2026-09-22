@@ -27,6 +27,7 @@ export type Settings = {
   cookie_domain: string | null;
   allowed_origins: string[];
   checkout_domains: string[];
+  status_aliases: string[];
   webhook_token_last4: string | null;
 };
 
@@ -183,6 +184,39 @@ export function SecaoGeral({
               entra sem atribuição. A Yampi só aceita{' '}
               <code>metadata[trck_user_id]</code>. Sem o <code>|</code> vale{' '}
               <code>trck_user_id</code>.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="status_aliases">Status do checkout</Label>
+            <Textarea
+              id="status_aliases"
+              name="status_aliases"
+              defaultValue={settings.status_aliases.join('\n')}
+              placeholder={'devolvido = estornada\nem_separacao = pendente'}
+              className="font-mono text-xs"
+              rows={3}
+            />
+            <p className="text-muted-foreground text-xs">
+              Um por linha, no formato <code>alias = status</code>. Status
+              válidos: <code>aprovada</code>, <code>pendente</code>,{' '}
+              <code>recusada</code>, <code>estornada</code>,{' '}
+              <code>chargeback</code>.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Só preencha se algum status vier como{' '}
+              <strong>não reconhecido</strong> na tela de Eventos — a mensagem
+              lá diz o alias exato. Os aliases da Yampi são configuráveis por
+              loja (<code>GET /{'{'}alias{'}'}/checkout/statuses</code>), então
+              não há lista fixa: os de fábrica já vêm no código, e isto é para
+              o que a sua loja renomeou ou criou.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              O que isto protege é o <strong>estorno</strong>. A venda paga
+              chega por evento próprio e não depende de alias — mas um alias de
+              estorno que eu não conheça faria o <code>refund</code> nunca
+              chegar ao GA4, e o faturamento ficaria inflado por uma venda que
+              voltou para o cliente.
             </p>
           </div>
 

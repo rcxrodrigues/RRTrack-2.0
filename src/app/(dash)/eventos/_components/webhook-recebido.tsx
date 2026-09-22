@@ -15,6 +15,14 @@ export type WebhookRecebido = {
   corpo_texto: string | null;
   headers: Record<string, string> | null;
   transaction_id: string | null;
+  /**
+   * Por que não virou venda.
+   *
+   * Preenchido só quando o adaptador RECONHECEU e não soube o que fazer —
+   * venda possivelmente perdida. Nota fiscal e afins são ignoradas de
+   * propósito e vêm com `motivo` nulo, porque ali não há nada a resolver.
+   */
+  motivo: string | null;
   created_at: string;
 };
 
@@ -101,10 +109,22 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
           <ChevronRight className="text-muted-foreground size-4 shrink-0" />
         )}
 
-        {item.adaptador ? (
+        {/*
+          Três estados, e a diferença entre os dois últimos é dinheiro.
+
+          · verde    — tratado, ou ignorado de propósito
+          · amarelo  — ninguém reconheceu o formato: falta adaptador
+          · vermelho — RECONHECIDO e não soube ler. Este é o pior: o formato
+                       era nosso, o evento parecia importar, e faltou
+                       cadastro. Antes ele ficava verde junto com a nota
+                       fiscal, e uma venda perdida se escondia atrás da
+                       aparência de tratada.
+        */}
+        {item.motivo ? (
+          <Badge variant="destructive">não soube ler</Badge>
+        ) : item.adaptador ? (
           <Badge variant="success">{item.adaptador}</Badge>
         ) : (
-          /* O caso que interessa olhar: ninguém reconheceu o formato. */
           <Badge variant="warning">não reconhecido</Badge>
         )}
 
@@ -121,6 +141,11 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
 
       {aberto && (
         <div className="flex flex-col gap-3 px-4 pb-4">
+          {item.motivo && (
+            <p className="text-destructive-vivid text-sm">
+              {item.adaptador}: {item.motivo}
+            </p>
+          )}
           {interessantes.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="text-muted-foreground text-xs font-semibold">

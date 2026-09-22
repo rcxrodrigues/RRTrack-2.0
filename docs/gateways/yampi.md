@@ -82,16 +82,53 @@ clique em comprar e olhe a barra de endereços do checkout. Se
 `metadata[trck_user_id]=` estiver lá, está resolvido. Se não estiver, o
 caminho é pedir à Yampi/Shopify que o parâmetro atravesse o redirecionamento.
 
+## Os aliases de status — RESPONDIDA, e a resposta mudou o desenho
+
+**Não existe lista fixa.** A página da API documenta só o *schema* do campo
+(`data[].alias`, tipo `string`) porque **os status e seus aliases são
+configuráveis por loja**. A da sua loja vem de:
+
+```
+GET /{alias}/checkout/statuses
+→ cada status com id, order, alias, name, description
+```
+
+### Por que isso invalidou o adaptador
+
+O mapa de aliases estava **cravado no código**, com `refunded` e `canceled`
+chutados. Numa loja que renomeou o estorno para `devolvido`, aquele mapa
+falharia — e falharia calado: o `refund` **nunca** chegaria ao GA4, e o
+faturamento ficaria inflado por uma venda que voltou para o cliente.
+
+É a mesma regra que o `CLAUDE.md` já registra para a Appmax, por outro
+caminho: *decidir por um campo cuja enumeração ninguém conhece é escolher ser
+surpreendido.* Lá a saída foi decidir pelo **evento**. Aqui o evento não
+basta, porque `order.status.updated` só diz "mudou" — o alias é que diz para
+quê.
+
+### O desenho agora
+
+1. **O evento ganha quando já responde.** `order.paid` e
+   `transaction.payment.refused` são vocabulário da Yampi, não da loja, e não
+   passam pelo alias. Se passassem, uma loja com status renomeado perderia a
+   **venda paga** — o que mais importa.
+2. **O alias vem do cadastro** (`settings.status_aliases`, painel →
+   Configuração → Geral → Status do checkout), no formato `alias = status`.
+3. **O mapa do código é só padrão de fábrica**, e o cadastro passa por cima.
+4. **Alias que não está em lugar nenhum não vira venda nem desaparece:**
+   volta como `Indeciso`, com o alias no motivo, e aparece **em vermelho** na
+   tela de Eventos com a instrução do que cadastrar. Depois de cadastrar,
+   **Reprocessar**.
+
+O passo 4 é o que fecha o buraco: antes dele, alias desconhecido devolvia
+`null` — indistinguível de "ignorei de propósito" — e a venda se escondia
+atrás de um badge verde igual ao da nota fiscal.
+
 ## O que ainda falta
 
-- [ ] **A tabela de aliases de status** — `GET {alias}/checkout/statuses`
-      devolve `id, order, alias, name, description`. Preciso da coluna
-      **`alias`**.
-
-      **Venda paga está coberta**: `order.paid` é evento documentado e ganha
-      do alias. O risco é o **estorno** — se ele vier como mudança de status
-      e o alias não for `refunded` nem `canceled`, que foi o que chutamos, o
-      GA4 nunca recebe o `refund` e o faturamento fica inflado por uma venda
-      que voltou.
+- [ ] **Os aliases da SUA loja** — `GET /{alias}/checkout/statuses`. Não é
+      mais bloqueio: os de fábrica estão no código, e qualquer alias fora
+      deles aparece em vermelho no painel dizendo o que cadastrar. Buscar a
+      lista antes só antecipa o trabalho.
 - [ ] **Se a Yampi assina o webhook** — os cabeçalhos de qualquer webhook
       real respondem sozinhos, na tela de eventos.

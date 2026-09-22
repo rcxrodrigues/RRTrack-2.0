@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { yampi } from './yampi';
+import { ehIndeciso, soVenda } from './tipos';
 import { adoorei } from './adoorei';
 import { lerWebhook } from './index';
+
+/** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
+const ler = (corpo: unknown) => soVenda(yampi.normalizar(corpo));
 
 /** O payload da Yampi, como recebido. */
 const PEDIDO = {
@@ -71,7 +75,7 @@ describe('Yampi × Adoorei — o envelope é idêntico', () => {
 });
 
 describe('normalizar', () => {
-  const c = yampi.normalizar(PEDIDO);
+  const c = ler(PEDIDO);
 
   // Reais, como a Adoorei — e ao contrário da Appmax e da Pagou.
   it('valor em REAIS, sem conversão', () => {
@@ -108,17 +112,17 @@ describe('os eventos da lista', () => {
   it('reconhece e trata transaction.payment.refused', () => {
     const payload = { ...PEDIDO, event: 'transaction.payment.refused' };
     expect(yampi.reconhece(payload)).toBe(true);
-    expect(yampi.normalizar(payload)?.status).toBe('recusada');
+    expect(ler(payload)?.status).toBe('recusada');
   });
 
   it('nota fiscal não é dinheiro', () => {
     for (const event of ['order.invoice.created', 'order.invoice.updated']) {
-      expect(yampi.normalizar({ ...PEDIDO, event }), event).toBeNull();
+      expect(ler({ ...PEDIDO, event }), event).toBeNull();
     }
   });
 
   it('order.status.updated decide pelo alias', () => {
-    const c = yampi.normalizar({
+    const c = ler({
       ...PEDIDO,
       event: 'order.status.updated',
       resource: { ...PEDIDO.resource, status: { data: { alias: 'refunded' } } },
@@ -126,21 +130,99 @@ describe('os eventos da lista', () => {
     expect(c?.status).toBe('estornada');
   });
 
-  /*
-   * A lista completa de aliases da Yampi ainda NÃO foi confirmada. Alias
-   * desconhecido não vira venda: é avisado e a linha não nasce. O payload
-   * fica inteiro em webhooks_recebidos, então nada se perde.
-   */
-  it('alias desconhecido avisa e NÃO inventa uma venda', () => {
-    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const c = yampi.normalizar({
+  it('alias desconhecido NÃO inventa uma venda', () => {
+    expect(
+      ler({
+        ...PEDIDO,
+        event: 'order.status.updated',
+        resource: { ...PEDIDO.resource, status: { data: { alias: 'em_separacao' } } },
+      }),
+    ).toBeNull();
+  });
+});
+
+/*
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ Os aliases de status da Yampi são CONFIGURÁVEIS POR LOJA. O suporte     │
+ * │ confirmou (22/09/2026) que não existe lista fixa: a da sua loja vem de  │
+ * │ `GET /{alias}/checkout/statuses`.                                       │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Um mapa fixo no código está errado por desenho. O estrago é específico e
+ * silencioso: uma loja que renomeou o estorno para `devolvido` teria o
+ * `refund` NUNCA chegando ao GA4, e o faturamento ficaria inflado por uma
+ * venda que voltou para o cliente.
+ */
+describe('o alias vem do cadastro, não do código', () => {
+  function mudancaDeStatus(alias: string) {
+    return {
       ...PEDIDO,
       event: 'order.status.updated',
-      resource: { ...PEDIDO.resource, status: { data: { alias: 'em_separacao' } } },
+      resource: { ...PEDIDO.resource, status: { data: { alias } } },
+    };
+  }
+
+  it('lê um alias que só existe naquela loja', () => {
+    const c = yampi.normalizar(mudancaDeStatus('devolvido'), {
+      statusPorAlias: { devolvido: 'estornada' },
     });
-    expect(c).toBeNull();
-    expect(aviso).toHaveBeenCalled();
-    aviso.mockRestore();
+    expect(soVenda(c)?.status).toBe('estornada');
+  });
+
+  it('o cadastro VENCE o padrão de fábrica', () => {
+    // Quem cadastrou olhou a própria loja; o padrão daqui é chute informado.
+    // Uma loja pode ter um `canceled` que significa outra coisa.
+    const c = yampi.normalizar(mudancaDeStatus('canceled'), {
+      statusPorAlias: { canceled: 'estornada' },
+    });
+    expect(soVenda(c)?.status).toBe('estornada');
+  });
+
+  it('sem cadastro, o padrão de fábrica ainda vale', () => {
+    expect(soVenda(yampi.normalizar(mudancaDeStatus('refunded')))?.status).toBe(
+      'estornada',
+    );
+  });
+
+  it('é indiferente a maiúscula no alias', () => {
+    const c = yampi.normalizar(mudancaDeStatus('Devolvido'), {
+      statusPorAlias: { devolvido: 'estornada' },
+    });
+    expect(soVenda(c)?.status).toBe('estornada');
+  });
+
+  /*
+   * A distinção que evita a perda silenciosa. `null` diria "ignorei de
+   * propósito" — e a venda se esconderia atrás do mesmo badge verde da nota
+   * fiscal. `Indeciso` leva o alias no motivo, que é o que precisa ser
+   * cadastrado, e aparece no painel.
+   */
+  it('alias fora do cadastro volta INDECISO, com o alias no motivo', () => {
+    const lido = yampi.normalizar(mudancaDeStatus('aguardando_retirada'), {
+      statusPorAlias: { devolvido: 'estornada' },
+    });
+
+    expect(ehIndeciso(lido)).toBe(true);
+    if (!ehIndeciso(lido)) return;
+    expect(lido.motivo).toContain('aguardando_retirada');
+    expect(lido.motivo).toContain('Status do checkout');
+  });
+
+  it('indeciso NÃO é a mesma coisa que ignorado', () => {
+    // Nota fiscal é ignorada de propósito: volta null, e está certo.
+    expect(yampi.normalizar({ ...PEDIDO, event: 'order.invoice.created' })).toBeNull();
+    // Alias desconhecido não: volta indeciso.
+    expect(ehIndeciso(yampi.normalizar(mudancaDeStatus('nunca_visto')))).toBe(true);
+  });
+
+  it('o EVENTO documentado ganha do cadastro — ele é da Yampi, não da loja', () => {
+    // `order.paid` não depende de alias nenhum: se dependesse, uma loja com
+    // status renomeado perderia a venda paga, que é o que mais importa.
+    const c = yampi.normalizar(
+      { ...PEDIDO, event: 'order.paid' },
+      { statusPorAlias: { waiting_payment: 'recusada' } },
+    );
+    expect(soVenda(c)?.status).toBe('aprovada');
   });
 });
 
@@ -148,7 +230,7 @@ describe('o vínculo com a visita', () => {
   const ID = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
 
   it('acha no saco metadata', () => {
-    const c = yampi.normalizar({
+    const c = ler({
       ...PEDIDO,
       resource: { ...PEDIDO.resource, metadata: { data: [{ key: 'trck_user_id', value: ID }] } },
     });
@@ -156,7 +238,7 @@ describe('o vínculo com a visita', () => {
   });
 
   it('NÃO confunde cart_id do exemplo com identificador de visita', () => {
-    expect(yampi.normalizar(PEDIDO)?.trckUserId).toBeNull();
+    expect(ler(PEDIDO)?.trckUserId).toBeNull();
   });
 
   /*
@@ -167,7 +249,7 @@ describe('o vínculo com a visita', () => {
    * nenhum, e a linha ficaria com cara de atribuída sendo órfã.
    */
   it('IGNORA o cart_token, mesmo quando ele parece um identificador', () => {
-    const c = yampi.normalizar({
+    const c = ler({
       ...PEDIDO,
       resource: { ...PEDIDO.resource, cart_token: ID, metadata: { data: [] } },
     });
@@ -178,7 +260,7 @@ describe('o vínculo com a visita', () => {
     // A Yampi devolve o saco inteiro: `cart_id` e o que mais o checkout
     // tiver posto lá. Ler o primeiro valor que pareça um hash ligaria a
     // venda a um fantasma.
-    const c = yampi.normalizar({
+    const c = ler({
       ...PEDIDO,
       resource: {
         ...PEDIDO.resource,
@@ -191,7 +273,7 @@ describe('o vínculo com a visita', () => {
   it('aceita o id embrulhado em texto', () => {
     // O checkout pode devolver o valor com prefixo. O acerto é por regex de
     // 32 hexadecimais, não por igualdade.
-    const c = yampi.normalizar({
+    const c = ler({
       ...PEDIDO,
       resource: {
         ...PEDIDO.resource,

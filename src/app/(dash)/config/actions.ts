@@ -285,6 +285,7 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
     cookie_domain: formData.get('cookie_domain'),
     allowed_origins: formData.get('allowed_origins'),
     checkout_domains: formData.get('checkout_domains'),
+    status_aliases: formData.get('status_aliases'),
   });
 
   if (!analise.success) {
@@ -300,6 +301,7 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
         cookie_domain: analise.data.cookie_domain || null,
         allowed_origins: analise.data.allowed_origins,
         checkout_domains: analise.data.checkout_domains,
+        status_aliases: analise.data.status_aliases,
       })
       .eq('id', true);
     if (error) throw new Error(error.message);

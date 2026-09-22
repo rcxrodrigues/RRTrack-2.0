@@ -25,6 +25,25 @@ export type StatusCompra =
 /** Status que tiram dinheiro do caixa depois de já terem entrado. */
 export const STATUS_QUE_DESFAZEM: readonly StatusCompra[] = ['estornada', 'chargeback'];
 
+/** Os cinco, para validar o que vem do cadastro do painel. */
+export const STATUS_COMPRA: readonly StatusCompra[] = [
+  'aprovada',
+  'pendente',
+  'recusada',
+  'estornada',
+  'chargeback',
+];
+
+/**
+ * Confere se o texto é um dos cinco.
+ *
+ * Aceitar texto livre aqui deixaria um status inventado atravessar até a
+ * Meta e virar conversão errada — e o cadastro do painel é digitado à mão.
+ */
+export function ehStatusCompra(valor: string): valor is StatusCompra {
+  return (STATUS_COMPRA as readonly string[]).includes(valor);
+}
+
 export type ProdutoComprado = {
   id: string | null;
   nome: string | null;
@@ -78,6 +97,62 @@ export type CompraNormalizada = {
   ocorridoEm: string | null;
 };
 
+/**
+ * O adaptador reconheceu o payload e **não soube o que fazer com ele**.
+ *
+ * Diferente de `null`, que é "reconheci e ignorei de propósito" — nota
+ * fiscal, cliente criado, evento que não mexe em dinheiro. Aqueles são a
+ * maioria e são normais.
+ *
+ * Isto é o outro caso: o formato era nosso, o evento parecia importar, e
+ * faltou informação para decidir. Até existir esta distinção os dois ficavam
+ * IGUAIS no painel — badge verde com o nome do adaptador —, e uma venda
+ * possivelmente perdida se escondia atrás da aparência de tratada.
+ */
+export type Indeciso = { indeciso: true; motivo: string };
+
+export function indeciso(motivo: string): Indeciso {
+  return { indeciso: true, motivo };
+}
+
+/**
+ * A venda, ou `null` — o `Indeciso` vira `null`.
+ *
+ * Para quem só quer saber se virou venda e não precisa do motivo. Quem
+ * precisa é `lerWebhook`, que traduz o motivo para o painel.
+ */
+export function soVenda(
+  lido: CompraNormalizada | Indeciso | null,
+): CompraNormalizada | null {
+  return lido === null || ehIndeciso(lido) ? null : lido;
+}
+
+export function ehIndeciso(valor: unknown): valor is Indeciso {
+  return (
+    typeof valor === 'object' &&
+    valor !== null &&
+    'indeciso' in valor &&
+    valor.indeciso === true
+  );
+}
+
+/**
+ * O que o adaptador precisa do painel para decidir.
+ *
+ * Existe por causa da Yampi: os aliases de status dela **são configuráveis
+ * por loja** (confirmado pelo suporte em 22/09/2026; a lista real vem de
+ * `GET /{alias}/checkout/statuses`). Um mapa fixo no código estaria errado
+ * por desenho — a loja pode renomear o estorno para `devolvido`, e o refund
+ * nunca chegaria ao GA4.
+ *
+ * É a mesma regra que já vale para a Appmax, por outro caminho: decidir por
+ * um campo cuja enumeração ninguém conhece é escolher ser surpreendido.
+ */
+export type ContextoDoAdaptador = {
+  /** `alias` do checkout -> o que ele significa para o faturamento. */
+  statusPorAlias: Readonly<Record<string, StatusCompra>>;
+};
+
 export type Adaptador = {
   nome: string;
 
@@ -95,7 +170,10 @@ export type Adaptador = {
    * cliente criado, produto de assinatura alterado, e assim por diante.
    * Ignorar não é erro: é a maioria dos eventos.
    */
-  normalizar(corpo: unknown): CompraNormalizada | null;
+  normalizar(
+    corpo: unknown,
+    contexto?: ContextoDoAdaptador,
+  ): CompraNormalizada | Indeciso | null;
 
   /**
    * Confere a assinatura do gateway — quando ele assina.

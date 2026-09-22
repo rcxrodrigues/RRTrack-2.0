@@ -1,9 +1,12 @@
 import { ehObjeto, numero, texto } from '@/lib/json';
-import type {
-  Adaptador,
-  CompraNormalizada,
-  ProdutoComprado,
-  StatusCompra,
+import {
+  indeciso,
+  type Adaptador,
+  type CompraNormalizada,
+  type ContextoDoAdaptador,
+  type Indeciso,
+  type ProdutoComprado,
+  type StatusCompra,
 } from '@/lib/webhooks/tipos';
 
 /**
@@ -27,17 +30,25 @@ import type {
  */
 
 /**
- * Os `status.data.alias` que sabemos mapear.
+ * Os aliases que a Yampi traz DE FÁBRICA — e é só isso que eles são.
  *
- * ATENÇÃO: a lista completa de aliases da Yampi NÃO foi confirmada — só
- * `waiting_payment` apareceu no payload recebido. Os demais vêm do evento
- * `order.paid`, que É documentado.
+ * ┌───────────────────────────────────────────────────────────────────────┐
+ * │ Os aliases de status da Yampi são CONFIGURÁVEIS POR LOJA. Não existe │
+ * │ lista fixa: o suporte confirmou (22/09/2026) que a única forma de     │
+ * │ saber os da sua loja é chamar `GET /{alias}/checkout/statuses`.       │
+ * └───────────────────────────────────────────────────────────────────────┘
  *
- * Alias desconhecido NÃO vira venda: é avisado no log e a linha não nasce.
- * O payload fica inteiro em `webhooks_recebidos`, então nada se perde e dá
- * para reprocessar quando a lista chegar.
+ * Então este mapa é um ponto de partida, nunca a verdade. Quem manda é
+ * `settings.status_aliases`, cadastrado no painel, que passa por cima daqui
+ * — uma loja pode ter renomeado o estorno para `devolvido`, e nesse caso o
+ * `refund` NUNCA chegaria ao GA4: a receita ficaria inflada por uma venda
+ * que voltou para o cliente.
+ *
+ * Alias que não está em lugar nenhum não vira venda **nem desaparece**:
+ * volta como `Indeciso`, com o alias no motivo, e aparece no painel para
+ * ser cadastrado e reprocessado.
  */
-const STATUS: Record<string, StatusCompra> = {
+const PADRAO_DE_FABRICA: Record<string, StatusCompra> = {
   waiting_payment: 'pendente',
   paid: 'aprovada',
   approved: 'aprovada',
@@ -45,6 +56,22 @@ const STATUS: Record<string, StatusCompra> = {
   canceled: 'recusada',
   cancelled: 'recusada',
 };
+
+/**
+ * O cadastro do painel vence o padrão de fábrica.
+ *
+ * Nessa ordem de propósito: quem cadastrou olhou a própria loja, e o padrão
+ * daqui é só chute informado. Se a loja renomeou um status, o cadastro é a
+ * única fonte que sabe disso.
+ */
+function statusDoAlias(
+  alias: string | undefined,
+  contexto: ContextoDoAdaptador | undefined,
+): StatusCompra | undefined {
+  if (!alias) return undefined;
+  const chave = alias.toLowerCase();
+  return contexto?.statusPorAlias[chave] ?? PADRAO_DE_FABRICA[chave];
+}
 
 /** A Yampi devolve relação como `{ data: … }`. */
 function dados(valor: unknown, chave: string): unknown {
@@ -121,7 +148,10 @@ export const yampi: Adaptador = {
     return ehObjeto(status) && 'data' in status;
   },
 
-  normalizar(corpo: unknown): CompraNormalizada | null {
+  normalizar(
+    corpo: unknown,
+    contexto?: ContextoDoAdaptador,
+  ): CompraNormalizada | Indeciso | null {
     if (!ehObjeto(corpo)) return null;
 
     const evento = texto(corpo, 'event');
@@ -132,21 +162,32 @@ export const yampi: Adaptador = {
     // Nota fiscal não mexe em dinheiro.
     if (evento.startsWith('order.invoice.')) return null;
 
-    // Dois eventos não deixam dúvida e vêm da lista documentada.
-    // O resto decide pelo alias do status.
+    /*
+     * O EVENTO decide quando ele mesmo já responde — e esses dois vêm da
+     * lista documentada da Yampi, que é dela e não da loja. Só o que sobra
+     * cai no alias, que é onde a configuração por loja morde.
+     */
     const alias = texto(dados(recurso, 'status'), 'alias');
     const status: StatusCompra | undefined =
       evento === 'order.paid'
         ? 'aprovada'
         : evento === 'transaction.payment.refused'
           ? 'recusada'
-          : alias
-            ? STATUS[alias]
-            : undefined;
+          : statusDoAlias(alias, contexto);
 
     if (!status) {
-      console.warn('[yampi] status não mapeado:', alias ?? '(ausente)', 'evento:', evento);
-      return null;
+      /*
+       * Nem `null` nem chute. `null` diria "ignorei de propósito" e a venda
+       * se esconderia atrás de um badge verde; chutar um status mandaria
+       * conversão errada para a Meta. O motivo leva o alias porque é ele
+       * que precisa ser cadastrado.
+       */
+      return indeciso(
+        alias
+          ? `alias de status "${alias}" não está mapeado (evento ${evento}). ` +
+              'Cadastre em Configuração → Geral → Status do checkout.'
+          : `evento ${evento} veio sem alias de status`,
+      );
     }
 
     // `id` é o do pedido; `number` é o número mostrado ao cliente. O `id` é

@@ -30,6 +30,7 @@ function configCom(checkout: string[]): Configuracao {
       cookieDomain: '.minhaloja.com',
       origensPermitidas: ['https://minhaloja.com'],
       dominiosCheckout: checkout.map(comoDominio),
+      statusPorAlias: {},
     },
     ga4: [],
     pixels: [],

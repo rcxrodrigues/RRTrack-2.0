@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { zedy } from './zedy';
+import { soVenda } from './tipos';
 import { lerWebhook } from './index';
+
+/** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
+const ler = (corpo: unknown) => soVenda(zedy.normalizar(corpo));
 
 /** O exemplo da documentação da Zedy, copiado sem alteração. */
 const ABANDONADO = {
@@ -76,8 +80,8 @@ describe('a armadilha do valor', () => {
    * Zedy ajuda: a unidade está no nome do campo (`priceInCents`).
    */
   it('converte centavos para reais', () => {
-    expect(zedy.normalizar(PAGO)?.valor).toBe(97);
-    expect(zedy.normalizar(PAGO)?.produtos[0]?.preco).toBe(97);
+    expect(ler(PAGO)?.valor).toBe(97);
+    expect(ler(PAGO)?.produtos[0]?.preco).toBe(97);
   });
 
   /*
@@ -87,13 +91,13 @@ describe('a armadilha do valor', () => {
    * que é e a campanha ser cortada à toa.
    */
   it('usa o BRUTO, não o líquido depois da taxa', () => {
-    expect(zedy.normalizar(PAGO)?.valor).toBe(97);
-    expect(zedy.normalizar(PAGO)?.valor).not.toBe(94);
+    expect(ler(PAGO)?.valor).toBe(97);
+    expect(ler(PAGO)?.valor).not.toBe(94);
   });
 });
 
 describe('normalizar', () => {
-  const c = zedy.normalizar(PAGO);
+  const c = ler(PAGO);
 
   it('identifica pelo orderId, que a doc manda usar para deduplicar', () => {
     expect(c?.transactionId).toBe('zedy:Z-13CEM05RWG261');
@@ -125,18 +129,18 @@ describe('os quatro status', () => {
     ['refused', 'recusada'],
     ['refunded', 'estornada'],
   ])('%s → %s', (status, esperado) => {
-    expect(zedy.normalizar({ ...PAGO, status })?.status).toBe(esperado);
+    expect(ler({ ...PAGO, status })?.status).toBe(esperado);
   });
 
   it('o status manda, não o eventType', () => {
     // Evento diz que foi pago; o status diz que foi estornado. Vale o status.
-    const c = zedy.normalizar({ ...PAGO, eventType: 'ORDER_PAID', status: 'refunded' });
+    const c = ler({ ...PAGO, eventType: 'ORDER_PAID', status: 'refunded' });
     expect(c?.status).toBe('estornada');
   });
 
   it('status desconhecido avisa e não inventa venda', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(zedy.normalizar({ ...PAGO, status: 'coisa_nova' })).toBeNull();
+    expect(ler({ ...PAGO, status: 'coisa_nova' })).toBeNull();
     expect(aviso).toHaveBeenCalled();
     aviso.mockRestore();
   });
@@ -150,12 +154,12 @@ describe('pedido de TESTE', () => {
    */
   it('isTest não vira conversão', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(zedy.normalizar({ ...PAGO, isTest: true })).toBeNull();
+    expect(ler({ ...PAGO, isTest: true })).toBeNull();
     aviso.mockRestore();
   });
 
   it('isTest false segue normal', () => {
-    expect(zedy.normalizar({ ...PAGO, isTest: false })?.status).toBe('aprovada');
+    expect(ler({ ...PAGO, isTest: false })?.status).toBe('aprovada');
   });
 });
 
@@ -163,7 +167,7 @@ describe('o vínculo com a visita', () => {
   const ID = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
 
   it.each(['src', 'sck'])('acha em trackingParameters.%s', (campo) => {
-    const c = zedy.normalizar({
+    const c = ler({
       ...PAGO,
       trackingParameters: { ...PAGO.trackingParameters, [campo]: ID },
     });
@@ -172,7 +176,7 @@ describe('o vínculo com a visita', () => {
 
   /* O exemplo traz utm_source: "instagram" — origem, não identificador. */
   it('NÃO confunde UTM com identificador de visita', () => {
-    expect(zedy.normalizar(PAGO)?.trckUserId).toBeNull();
+    expect(ler(PAGO)?.trckUserId).toBeNull();
   });
 });
 

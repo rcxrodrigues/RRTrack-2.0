@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { usuarioAtual } from '@/lib/supabase/server';
 import { lerWebhook } from '@/lib/webhooks';
@@ -59,7 +60,10 @@ export async function reprocessarWebhook(id: string): Promise<ResultadoReprocess
     return { ok: false, mensagem: 'O corpo não era JSON válido; não há o que reprocessar.' };
   }
 
-  const leitura = lerWebhook(data.corpo);
+  const { settings } = await carregarConfiguracao();
+  const leitura = lerWebhook(data.corpo, {
+    statusPorAlias: settings.statusPorAlias,
+  });
 
   if (leitura.tipo === 'desconhecido') {
     return {
@@ -68,11 +72,20 @@ export async function reprocessarWebhook(id: string): Promise<ResultadoReprocess
     };
   }
 
+  if (leitura.tipo === 'indeciso') {
+    // O motivo já diz o que cadastrar. Regravado porque o cadastro pode
+    // ter mudado desde a última tentativa — e um motivo velho na tela
+    // mandaria a pessoa procurar o que já foi resolvido.
+    await marcar(id, leitura.adaptador, null, leitura.motivo);
+    revalidatePath('/eventos');
+    return { ok: false, mensagem: leitura.motivo };
+  }
+
   if (leitura.tipo === 'ignorado') {
     // Reconhecido agora, mas o evento não é venda. Vale gravar quem
     // reconheceu: o badge deixa de dizer "não reconhecido", que é a
     // pergunta que essa tela responde.
-    await marcar(id, leitura.adaptador, null);
+    await marcar(id, leitura.adaptador, null, null);
     revalidatePath('/eventos');
     return {
       ok: true,
@@ -96,7 +109,7 @@ export async function reprocessarWebhook(id: string): Promise<ResultadoReprocess
   // pessoa olhando a tela, não um gateway com cinco segundos de paciência.
   // Ela clicou para saber se funcionou — a resposta tem de ser o resultado.
   await concluirCompra(compra);
-  await marcar(id, leitura.adaptador, compra.transactionId);
+  await marcar(id, leitura.adaptador, compra.transactionId, null);
 
   revalidatePath('/eventos');
   revalidatePath('/faturamento');
@@ -112,10 +125,11 @@ async function marcar(
   id: string,
   adaptador: string,
   transactionId: string | null,
+  motivo: string | null,
 ): Promise<void> {
   const { error } = await criarClienteAdmin()
     .from('webhooks_recebidos')
-    .update({ adaptador, transaction_id: transactionId })
+    .update({ adaptador, transaction_id: transactionId, motivo })
     .eq('id', id);
 
   if (error) {

@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { pagou } from './pagou';
+import { soVenda } from './tipos';
 import { appmax } from './appmax';
 import { lerWebhook } from './index';
+
+/** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
+const ler = (corpo: unknown) => soVenda(pagou.normalizar(corpo));
 
 /** O exemplo de webhook publicado no guia da Pagou, sem alteração. */
 const PAGO = {
@@ -40,7 +44,7 @@ describe('reconhece', () => {
 
 describe('normalizar', () => {
   it('lê o webhook mínimo publicado', () => {
-    const c = pagou.normalizar(PAGO);
+    const c = ler(PAGO);
     expect(c?.transactionId).toBe('pagou:018f1f2e-7b42-7c9a-8d3e-1a2b3c4d5e6f');
     expect(c?.status).toBe('aprovada');
     expect(c?.evento).toBe('transaction.paid');
@@ -49,7 +53,7 @@ describe('normalizar', () => {
   });
 
   it('aproveita o payload completo quando vier', () => {
-    const c = pagou.normalizar({
+    const c = ler({
       ...PAGO,
       data: {
         ...PAGO.data,
@@ -70,7 +74,7 @@ describe('normalizar', () => {
 
   // Nome composto: a Meta quer fn e ln separados, a Pagou manda junto.
   it('separa nome de sobrenome, inclusive composto', () => {
-    const c = pagou.normalizar({
+    const c = ler({
       ...PAGO,
       data: { ...PAGO.data, buyer: { name: 'Maria da Silva Santos' } },
     });
@@ -79,7 +83,7 @@ describe('normalizar', () => {
   });
 
   it('num partially_paid vale o que ENTROU, não o que foi cobrado', () => {
-    const c = pagou.normalizar({
+    const c = ler({
       ...PAGO,
       data: { ...PAGO.data, status: 'partially_paid', amount: 25990, paid_amount: 10000 },
     });
@@ -101,12 +105,12 @@ describe('os 17 status', () => {
     // MED é devolução forçada pelo banco no Pix: contestação, não estorno.
     ['med', 'chargeback'],
   ])('%s → %s', (status, esperado) => {
-    expect(pagou.normalizar({ ...PAGO, data: { ...PAGO.data, status } })?.status).toBe(esperado);
+    expect(ler({ ...PAGO, data: { ...PAGO.data, status } })?.status).toBe(esperado);
   });
 
   it('status desconhecido é avisado, não engolido', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(pagou.normalizar({ ...PAGO, data: { ...PAGO.data, status: 'coisa_nova' } })).toBeNull();
+    expect(ler({ ...PAGO, data: { ...PAGO.data, status: 'coisa_nova' } })).toBeNull();
     expect(aviso).toHaveBeenCalled();
     aviso.mockRestore();
   });
@@ -114,7 +118,7 @@ describe('os 17 status', () => {
 
 describe('o vínculo com a visita', () => {
   it('acha em informations, que é a forma documentada', () => {
-    const c = pagou.normalizar({
+    const c = ler({
       ...PAGO,
       data: { ...PAGO.data, informations: [{ key: 'trck_user_id', value: ID }] },
     });
@@ -122,20 +126,20 @@ describe('o vínculo com a visita', () => {
   });
 
   it('acha em correlation_id quando o checkout usa external_ref', () => {
-    const c = pagou.normalizar({ ...PAGO, data: { ...PAGO.data, correlation_id: `ped-${ID}` } });
+    const c = ler({ ...PAGO, data: { ...PAGO.data, correlation_id: `ped-${ID}` } });
     expect(c?.trckUserId).toBe(ID);
   });
 
   /* `order_1001` do exemplo é referência do lojista, não da visita. */
   it('NÃO confunde referência do pedido com identificador de visita', () => {
-    expect(pagou.normalizar(PAGO)?.trckUserId).toBeNull();
+    expect(ler(PAGO)?.trckUserId).toBeNull();
   });
 });
 
 describe('o que não é venda', () => {
   it('ignora assinatura', () => {
     expect(
-      pagou.normalizar({ id: 'evt_sub_1', event: 'subscription', data: { event_type: 'subscription.created', id: 'x', status: 'active' } }),
+      ler({ id: 'evt_sub_1', event: 'subscription', data: { event_type: 'subscription.created', id: 'x', status: 'active' } }),
     ).toBeNull();
   });
 });

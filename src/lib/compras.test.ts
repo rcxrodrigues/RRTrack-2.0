@@ -87,6 +87,7 @@ const CONFIG = {
     cookieDomain: null,
     origensPermitidas: [],
     dominiosCheckout: [],
+    statusPorAlias: {},
   },
   ga4: [{ id: 'ga-1', measurementId: 'G-ABC' }],
   pixels: [{ id: 'px-1', pixelId: '111111111111111' }],

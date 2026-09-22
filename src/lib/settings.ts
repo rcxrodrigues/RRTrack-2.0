@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { criarClienteAdmin } from '@/lib/supabase/admin';
+import { ehStatusCompra, type StatusCompra } from '@/lib/webhooks/tipos';
 
 /**
  * As configurações do painel, com cache curto em memória.
@@ -20,6 +21,15 @@ export type Settings = {
   origensPermitidas: string[];
   /** Domínios do checkout — o snippet marca os links que apontam para eles. */
   dominiosCheckout: DominioCheckout[];
+  /**
+   * `alias` de status do checkout -> o que significa para o faturamento.
+   *
+   * Existe porque os aliases da Yampi **são configuráveis por loja**
+   * (confirmado pelo suporte em 22/09/2026; a lista real vem de
+   * `GET /{alias}/checkout/statuses`). Um mapa fixo no código estaria
+   * errado por desenho.
+   */
+  statusPorAlias: Record<string, StatusCompra>;
 };
 
 /**
@@ -72,6 +82,7 @@ const PADRAO: Configuracao = {
     cookieDomain: null,
     origensPermitidas: [],
     dominiosCheckout: [],
+    statusPorAlias: {},
   },
   ga4: [],
   pixels: [],
@@ -106,13 +117,39 @@ function dominiosCheckoutDe(valor: unknown): DominioCheckout[] {
   });
 }
 
+/**
+ * Lê as linhas `alias = status` do cadastro.
+ *
+ * Status fora dos cinco que o faturamento conhece são **descartados**, não
+ * aceitos como texto livre: um `status` inventado atravessaria até a Meta e
+ * viraria conversão errada. O que não bate simplesmente não entra no mapa, e
+ * o alias volta a cair como indeciso — visível no painel.
+ */
+function statusPorAliasDe(valor: unknown): Record<string, StatusCompra> {
+  const mapa: Record<string, StatusCompra> = {};
+
+  for (const entrada of listaDeTexto(valor)) {
+    const [alias = '', status = ''] = entrada.split('=');
+    const chave = alias.trim().toLowerCase();
+    const destino = status.trim().toLowerCase();
+    if (chave.length === 0) continue;
+    if (!ehStatusCompra(destino)) {
+      console.warn('[settings] status desconhecido no cadastro:', destino);
+      continue;
+    }
+    mapa[chave] = destino;
+  }
+
+  return mapa;
+}
+
 async function buscar(): Promise<Configuracao> {
   const supabase = criarClienteAdmin();
 
   const [settings, ga4, pixels] = await Promise.all([
     supabase
       .from('settings')
-      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains')
+      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains, status_aliases')
       .eq('id', true)
       .maybeSingle(),
     // Só os destinos ATIVOS: desativar uma conta no painel precisa parar o
@@ -133,6 +170,7 @@ async function buscar(): Promise<Configuracao> {
       cookieDomain: texto(linha?.cookie_domain),
       origensPermitidas: listaDeTexto(linha?.allowed_origins),
       dominiosCheckout: dominiosCheckoutDe(linha?.checkout_domains),
+      statusPorAlias: statusPorAliasDe(linha?.status_aliases),
     },
     ga4: (ga4.data ?? []).flatMap((l) => {
       const id = texto(l.id);

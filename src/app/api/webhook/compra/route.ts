@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { after, NextResponse, type NextRequest } from 'next/server';
 
 import { extrairGeo } from '@/lib/geo';
+import { carregarConfiguracao } from '@/lib/settings';
 import { bucketPorIp, dentroDoLimite, LIMITE_WEBHOOK } from '@/lib/ratelimit';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { lerWebhook } from '@/lib/webhooks';
@@ -108,7 +109,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return responder(202, { recebido: true, tratado: false });
   }
 
-  const leitura = lerWebhook(corpo);
+  /*
+   * O contexto do painel entra AQUI, antes de interpretar.
+   *
+   * Os aliases de status da Yampi são configuráveis por loja, então o mapa
+   * não pode morar no código. A leitura é cacheada (60s), e o custo perto
+   * dos 5 segundos que a Appmax dá é desprezível.
+   */
+  const { settings } = await carregarConfiguracao();
+  const leitura = lerWebhook(corpo, { statusPorAlias: settings.statusPorAlias });
 
   /*
    * Grava ANTES de interpretar, sempre.
@@ -121,8 +130,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
    */
   const adaptador = leitura.tipo === 'desconhecido' ? null : leitura.adaptador;
   const transactionId = leitura.tipo === 'venda' ? leitura.compra.transactionId : null;
+  const motivo = leitura.tipo === 'indeciso' ? leitura.motivo : null;
   after(async () => {
-    await registrarRecebido(corpo, corpoCru, request.headers, geo.ip, adaptador, transactionId);
+    await registrarRecebido({
+      corpo,
+      corpoCru,
+      headers: request.headers,
+      ip: geo.ip,
+      adaptador,
+      transactionId,
+      motivo,
+    });
   });
 
   if (leitura.tipo === 'desconhecido') {
@@ -133,6 +151,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (leitura.tipo === 'ignorado') {
+    return responder(200, { recebido: true, tratado: false });
+  }
+
+  if (leitura.tipo === 'indeciso') {
+    /*
+     * Reconhecido, e não soubemos o que fazer. 200 e não 500: o retry do
+     * gateway falharia as quatro vezes igual, porque o que falta é
+     * cadastro nosso, não sorte na rede. O motivo já foi gravado e aparece
+     * no painel — é lá que isto se resolve, e depois se reprocessa.
+     */
+    console.warn('[webhook]', leitura.adaptador, 'indeciso:', leitura.motivo);
     return responder(200, { recebido: true, tratado: false });
   }
 
@@ -165,17 +194,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
  * registro é auditoria, não caminho crítico. Falhar aqui nunca derruba o
  * processamento da venda.
  */
-async function registrarRecebido(
-  corpo: unknown,
-  corpoCru: string,
-  headers: Headers,
-  ip: string | null,
-  adaptador: string | null,
-  transactionId: string | null,
-): Promise<void> {
+async function registrarRecebido({
+  corpo,
+  corpoCru,
+  headers,
+  ip,
+  adaptador,
+  transactionId,
+  motivo,
+}: {
+  corpo: unknown;
+  corpoCru: string;
+  headers: Headers;
+  ip: string | null;
+  adaptador: string | null;
+  transactionId: string | null;
+  motivo: string | null;
+}): Promise<void> {
   try {
     await criarClienteAdmin().from('webhooks_recebidos').insert({
       adaptador,
+      // Por que não virou venda. Distingue "ignorei de propósito" de
+      // "não soube ler" — o segundo é venda possivelmente perdida.
+      motivo,
       corpo: corpo ?? null,
       // Guardado só quando NÃO é JSON: payload quebrado também é informação.
       corpo_texto: corpo === null ? corpoCru.slice(0, 20_000) : null,

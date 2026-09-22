@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { adoorei } from './adoorei';
+import { soVenda } from './tipos';
 import { lerWebhook } from './index';
+
+/** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
+const ler = (corpo: unknown) => soVenda(adoorei.normalizar(corpo));
 
 /** O exemplo da documentação da Adoorei, copiado sem alteração. */
 const PEDIDO = {
@@ -56,16 +60,16 @@ describe('a armadilha do valor', () => {
    * semanas depois, num ROAS absurdo que ninguém sabe explicar.
    */
   it('valor em REAIS, sem conversão', () => {
-    expect(adoorei.normalizar(PEDIDO)?.valor).toBe(110);
+    expect(ler(PEDIDO)?.valor).toBe(110);
   });
 
   it('preço do item também em reais', () => {
-    expect(adoorei.normalizar(PEDIDO)?.produtos[0]?.preco).toBe(100);
+    expect(ler(PEDIDO)?.produtos[0]?.preco).toBe(100);
   });
 });
 
 describe('normalizar', () => {
-  const c = adoorei.normalizar(PEDIDO);
+  const c = ler(PEDIDO);
 
   it('identifica pelo número do pedido', () => {
     expect(c?.transactionId).toBe('adoorei:2');
@@ -104,13 +108,13 @@ describe('os cinco eventos de um pedido viram UMA venda', () => {
       'order.updated',
       'order.status.updated',
       'order.status.approved',
-    ].map((event) => adoorei.normalizar({ ...PEDIDO, event })?.transactionId);
+    ].map((event) => ler({ ...PEDIDO, event })?.transactionId);
     expect(new Set(ids).size).toBe(1);
   });
 
   // Quem decide é o `status`, não o evento: a Adoorei publica os oito.
   it('o significado vem do status, não do nome do evento', () => {
-    const c = adoorei.normalizar({
+    const c = ler({
       ...PEDIDO,
       event: 'order.status.approved',
       resource: { ...PEDIDO.resource, status: 'refunded' },
@@ -131,14 +135,14 @@ describe('os oito status', () => {
     ['refunded', 'estornada'],
     ['chargeback', 'chargeback'],
   ])('%s → %s', (status, esperado) => {
-    const c = adoorei.normalizar({ ...PEDIDO, resource: { ...PEDIDO.resource, status } });
+    const c = ler({ ...PEDIDO, resource: { ...PEDIDO.resource, status } });
     expect(c?.status).toBe(esperado);
   });
 
   it('status desconhecido é avisado, não engolido', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(
-      adoorei.normalizar({ ...PEDIDO, resource: { ...PEDIDO.resource, status: 'novo' } }),
+      ler({ ...PEDIDO, resource: { ...PEDIDO.resource, status: 'novo' } }),
     ).toBeNull();
     expect(aviso).toHaveBeenCalled();
     aviso.mockRestore();
@@ -148,7 +152,7 @@ describe('os oito status', () => {
 describe('o que não é venda', () => {
   it('carrinho abandonado não vira compra', () => {
     expect(adoorei.reconhece(CARRINHO)).toBe(true);
-    expect(adoorei.normalizar(CARRINHO)).toBeNull();
+    expect(ler(CARRINHO)).toBeNull();
   });
 });
 

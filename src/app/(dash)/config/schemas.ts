@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ehStatusCompra, STATUS_COMPRA } from '@/lib/webhooks/tipos';
+
 import { CODIGOS_MOEDA } from '@/lib/moedas';
 
 /**
@@ -130,6 +132,43 @@ export const settingsSchema = z.object({
             error:
               'Use seguro.minhaloja.com, ou seguro.minhaloja.com|nome_do_parametro',
           }),
+      ),
+    ),
+  /*
+   * Mapa `alias = status`, um por linha.
+   *
+   * Existe porque os aliases de status da Yampi são CONFIGURÁVEIS POR LOJA:
+   * não há lista fixa, e a da loja vem de `GET /{alias}/checkout/statuses`.
+   * Um mapa fixo no código estaria errado por desenho — uma loja que
+   * renomeou o estorno para `devolvido` teria o refund nunca chegando ao
+   * GA4, e o faturamento inflado por uma venda que voltou.
+   *
+   * O `status` é validado contra os cinco aqui E na leitura: um inventado
+   * atravessaria até a Meta e viraria conversão de um tipo que não existe.
+   */
+  status_aliases: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split('\n')
+        .map((linha) => linha.trim())
+        .filter((linha) => linha.length > 0),
+    )
+    .pipe(
+      z.array(
+        z.string().refine(
+          (linha) => {
+            const [alias = '', status = ''] = linha.split('=');
+            return (
+              alias.trim().length > 0 && ehStatusCompra(status.trim().toLowerCase())
+            );
+          },
+          {
+            error: `Use "alias = status", com status em: ${STATUS_COMPRA.join(', ')}`,
+          },
+        ),
       ),
     ),
   // Uma origem por linha no formulário.

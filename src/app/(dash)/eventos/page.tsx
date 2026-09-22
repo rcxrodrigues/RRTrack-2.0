@@ -21,7 +21,7 @@ async function carregar(): Promise<WebhookRecebido[]> {
 
   const { data } = await supabase
     .from('webhooks_recebidos')
-    .select('id, adaptador, corpo, corpo_texto, headers, transaction_id, created_at')
+    .select('id, adaptador, corpo, corpo_texto, headers, transaction_id, motivo, created_at')
     .order('created_at', { ascending: false })
     .limit(50)
     .returns<WebhookRecebido[]>();
@@ -32,6 +32,9 @@ async function carregar(): Promise<WebhookRecebido[]> {
 export default async function EventosPage() {
   const recebidos = await carregar();
   const naoReconhecidos = recebidos.filter((r) => r.adaptador === null).length;
+  // Reconhecido e não lido é pior que não reconhecido: ali o formato é
+  // nosso, o evento parecia importar, e falta cadastro — não adaptador.
+  const naoLidos = recebidos.filter((r) => r.motivo !== null).length;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
@@ -48,6 +51,17 @@ export default async function EventosPage() {
             se descobre o formato de um checkout novo: aponte o webhook dele
             para cá, faça uma venda, e o payload real aparece nesta lista.
           </p>
+
+          {naoLidos > 0 && (
+            <p className="text-destructive-vivid text-sm">
+              {naoLidos === 1
+                ? '1 payload que eu reconheci e não soube ler.'
+                : `${String(naoLidos)} payloads que eu reconheci e não soube ler.`}{' '}
+              Abra: a mensagem diz exatamente o que cadastrar. Depois de
+              cadastrar, clique em <strong>Reprocessar</strong> — nada se
+              perdeu.
+            </p>
+          )}
 
           {naoReconhecidos > 0 && (
             <p className="text-warning text-sm">

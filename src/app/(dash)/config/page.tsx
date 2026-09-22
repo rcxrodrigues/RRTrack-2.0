@@ -34,6 +34,7 @@ const SETTINGS_PADRAO: Settings = {
   cookie_domain: null,
   allowed_origins: [],
   checkout_domains: [],
+  status_aliases: [],
   webhook_token_last4: null,
 };
 
@@ -49,7 +50,7 @@ async function carregar() {
   const [settings, ga4, pixels, ads] = await Promise.all([
     supabase
       .from('settings')
-      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains, webhook_token_last4')
+      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains, status_aliases, webhook_token_last4')
       .eq('id', true)
       .returns<Settings[]>()
       .single(),

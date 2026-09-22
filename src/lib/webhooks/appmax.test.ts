@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { appmax } from './appmax';
+import { soVenda } from './tipos';
+
+/** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
+const ler = (corpo: unknown) => soVenda(appmax.normalizar(corpo));
 
 /**
  * Os payloads abaixo são os EXEMPLOS DA DOCUMENTAÇÃO da Appmax, copiados sem
@@ -90,7 +94,7 @@ describe('reconhece', () => {
 });
 
 describe('normalizar — venda aprovada', () => {
-  const c = appmax.normalizar(APROVADO_CARTAO);
+  const c = ler(APROVADO_CARTAO);
 
   /*
    * O erro de 100× que NÃO dá erro: 25990 centavos é R$ 259,90. Tratado como
@@ -130,15 +134,15 @@ describe('normalizar — os quatro eventos de um cartão viram UMA venda', () =>
    */
   it('todos devolvem o mesmo transactionId', () => {
     const ids = ['order_authorized', 'order_approved', 'order_paid'].map(
-      (event) => appmax.normalizar({ ...APROVADO_CARTAO, event })?.transactionId,
+      (event) => ler({ ...APROVADO_CARTAO, event })?.transactionId,
     );
     expect(new Set(ids).size).toBe(1);
     expect(ids[0]).toBe('appmax:3531');
   });
 
   it('mas cada um com o seu significado', () => {
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event: 'order_authorized' })?.status).toBe('pendente');
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event: 'order_approved' })?.status).toBe('aprovada');
+    expect(ler({ ...APROVADO_CARTAO, event: 'order_authorized' })?.status).toBe('pendente');
+    expect(ler({ ...APROVADO_CARTAO, event: 'order_approved' })?.status).toBe('aprovada');
   });
 });
 
@@ -148,12 +152,12 @@ describe('normalizar — o que desfaz receita', () => {
     ['order_partial_refund', 'estornada'],
     ['order_chargeback_in_treatment', 'chargeback'],
   ])('%s → %s', (event, esperado) => {
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event })?.status).toBe(esperado);
+    expect(ler({ ...APROVADO_CARTAO, event })?.status).toBe(esperado);
   });
 
   // Chargeback julgado a favor do lojista: o dinheiro fica, a receita volta.
   it('order_charge_back_gain volta a valer como aprovada', () => {
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event: 'order_charge_back_gain' })?.status).toBe(
+    expect(ler({ ...APROVADO_CARTAO, event: 'order_charge_back_gain' })?.status).toBe(
       'aprovada',
     );
   });
@@ -161,11 +165,11 @@ describe('normalizar — o que desfaz receita', () => {
 
 describe('normalizar — o que NÃO é venda', () => {
   it('ignora evento de cliente', () => {
-    expect(appmax.normalizar(CLIENTE_CRIADO)).toBeNull();
+    expect(ler(CLIENTE_CRIADO)).toBeNull();
   });
 
   it('ignora order_integrated — é etapa, não dinheiro', () => {
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event: 'order_integrated' })).toBeNull();
+    expect(ler({ ...APROVADO_CARTAO, event: 'order_integrated' })).toBeNull();
   });
 
   /*
@@ -174,7 +178,7 @@ describe('normalizar — o que NÃO é venda', () => {
    */
   it('ignora assinatura inteira', () => {
     expect(
-      appmax.normalizar({
+      ler({
         event: 'subscription_charge_success',
         event_type: 'subscription',
         data: { subscription_id: 501, order_id: 3987, total: 4990 },
@@ -184,14 +188,14 @@ describe('normalizar — o que NÃO é venda', () => {
 
   it('evento desconhecido é AVISADO, não engolido em silêncio', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(appmax.normalizar({ ...APROVADO_CARTAO, event: 'order_coisa_nova' })).toBeNull();
+    expect(ler({ ...APROVADO_CARTAO, event: 'order_coisa_nova' })).toBeNull();
     expect(aviso).toHaveBeenCalledWith('[appmax] evento não mapeado:', 'order_coisa_nova');
     aviso.mockRestore();
   });
 
   it('evento sem order_id não vira venda', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(appmax.normalizar({ event: 'order_approved', event_type: 'order', data: {} })).toBeNull();
+    expect(ler({ event: 'order_approved', event_type: 'order', data: {} })).toBeNull();
     aviso.mockRestore();
   });
 });
@@ -200,7 +204,7 @@ describe('o vínculo com a visita', () => {
   const ID = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
 
   it('acha o identificador em external_key', () => {
-    const c = appmax.normalizar({
+    const c = ler({
       ...APROVADO_CARTAO,
       data: { ...APROVADO_CARTAO.data, external_key: ID },
     });
@@ -208,7 +212,7 @@ describe('o vínculo com a visita', () => {
   });
 
   it('acha em client_key quando external_key não tem', () => {
-    const c = appmax.normalizar({
+    const c = ler({
       ...APROVADO_CARTAO,
       data: { ...APROVADO_CARTAO.data, external_key: null, client_key: ID },
     });
@@ -217,7 +221,7 @@ describe('o vínculo com a visita', () => {
 
   // O checkout pode devolver o valor embrulhado em texto.
   it('acha o identificador dentro de um texto maior', () => {
-    const c = appmax.normalizar({
+    const c = ler({
       ...APROVADO_CARTAO,
       data: { ...APROVADO_CARTAO.data, external_key: `origem=site;trck=${ID};v=2` },
     });
@@ -230,8 +234,8 @@ describe('o vínculo com a visita', () => {
    * visitante ligaria TODAS as vendas ao mesmo fantasma.
    */
   it('NÃO confunde chave do merchant com identificador de visita', () => {
-    expect(appmax.normalizar(APROVADO_CARTAO)?.trckUserId).toBeNull();
-    expect(appmax.normalizar(PIX_PAGO)?.trckUserId).toBeNull();
+    expect(ler(APROVADO_CARTAO)?.trckUserId).toBeNull();
+    expect(ler(PIX_PAGO)?.trckUserId).toBeNull();
   });
 });
 
@@ -242,13 +246,13 @@ describe('o cliente', () => {
    * pode trazer; se não trouxer, fica nulo e nada quebra.
    */
   it('fica nulo quando o pedido não traz cliente (o caso documentado)', () => {
-    const c = appmax.normalizar(APROVADO_CARTAO);
+    const c = ler(APROVADO_CARTAO);
     expect(c?.email).toBeNull();
     expect(c?.telefone).toBeNull();
   });
 
   it('aproveita o cliente quando o payload trouxer', () => {
-    const c = appmax.normalizar({
+    const c = ler({
       ...APROVADO_CARTAO,
       data: {
         ...APROVADO_CARTAO.data,
@@ -269,13 +273,13 @@ describe('o cliente', () => {
 
 describe('pix', () => {
   it('normaliza o pix pago', () => {
-    const c = appmax.normalizar(PIX_PAGO);
+    const c = ler(PIX_PAGO);
     expect(c?.status).toBe('aprovada');
     expect(c?.valor).toBe(99);
     expect(c?.transactionId).toBe('appmax:4201');
   });
 
   it('pix expirado não é venda aprovada', () => {
-    expect(appmax.normalizar({ ...PIX_PAGO, event: 'order_pix_expired' })?.status).toBe('recusada');
+    expect(ler({ ...PIX_PAGO, event: 'order_pix_expired' })?.status).toBe('recusada');
   });
 });

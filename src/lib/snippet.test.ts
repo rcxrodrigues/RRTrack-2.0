@@ -11,6 +11,7 @@ const CONFIG: Configuracao = {
     cookieDomain: '.transforlar.com',
     origensPermitidas: ['https://transforlar.com'],
     dominiosCheckout: [{ dominio: 'seguro.transforlar.com', parametro: 'trck_user_id' }],
+    statusPorAlias: {},
   },
   ga4: [
     { id: '1', measurementId: 'G-ABC123' },

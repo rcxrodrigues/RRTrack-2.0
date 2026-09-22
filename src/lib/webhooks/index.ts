@@ -3,7 +3,12 @@ import { appmax } from '@/lib/webhooks/appmax';
 import { pagou } from '@/lib/webhooks/pagou';
 import { yampi } from '@/lib/webhooks/yampi';
 import { zedy } from '@/lib/webhooks/zedy';
-import type { Adaptador, CompraNormalizada } from '@/lib/webhooks/tipos';
+import {
+  ehIndeciso,
+  type Adaptador,
+  type CompraNormalizada,
+  type ContextoDoAdaptador,
+} from '@/lib/webhooks/tipos';
 
 export * from '@/lib/webhooks/tipos';
 
@@ -21,6 +26,14 @@ export type Leitura =
   | { tipo: 'venda'; adaptador: string; compra: CompraNormalizada }
   /** Formato reconhecido, evento que não interessa ao faturamento. */
   | { tipo: 'ignorado'; adaptador: string }
+  /**
+   * Reconhecido, e o adaptador NÃO soube o que fazer.
+   *
+   * Separado do `ignorado` de propósito: aquele é normal e é a maioria;
+   * este é venda possivelmente perdida e tem de aparecer no painel. Até
+   * existir a distinção, os dois ficavam com o mesmo badge verde.
+   */
+  | { tipo: 'indeciso'; adaptador: string; motivo: string }
   /** Nenhum adaptador reconheceu — gateway novo, ou payload corrompido. */
   | { tipo: 'desconhecido' };
 
@@ -31,14 +44,21 @@ export type Leitura =
  * endpoint só recebe todos os gateways, e pedir para alguém declarar qual é
  * qual seria mais uma coisa para errar às três da manhã.
  */
-export function lerWebhook(corpo: unknown): Leitura {
+export function lerWebhook(
+  corpo: unknown,
+  contexto?: ContextoDoAdaptador,
+): Leitura {
   for (const adaptador of ADAPTADORES) {
     if (!adaptador.reconhece(corpo)) continue;
 
-    const compra = adaptador.normalizar(corpo);
-    return compra
-      ? { tipo: 'venda', adaptador: adaptador.nome, compra }
-      : { tipo: 'ignorado', adaptador: adaptador.nome };
+    const nome = adaptador.nome;
+    const lido = adaptador.normalizar(corpo, contexto);
+
+    if (lido === null) return { tipo: 'ignorado', adaptador: nome };
+    if (ehIndeciso(lido)) {
+      return { tipo: 'indeciso', adaptador: nome, motivo: lido.motivo };
+    }
+    return { tipo: 'venda', adaptador: nome, compra: lido };
   }
   return { tipo: 'desconhecido' };
 }

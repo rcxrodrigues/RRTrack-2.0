@@ -496,6 +496,29 @@ surpreendido, então o adaptador decide pelo `event`.
 A Pagou é o contrário: o OpenAPI publica os **17 status** numa enumeração
 fechada, e aí o campo é confiável.
 
+**A Yampi é um terceiro caso, e o pior:** os aliases de status dela **são
+configuráveis por loja**. Não existe lista fixa — o suporte confirmou
+(22/09/2026) que a única forma de saber os da sua loja é chamar
+`GET /{alias}/checkout/statuses`. Uma loja pode renomear o estorno para
+`devolvido`, ou criar `em_separacao`.
+
+Um mapa fixo no código está errado por desenho, então o mapa é
+**configuração** (`settings.status_aliases`, cadastrado no painel), e o que
+está no adaptador é só **padrão de fábrica** — o cadastro passa por cima.
+O estrago que isso evita é específico e silencioso: um alias de estorno que
+não bate com o nosso faria o `refund` **nunca** chegar ao GA4, e o
+faturamento ficaria inflado por uma venda que voltou para o cliente.
+
+O `status` do cadastro é validado contra os cinco **duas vezes** — no Zod do
+painel e na leitura em `settings.ts`. Texto livre ali atravessaria o mapa, o
+adaptador e o disparo, e chegaria à Meta como conversão de um tipo que não
+existe.
+
+Onde o **evento** já responde, ele ganha: `order.paid` e
+`transaction.payment.refused` são da Yampi, não da loja, e não passam pelo
+alias. Se passassem, uma loja com status renomeado perderia a venda paga —
+que é o que mais importa.
+
 ### Centavos OU reais — depende do gateway
 
 **Não existe regra global.** Cada adaptador decide, e errar é invisível:
@@ -647,6 +670,27 @@ O acerto é por **regex de 32 hexadecimais**, não por igualdade: o checkout pod
 devolver o valor embrulhado em texto. E o exemplo da Appmax traz
 `client_key: "merchant-key-123"` — chave do lojista, não da visita. Aceitar
 qualquer texto ali ligaria **todas** as vendas ao mesmo fantasma.
+
+**Reconhecer e não saber ler é PIOR que não reconhecer, e o painel precisa
+distinguir os dois.** Até existir `Indeciso`, "ignorei de propósito" (nota
+fiscal, cliente criado) e "reconheci e faltou cadastro" ficavam iguais na
+tela: badge verde com o nome do adaptador. O primeiro é normal e é a maioria;
+o segundo é **venda possivelmente perdida escondida atrás da aparência de
+tratada**.
+
+Agora são três estados, e `webhooks_recebidos.motivo` é o que os separa:
+
+| badge | o que é | o que fazer |
+|---|---|---|
+| verde | tratado, ou ignorado de propósito | nada |
+| amarelo | ninguém reconheceu o formato | falta adaptador — me manda o payload |
+| **vermelho** | reconhecido, e não soube ler | o motivo diz o que cadastrar; depois, Reprocessar |
+
+O adaptador nunca chuta nessa situação, e nunca devolve `null`: chutar um
+status mandaria conversão errada para a Meta, e `null` esconderia o caso.
+Devolve `Indeciso` com o motivo, e a rota responde **200** — o retry do
+gateway falharia as quatro vezes igual, porque o que falta é cadastro nosso,
+não sorte na rede.
 
 **E guardar só vale se der para reprocessar.** O botão na tela de eventos roda
 o payload guardado pelos adaptadores de novo — é o que recupera a venda que
