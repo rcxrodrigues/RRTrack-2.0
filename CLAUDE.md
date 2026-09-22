@@ -718,7 +718,7 @@ não um gateway com cinco segundos de paciência.
 - [x] **Fase 2** — Configuração das contas pelo painel
 - [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [x] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
-- [ ] **Fase 5** — Webhook de compra (AppMax / Pagou.ai / MillionsPay)
+- [x] **Fase 5** — Webhook de compra (Appmax · Pagou · Yampi · Adoorei · Zedy)
 - [ ] **Fase 6** — Dashboard
 - [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
 - [ ] **Fase 8** — Retenção, auditoria e publicação

@@ -105,6 +105,14 @@ export type Adaptador = {
    * OpenAPI da Pagou não documenta, e a MillionsPay gera um secret
    * HMAC-SHA256 por endpoint.
    *
+   * ⚠️ **NENHUM adaptador implementa isto ainda, e a rota não chama.** Quem
+   * autentica o webhook hoje é o token, nos três lugares onde ele é aceito.
+   * Está declarado porque o contrato é o que faz a rota preservar o corpo
+   * cru — sem isso, a verificação seria impossível de acrescentar depois.
+   * Ligar exige duas coisas que não temos: a fórmula exata de cada gateway
+   * (errar recusa 100% dos webhooks com 401, e a venda some) e um lugar no
+   * cofre para o secret de cada um.
+   *
    * Recebe o corpo CRU, em texto. Não é capricho: HMAC é sobre os bytes
    * exatos que chegaram, e `JSON.parse` seguido de `JSON.stringify` muda
    * espaçamento e ordem de chaves — a assinatura nunca bateria.
