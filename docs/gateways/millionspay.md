@@ -54,18 +54,47 @@ diferentes com chaves diferentes.
 Backoff exponencial, documentado em `/docs/guia/webhooks/retentativas`.
 Resposta esperada: **2xx**.
 
-## O que ainda falta
+## O atalho: a doc inteira é gerada de um `openapi.json`
 
-- [ ] **O objeto `charge`** — a doc mostra `{ "..." }`. Sem os campos não há
-      como ler valor, status, cliente nem campo livre.
-      Página: `/docs/guia/webhooks/eventos/cobrancas`
-- [ ] **A lista de eventos `charge.*`** — só vimos `charge.captured` e
-      `charge.refunded` citados de passagem. Mesma página.
-- [ ] **A fórmula exata do HMAC** — sobre o corpo cru? corpo + timestamp?
-      Procurar a página de verificação de assinatura.
-- [ ] **Centavos ou reais** — está no objeto `charge`.
-- [ ] **Campo livre** (`metadata`, `external_reference`) que volte no
-      webhook. Está na criação da cobrança, `POST /v1/charges`.
+Toda página da API Reference é só um invólucro. O MDX que o "Copy page"
+devolve é sempre isto, e nada mais:
+
+```
+{/* AUTO-GENERATED from openapi.json by scripts/generate-openapi.ts. */}
+<APIPage document="./openapi.json" operations="[{"path":"/v1/…","method":"post"}]" />
+```
+
+O conteúdo — campos, tipos, exemplos de resposta — é montado **no navegador**,
+a partir de um arquivo só. É por isso que colar a página não traz nada: o
+texto não está nela.
+
+> **Então o pedido é um arquivo, não uma sequência de páginas.**
+> Esse `openapi.json` tem TODOS os endpoints, TODOS os campos e o schema
+> completo do objeto `charge`. Ele responde de uma vez tudo que falta aqui.
+>
+> Como achar: abra a API Reference, **F12 → aba Network → recarregue → filtre
+> por `openapi`**. O arquivo aparece na lista; clicar com o botão direito dá
+> "Copy → Copy response". (Tentei baixar daqui: o domínio é bloqueado pelo
+> proxy de saída, como o dos outros gateways.)
+
+Sem ele, o caminho longo é uma página só: **`GET /v1/charges/{id}`
+("Buscar cobrança")**, cujo *Response Body* 200 é o objeto `charge` inteiro —
+o mesmo que vem dentro do webhook. Só que ela também é `<APIPage>`, então
+teria de ser **captura de tela**, não texto colado.
+
+### O que ainda falta, em ordem de importância
+
+1. **O objeto `charge`** — sem ele não há como ler valor, status, cliente nem
+   campo livre. É o que trava o adaptador inteiro.
+2. **Centavos ou reais** — está no objeto `charge`. Errar dá 100× de
+   diferença, em silêncio (a Yampi e a Adoorei mandam em reais; a Appmax, a
+   Pagou e a Zedy em centavos — não há regra global).
+3. **Campo livre que volte no webhook** (`metadata`, `external_reference`) —
+   está no `POST /v1/charges`. É a ponte da atribuição: sem ela o
+   `trck_user_id` não atravessa e só sobra o plano B por e-mail.
+4. **A lista de eventos `charge.*`** — vimos `charge.captured` e
+   `charge.refunded` de passagem.
+5. **A fórmula exata do HMAC** — sobre o corpo cru? corpo + timestamp?
 
 ## Endpoints de gerenciamento (já conhecidos)
 
@@ -97,3 +126,26 @@ POST   /v1/charges/{id}/refund     estorna uma capturada (parcial + motivo)
 Autorizado **não é** dinheiro em caixa: só a captura conta — e daí o evento
 se chamar `charge.captured`, não `charge.paid`. Há captura e estorno
 **parciais**, então o valor da cobrança muda ao longo da vida dela.
+
+## O mapa da API (do vídeo de 21/09/2026)
+
+`Server URL: https://api.millionspay.io`. A doc se divide em **Guia** e
+**API Reference**; o que segue é o índice da segunda, inteiro.
+
+| grupo | endpoints |
+|---|---|
+| **Bancos** | buscar por código, buscar por ISPB, listar |
+| **Cobranças** | criar, buscar, listar, **capturar**, **estornar** |
+| **Checkout** | listar métodos de pagamento do merchant |
+| **Links de Pagamento** | criar, buscar, listar, atualizar, desativar, upload/remoção de capa e logo |
+| **Carteiras** | buscar, listar, extrato, lançamentos |
+| **Recebíveis** | buscar, listar, resumo |
+| **Antecipações** | simular, solicitar, buscar, listar, cancelar, resumo |
+| **Submerchants** | cadastro completo — endereços, documentos, representantes legais, análise |
+| **Saques** | criar, buscar, listar, taxa, métodos habilitados, comprovante, resumo |
+| **Recebedores** | buscar por tipo, listar, criar ou atualizar |
+| **Webhooks** | criar/buscar/listar/atualizar/remover endpoint, **regenerar secret**, **listar logs de entrega**, **reenviar notificação** |
+
+O índice confirma o que já estava escrito acima: captura e estorno são
+endpoints separados da criação, e o secret do webhook é por endpoint e
+rotacionável — com reenvio de entrega, que é como se testa sem sandbox.

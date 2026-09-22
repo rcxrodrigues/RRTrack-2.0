@@ -632,6 +632,24 @@ devolver o valor embrulhado em texto. E o exemplo da Appmax traz
 `client_key: "merchant-key-123"` — chave do lojista, não da visita. Aceitar
 qualquer texto ali ligaria **todas** as vendas ao mesmo fantasma.
 
+**E guardar só vale se der para reprocessar.** O botão na tela de eventos roda
+o payload guardado pelos adaptadores de novo — é o que recupera a venda que
+chegou antes do adaptador existir, porque o gateway não reenvia para sempre (a
+Appmax desiste depois de quatro tentativas, em definitivo e sem avisar).
+
+O caminho do reprocessamento é o **mesmo** do webhook de verdade:
+`src/lib/webhooks/processar.ts` tem `gravarCompra()` e `concluirCompra()`, e
+tanto a rota quanto a Server Action chamam aquelas duas funções. Duplicar o
+caminho seria garantir que um dia divergem — e a venda reprocessada iria para
+a Meta diferente da que chegou sozinha, sem ninguém notar. Reprocessar duas
+vezes é inócuo: `dispararCompra()` olha o `sent_at` antes de tudo e sai calado.
+
+A divisão em duas funções tem motivo: `gravarCompra()` roda **dentro** da
+requisição, porque falhar ali tem de virar 500 para o gateway reenviar;
+`concluirCompra()` roda depois da resposta. Na Server Action as duas rodam em
+série mesmo — ali quem espera é uma pessoa que clicou para saber se funcionou,
+não um gateway com cinco segundos de paciência.
+
 ---
 
 ## Autenticação — o que não pode quebrar

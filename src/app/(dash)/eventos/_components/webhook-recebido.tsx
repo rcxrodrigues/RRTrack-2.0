@@ -1,9 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { reprocessarWebhook } from '../actions';
 
 export type WebhookRecebido = {
   id: string;
@@ -73,6 +76,7 @@ function formatarLocal(iso: string): string {
 
 export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
   const [aberto, setAberto] = React.useState(false);
+  const [rodando, iniciar] = React.useTransition();
 
   const interessantes = Object.entries(item.headers ?? {}).filter(
     ([nome]) => !RUIDO.has(nome.toLowerCase()),
@@ -141,6 +145,33 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
               {corpo}
             </pre>
           </div>
+
+          {item.corpo !== null && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={rodando}
+                onClick={() => {
+                  iniciar(async () => {
+                    const r = await reprocessarWebhook(item.id);
+                    if (r.ok) toast.success(r.mensagem);
+                    else toast.error(r.mensagem);
+                  });
+                }}
+              >
+                <RefreshCw className={rodando ? 'animate-spin' : undefined} />
+                {rodando ? 'Reprocessando…' : 'Reprocessar'}
+              </Button>
+
+              <p className="text-muted-foreground text-xs">
+                Roda este payload pelos adaptadores de novo. É o que recupera
+                uma venda que chegou antes do adaptador existir — o gateway
+                não reenvia para sempre.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
