@@ -976,6 +976,34 @@ Meta — e um ROAS que não fecha é pior que ROAS nenhum.
   impede transformar nosso domínio em trampolim de phishing. Tem teste com os
   vetores de ataque.
 
+## Retenção — o que sai, o que fica
+
+Três tabelas guardam payload cru, e é ele que cresce sem limite: um evento
+tem quatro jsonb, um webhook de venda traz o cliente inteiro.
+
+**A LINHA NUNCA É APAGADA.** Só os campos pesados são zerados. Data, evento,
+UTMs e geo continuam alimentando o painel — apagar a linha **reescreveria o
+passado do faturamento**, e o painel de um mês atrás mudaria sozinho.
+
+| tabela | prazo | por quê |
+|---|---|---|
+| `events_log` | 14 dias | depurar envio é trabalho da mesma semana |
+| `webhooks_recebidos` | 30 dias | é com ele que se escreve adaptador novo, e isso leva mais que uma semana |
+| `purchases.raw_webhook` | 90 dias | auditoria de venda contestada; o prazo de chargeback chega a 120. **A linha da venda fica para sempre** |
+
+E há um segundo motivo, que não é de espaço: esses campos guardam **dado
+pessoal** — e-mail, telefone, endereço, CPF em alguns gateways. Guardar para
+sempre o que só serve para depurar a primeira semana é risco sem
+contrapartida.
+
+**Em lotes, com `for update skip locked` e a marca `purged_at`.** Um UPDATE
+sobre seis meses de eventos trava a tabela por minutos e a captura **para de
+gravar** — o site inteiro perde tracking enquanto a limpeza roda. Com lote e
+marca, cada passagem é curta e a seguinte continua de onde parou.
+
+`pg_cron` não existe num Postgres comum, então o teste local tem substituto,
+como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica.
+
 ## Banco — como mexer com segurança
 
 - **O SQL Editor do Supabase envia só as 100 primeiras linhas.** Script mais
@@ -1022,9 +1050,10 @@ Meta — e um ROAS que não fecha é pior que ROAS nenhum.
 - [x] **Fase 5** — Webhook de compra (Appmax · Pagou · Yampi · Adoorei · Zedy)
 - [x] **Fase 6** — Dashboard (visão geral, eventos, faturamento, geo)
 - [x] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
-- [ ] **Fase 8** — Retenção, auditoria e publicação
+- [x] **Fase 8** — Retenção, auditoria e publicação
 
-Cada fase termina em commit e espera aprovação antes da seguinte.
+Cada fase terminou em commit. O passo a passo de subir está em
+`docs/PUBLICAR.md`; o que foi verificado antes, em `docs/AUDITORIA.md`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
