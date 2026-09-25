@@ -16,7 +16,7 @@ begin
   if v_faltando is not null then
     raise exception 'FALHA: tabelas sem RLS: %', v_faltando;
   end if;
-  raise notice 'OK 1/8 · RLS ligada em todas as tabelas';
+  raise notice 'OK 1/9 · RLS ligada em todas as tabelas';
 end;
 $$;
 
@@ -31,7 +31,7 @@ begin
   if v_escrita is not null then
     raise exception 'FALHA: existe policy de escrita: %', v_escrita;
   end if;
-  raise notice 'OK 2/8 · Nenhuma policy de escrita — só service_role grava';
+  raise notice 'OK 2/9 · Nenhuma policy de escrita — só service_role grava';
 end;
 $$;
 
@@ -58,7 +58,7 @@ begin
   if array_length(v_vaza, 1) > 0 then
     raise exception 'FALHA: ponteiro de segredo legível pelo painel: %', v_vaza;
   end if;
-  raise notice 'OK 3/8 · Ponteiros para o cofre fora do alcance do painel';
+  raise notice 'OK 3/9 · Ponteiros para o cofre fora do alcance do painel';
 end;
 $$;
 
@@ -151,7 +151,7 @@ begin
   if array_length(v_pode, 1) > 0 then
     raise exception 'FALHA: função sensível executável: %', v_pode;
   end if;
-  raise notice 'OK 4/8 · Funções de segredo só para o service_role';
+  raise notice 'OK 4/9 · Funções de segredo só para o service_role';
 end;
 $$;
 
@@ -205,10 +205,10 @@ begin
     from pg_namespace where nspname = 'vault';
 
   if coalesce(v_substituto, false) then
-    raise notice 'OK 5/8 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/9 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
     raise notice '         (substituto local — a cifra em si é do Vault, testada no Supabase)';
   else
-    raise notice 'OK 5/8 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/9 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
   end if;
 end;
 $$;
@@ -235,7 +235,7 @@ begin
   end if;
 
   delete from public.rate_limits where bucket like 'teste:%';
-  raise notice 'OK 6/8 · Rate limit corta no limite e isola por bucket';
+  raise notice 'OK 6/9 · Rate limit corta no limite e isola por bucket';
 end;
 $$;
 
@@ -255,7 +255,7 @@ begin
     when check_violation then null;  -- esperado
   end;
 
-  raise notice 'OK 7/8 · settings trancada em uma linha';
+  raise notice 'OK 7/9 · settings trancada em uma linha';
 end;
 $$;
 
@@ -314,6 +314,69 @@ begin
     raise exception 'FALHA: view sem security_invoker (ignora RLS): %', v_frouxas;
   end if;
 
-  raise notice 'OK 8/8 · Consultas do painel respeitam a RLS de quem chama';
+  raise notice 'OK 8/9 · Consultas do painel respeitam a RLS de quem chama';
+end;
+$$;
+
+-- 9) a retenção zera o que deve e NÃO apaga linha ----------------------------
+-- A linha é o histórico de conversão e de ROAS. Apagá-la reescreveria o
+-- passado do faturamento — e o painel de um mês atrás mudaria sozinho.
+do $$
+declare
+  v_id    uuid;
+  v_antes bigint;
+  v_n     bigint;
+begin
+  select count(*) into v_antes from public.events_log;
+
+  insert into public.events_log
+    (event_id, event_name, utm_source, geo_country, payload_meta, response_meta, created_at)
+  values
+    ('retencao-teste', 'PageView', 'facebook', 'BR',
+     '{"a":1}'::jsonb, '{"b":2}'::jsonb, now() - interval '20 days')
+  returning id into v_id;
+
+  perform private.aplicar_retencao(100);
+
+  -- Campos pesados zerados…
+  select count(*) into v_n
+    from public.events_log
+   where id = v_id
+     and payload_meta is null
+     and response_meta is null
+     and purged_at is not null;
+  if v_n <> 1 then
+    raise exception 'FALHA: a retenção não zerou o payload';
+  end if;
+
+  -- …e o que alimenta o painel intacto.
+  select count(*) into v_n
+    from public.events_log
+   where id = v_id
+     and event_name = 'PageView'
+     and utm_source = 'facebook'
+     and geo_country = 'BR';
+  if v_n <> 1 then
+    raise exception 'FALHA: a retenção apagou dado que o painel usa';
+  end if;
+
+  -- Nenhuma linha some.
+  if (select count(*) from public.events_log) <> v_antes + 1 then
+    raise exception 'FALHA: a retenção apagou linha';
+  end if;
+
+  -- Linha nova não é tocada: o prazo é de 14 dias.
+  insert into public.events_log (event_id, event_name, payload_meta)
+  values ('retencao-recente', 'PageView', '{"a":1}'::jsonb);
+
+  perform private.aplicar_retencao(100);
+
+  if (select payload_meta from public.events_log where event_id = 'retencao-recente') is null then
+    raise exception 'FALHA: a retenção zerou evento dentro do prazo';
+  end if;
+
+  delete from public.events_log where event_id in ('retencao-teste', 'retencao-recente');
+
+  raise notice 'OK 9/9 · Retenção zera o payload e preserva a linha';
 end;
 $$;

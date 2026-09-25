@@ -28,6 +28,9 @@ export const dynamic = 'force-dynamic';
  * o único lugar onde um segredo cabe.
  */
 
+/** O maior corpo que aceitamos. Ver a nota no `POST`. */
+const TETO_DO_CORPO = 1_000_000;
+
 /**
  * Cabeçalhos em que algum gateway manda o token.
  *
@@ -130,6 +133,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
    * então o corpo cru precisa sobreviver até a verificação.
    */
   const corpoCru = await request.text().catch(() => '');
+
+  /*
+   * Teto de tamanho, e ele faltava.
+   *
+   * O token já barra quem não deveria estar aqui — mas um gateway com bug,
+   * ou um payload com um PDF em base64 dentro, chegaria inteiro: seria
+   * parseado, gravado em `webhooks_recebidos` e replicado em
+   * `purchases.raw_webhook`. Um corpo de 50 MB vira 100 MB de banco por
+   * webhook, e a tabela de auditoria é justamente a que ninguém olha
+   * crescer.
+   *
+   * 1 MB é folgado: o maior payload real que vimos (Appmax, pedido com
+   * vários produtos) não passa de 20 KB. 413 e não 202 de propósito —
+   * reenviar o mesmo corpo gigante falharia igual, e o gateway precisa
+   * saber que o problema é o tamanho.
+   */
+  if (corpoCru.length > TETO_DO_CORPO) {
+    console.warn('[webhook] corpo grande demais:', corpoCru.length, 'bytes');
+    return responder(413, { erro: 'corpo grande demais' });
+  }
+
   let corpo: unknown = null;
   try {
     corpo = corpoCru.length > 0 ? JSON.parse(corpoCru) : null;

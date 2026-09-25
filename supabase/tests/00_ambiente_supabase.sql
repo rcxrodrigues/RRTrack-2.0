@@ -86,3 +86,44 @@ begin
    where id = secret_id;
 end;
 $$;
+
+-- -----------------------------------------------------------------------------
+-- pg_cron — substituto de teste
+-- -----------------------------------------------------------------------------
+-- O `pg_cron` não existe num Postgres comum; no Supabase ele é uma das
+-- extensões disponíveis. Aqui só precisamos que `schedule` e `unschedule`
+-- EXISTAM, para a migration de retenção rodar inteira e as asserções
+-- alcançarem a função de limpeza — que é o que tem lógica para testar.
+--
+-- O agendamento em si é responsabilidade do pg_cron e se verifica no
+-- Supabase, olhando `cron.job` e `cron.job_run_details`.
+create schema if not exists extensions;
+create schema if not exists cron;
+
+comment on schema cron is 'SUBSTITUTO DE TESTE — não agenda nada';
+
+create table if not exists cron.job (
+  jobid    bigserial primary key,
+  jobname  text unique,
+  schedule text,
+  command  text
+);
+
+create or replace function extensions.cron_schedule(
+  p_nome text, p_agenda text, p_comando text
+) returns bigint
+language sql
+as $$
+  insert into cron.job (jobname, schedule, command)
+  values (p_nome, p_agenda, p_comando)
+  on conflict (jobname) do update
+    set schedule = excluded.schedule, command = excluded.command
+  returning jobid;
+$$;
+
+create or replace function extensions.cron_unschedule(p_nome text)
+returns boolean
+language sql
+as $$
+  delete from cron.job where jobname = p_nome returning true;
+$$;
