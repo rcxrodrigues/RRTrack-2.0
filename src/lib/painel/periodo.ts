@@ -29,7 +29,15 @@ export const ROTULOS: Record<Periodo, string> = {
   mes: 'Este mês',
 };
 
-export const PERIODO_PADRAO: Periodo = '7d';
+/**
+ * Ao ABRIR o painel, o dia de hoje.
+ *
+ * Quem abre o painel quer saber como está hoje — "sete dias" é relatório, e
+ * relatório se pede. Escolher um período diferente vale para a navegação
+ * toda (ver `comPeriodo`), então a escolha não se perde ao trocar de aba;
+ * o que não acontece é ela persistir depois de fechar.
+ */
+export const PERIODO_PADRAO: Periodo = 'hoje';
 
 export type Intervalo = {
   periodo: Periodo;
@@ -50,6 +58,23 @@ function ehPeriodo(valor: string | undefined): valor is Periodo {
 export function lerPeriodo(valor: string | string[] | undefined): Periodo {
   const texto = Array.isArray(valor) ? valor[0] : valor;
   return ehPeriodo(texto) ? texto : PERIODO_PADRAO;
+}
+
+/**
+ * O href de navegação carregando o período escolhido.
+ *
+ * O período vive na URL, e é isso que o torna compartilhável e à prova de
+ * recarregar. Mas link de menu é caminho puro (`/eventos`), então trocar de
+ * aba jogava a escolha fora e a tela voltava ao padrão — quem estava
+ * olhando 30 dias no faturamento chegava à visão geral vendo hoje, sem
+ * nada na tela dizendo que mudou.
+ *
+ * O padrão é omitido de propósito: URL sem query é o estado inicial, e
+ * carregar `?periodo=hoje` só faria o link parecer sujo sem mudar nada.
+ */
+export function comPeriodo(href: string, periodo: string | null | undefined): string {
+  if (!ehPeriodo(periodo ?? undefined) || periodo === PERIODO_PADRAO) return href;
+  return `${href}?periodo=${String(periodo)}`;
 }
 
 /**

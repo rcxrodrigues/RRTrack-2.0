@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  comPeriodo,
   intervaloAnterior,
   intervaloDe,
   lerPeriodo,
@@ -155,5 +156,34 @@ describe('intervaloAnterior', () => {
   it('para "hoje", o anterior é ontem', () => {
     const antes = intervaloAnterior(intervaloDe('hoje', SP, NOITE_EM_SP));
     expect(iso(antes.de)).toBe('2026-09-21T03:00:00.000Z');
+  });
+});
+
+/*
+ * A escolha de período tinha de sobreviver à troca de aba.
+ *
+ * Link de menu é caminho puro, então quem estava olhando 30 dias no
+ * faturamento chegava à visão geral vendo HOJE — sem nada na tela dizendo
+ * que o intervalo mudou debaixo dele. Dois números de períodos diferentes
+ * lidos como se fossem do mesmo.
+ */
+describe('comPeriodo', () => {
+  it('carrega o período escolhido para a próxima aba', () => {
+    expect(comPeriodo('/faturamento', '30d')).toBe('/faturamento?periodo=30d');
+  });
+
+  it('omite o padrão — URL limpa é o estado inicial', () => {
+    expect(comPeriodo('/eventos', PERIODO_PADRAO)).toBe('/eventos');
+  });
+
+  it('ignora lixo na query em vez de propagá-lo', () => {
+    expect(comPeriodo('/eventos', 'ontem; drop table')).toBe('/eventos');
+    expect(comPeriodo('/eventos', null)).toBe('/eventos');
+    expect(comPeriodo('/eventos', undefined)).toBe('/eventos');
+  });
+
+  it('o padrão ao abrir é HOJE, não sete dias', () => {
+    expect(PERIODO_PADRAO).toBe('hoje');
+    expect(lerPeriodo(undefined)).toBe('hoje');
   });
 });
