@@ -39,6 +39,29 @@ const RUIDO = new Set([
   'cache-control', 'pragma', 'te', 'upgrade-insecure-requests',
 ]);
 
+/**
+ * O motivo vem com os nomes de campo entre crases, porque a mesma string vai
+ * para o log. Na tela eles viram `code`: é o nome do campo que diz o que
+ * cadastrar, e é o que o olho procura primeiro numa mensagem de quatro linhas.
+ * Cru, o crase parece defeito.
+ */
+function ComCampos({ texto }: { texto: string }) {
+  const partes = texto.split('`');
+  return (
+    <>
+      {partes.map((parte, i) =>
+        i % 2 === 1 ? (
+          <code key={`${String(i)}-${parte}`} className="font-mono text-[0.9em]">
+            {parte}
+          </code>
+        ) : (
+          <React.Fragment key={`${String(i)}-${parte}`}>{parte}</React.Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
 export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
   const [aberto, setAberto] = React.useState(false);
   const [rodando, iniciar] = React.useTransition();
@@ -100,7 +123,7 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
         <div className="flex flex-col gap-3 px-4 pb-4">
           {item.motivo && (
             <p className="text-destructive-vivid text-sm">
-              {item.adaptador}: {item.motivo}
+              {item.adaptador}: <ComCampos texto={item.motivo} />
             </p>
           )}
           {interessantes.length > 0 && (
@@ -112,7 +135,7 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
                 {interessantes.map(([nome, valor]) => (
                   <div key={nome} className="font-mono text-xs">
                     <span className="text-muted-foreground">{nome}: </span>
-                    <span className="break-all">{valor}</span>
+                    <span className="wrap-anywhere">{valor}</span>
                   </div>
                 ))}
               </div>
