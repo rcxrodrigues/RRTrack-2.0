@@ -26,6 +26,9 @@ export type LinhaCompraPainel = {
   email: string | null;
   utmSource: string | null;
   utmCampaign: string | null;
+  utmMedium: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
   /** Como a venda foi ligada ao visitante — `nenhum` quando ficou órfã. */
   matchMethod: string | null;
   /** Já saiu para os destinos? */
@@ -68,8 +71,8 @@ export function lerFiltroCompras(
 
 const COLUNAS =
   'id, transaction_id, platform, status, value, reverted_value, currency, ' +
-  'product_name, email, utm_source, utm_campaign, match_method, sent_at, ' +
-  'reverted_at, created_at';
+  'product_name, email, utm_source, utm_medium, utm_campaign, utm_term, ' +
+  'utm_content, match_method, sent_at, reverted_at, created_at';
 
 export async function buscarCompras(
   intervalo: Intervalo,
@@ -130,6 +133,9 @@ export async function buscarCompras(
         email: textoEm(linha, 'email') ?? null,
         utmSource: textoEm(linha, 'utm_source') ?? null,
         utmCampaign: textoEm(linha, 'utm_campaign') ?? null,
+        utmMedium: textoEm(linha, 'utm_medium') ?? null,
+        utmTerm: textoEm(linha, 'utm_term') ?? null,
+        utmContent: textoEm(linha, 'utm_content') ?? null,
         matchMethod: textoEm(linha, 'match_method') ?? null,
         enviada: textoEm(linha, 'sent_at') !== undefined,
         desfeita: textoEm(linha, 'reverted_at') !== undefined,

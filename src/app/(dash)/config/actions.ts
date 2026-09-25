@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { randomBytes } from 'node:crypto';
+import { z } from 'zod';
 
 import { invalidarTokens } from '@/lib/destinos';
 import { invalidarConfiguracao } from '@/lib/settings';
@@ -280,8 +281,10 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
   if (!(await exigirSessao())) return falha('Sessão expirada. Entre de novo.');
 
   const analise = settingsSchema.safeParse({
-    currency: formData.get('currency'),
-    test_event_code: formData.get('test_event_code'),
+    // A moeda saiu da tela (BRL fixo) e o código de teste foi para junto dos
+    // pixels, com ação própria. `?? undefined` porque `formData.get` devolve
+    // `null` para campo ausente, e `null` não é "não veio" para o Zod.
+    currency: formData.get('currency') ?? undefined,
     cookie_domain: formData.get('cookie_domain'),
     allowed_origins: formData.get('allowed_origins'),
     checkout_domains: formData.get('checkout_domains'),
@@ -297,7 +300,14 @@ export async function salvarSettings(formData: FormData): Promise<Resultado> {
       .from('settings')
       .update({
         currency: analise.data.currency,
-        test_event_code: analise.data.test_event_code || null,
+        /*
+         * `test_event_code` FICA DE FORA deste update, de propósito.
+         *
+         * O campo mudou de lugar: agora vive junto dos pixels, com ação
+         * própria. Se ele continuasse aqui, salvar qualquer coisa em "Geral"
+         * o apagaria — e o efeito seria invisível até alguém procurar no
+         * Test Events da Meta por um evento que passou a ir para produção.
+         */
         cookie_domain: analise.data.cookie_domain || null,
         allowed_origins: analise.data.allowed_origins,
         checkout_domains: analise.data.checkout_domains,
@@ -341,6 +351,52 @@ export async function gerarWebhookToken(): Promise<Resultado & { token?: string 
       mensagem: 'Token gerado',
       detalhe: 'Copie agora: ele não será mostrado de novo.',
       token,
+    };
+  } catch (erro) {
+    return erroDeFormulario(erro);
+  }
+}
+
+/**
+ * O código de teste da Meta, que vive junto dos pixels.
+ *
+ * Ação própria, e não um campo do formulário geral: ele pertence à Meta, e
+ * pôr no mesmo lugar do domínio do cookie e das origens permitidas obrigava
+ * a lembrar onde estava.
+ *
+ * **Esvaziar é uma operação válida e importante.** Esquecido preenchido em
+ * produção, ele manda TODA conversão para Test Events, onde ela não conta: o
+ * otimizador da Meta para de aprender e a campanha morre sem ninguém
+ * entender por quê. Por isso o campo vazio grava `null` em vez de ser
+ * ignorado como "não mudou".
+ */
+export async function salvarTestEventCode(formData: FormData): Promise<Resultado> {
+  if (!(await exigirSessao())) return falha('Sessão expirada. Entre de novo.');
+
+  const analise = z
+    .string()
+    .trim()
+    .max(60, { error: 'Código longo demais.' })
+    .safeParse(formData.get('test_event_code') ?? '');
+
+  if (!analise.success) {
+    return falha(analise.error.issues[0]?.message ?? 'Código inválido.');
+  }
+
+  try {
+    const { error } = await criarClienteAdmin()
+      .from('settings')
+      .update({ test_event_code: analise.data || null })
+      .eq('id', true);
+    if (error) throw new Error(error.message);
+
+    esquecerCaches();
+    revalidatePath('/config');
+    return {
+      ok: true,
+      mensagem: analise.data
+        ? 'Código de teste salvo — as conversões vão para Test Events'
+        : 'Código de teste removido — as conversões voltam a contar',
     };
   } catch (erro) {
     return erroDeFormulario(erro);

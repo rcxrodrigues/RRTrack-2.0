@@ -30,6 +30,27 @@ const TOM = {
   chargeback: 'destructive',
 } as const;
 
+/**
+ * As UTMs da venda, na ordem da árvore da Meta e sem as vazias.
+ *
+ * Separador `·` entre campos diferentes e `›` dentro da hierarquia: sem essa
+ * distinção, `facebook · cpc · CAMP · CONJ · AD` lê como cinco coisas soltas,
+ * quando três delas são um caminho.
+ */
+function origem(linha: {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+}): string[] {
+  const fonte = [linha.utmSource, linha.utmMedium].filter(Boolean).join(' · ');
+  const arvore = [linha.utmCampaign, linha.utmTerm, linha.utmContent]
+    .filter(Boolean)
+    .join(' › ');
+  return [fonte, arvore].filter(Boolean);
+}
+
 export default async function FaturamentoPage({
   searchParams,
 }: {
@@ -193,12 +214,18 @@ export default async function FaturamentoPage({
                   </span>
                   <span className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-3 text-xs">
                     {linha.email && <span className="truncate">{linha.email}</span>}
-                    {linha.utmSource && (
-                      <span className="truncate">
-                        {linha.utmSource}
-                        {linha.utmCampaign ? ` · ${linha.utmCampaign}` : ''}
+                    {/*
+                      As CINCO UTMs, não só a campanha. Numa venda que não
+                      fecha com o ROAS, a resposta costuma estar no campo que
+                      ficou vazio — e mostrar só `source · campaign` escondia
+                      exatamente isso. A ordem é a da árvore da Meta:
+                      campanha › conjunto (utm_term) › anúncio (utm_content).
+                    */}
+                    {origem(linha).map((u) => (
+                      <span key={u} className="truncate">
+                        {u}
                       </span>
-                    )}
+                    ))}
                     {/*
                       Venda órfã: conta na receita e NÃO aparece no ROAS por
                       campanha. É a linha que explica o número que não fecha.

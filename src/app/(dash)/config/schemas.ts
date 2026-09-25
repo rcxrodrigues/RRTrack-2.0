@@ -89,14 +89,25 @@ export const settingsSchema = z.object({
   // Lista fechada, não regex: "XYZ" passaria no formato e seria recusado
   // pela Meta na hora de enviar a conversão.
   //
-  // O toUpperCase antes do enum é tolerância de entrada: pelo seletor o
-  // valor sempre chega certo, mas a action também pode ser chamada
-  // diretamente, e recusar "brl" seria rigor sem propósito.
+  /*
+   * A moeda saiu da tela e virou BRL fixo.
+   *
+   * A coluna FICA, e o schema continua aceitando o valor: a oferta de hoje é
+   * em real, mas a moeda atravessa a conversão até a Meta e o GA4 — cravá-la
+   * no código transformaria "abrir uma oferta em outro país" numa mudança de
+   * código, que é o erro que os domínios de checkout já ensinaram aqui.
+   *
+   * Ausente vira BRL. O `toUpperCase` antes do enum é tolerância de entrada:
+   * a action pode ser chamada direto, e recusar "brl" seria rigor sem
+   * propósito.
+   */
   currency: z
     .string()
     .trim()
     .toUpperCase()
-    .pipe(z.enum(CODIGOS_MOEDA, { error: 'Escolha uma das moedas disponíveis.' })),
+    .pipe(z.enum(CODIGOS_MOEDA, { error: 'Escolha uma das moedas disponíveis.' }))
+    .optional()
+    .default('BRL'),
   test_event_code: z.string().trim().max(60).optional(),
   cookie_domain: z
     .string()

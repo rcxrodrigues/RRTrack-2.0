@@ -29,6 +29,18 @@ export type ConfigSecao = {
   rotuloSegredo: string;
   ajudaSegredo: string;
   vazio: string;
+  /**
+   * O token de cor da seção — `chart-1`, `chart-2`…
+   *
+   * Aqui a cor É informação: as três seções guardam credenciais de serviços
+   * diferentes, e colar um token do GA4 no campo do pixel é um erro que não
+   * dá mensagem nenhuma — o "Testar conexão" falha com um texto do lado de
+   * lá, e o caminho até entender é longo. A faixa de cor responde antes de
+   * a pessoa colar.
+   *
+   * Vêm dos `--chart-*` já validados, e não de matizes novos.
+   */
+  cor: string;
 };
 
 function Mascarado({ last4 }: { last4: string | null }) {
@@ -152,14 +164,29 @@ function LinhaConta({ conta, config }: { conta: Conta; config: ConfigSecao }) {
 export function SecaoContas({
   config,
   contas,
+  extra,
 }: {
   config: ConfigSecao;
   contas: Conta[];
+  /** Conteúdo extra no rodapé da seção — o código de teste, nos pixels. */
+  extra?: React.ReactNode;
 }) {
   const [criando, setCriando] = React.useState(false);
 
   return (
     <Card className="overflow-hidden">
+      {/*
+        A faixa de cor no topo, e não um badge colorido perdido no meio: ela
+        marca a seção inteira, que é o que precisa ser distinguido. Colar um
+        `api_secret` do GA4 no campo do token do pixel não dá mensagem
+        nenhuma — o "Testar conexão" falha com um texto do lado de lá, e o
+        caminho até entender é longo. A cor responde antes de a pessoa colar.
+      */}
+      <div
+        className="h-1 w-full"
+        style={{ backgroundColor: `hsl(var(--${config.cor}))` }}
+        aria-hidden
+      />
       <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:px-5">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h3 className="text-sm font-semibold tracking-tight">{config.titulo}</h3>
@@ -188,6 +215,7 @@ export function SecaoContas({
         aberto={criando}
         onAbertoChange={setCriando}
       />
+      {extra}
     </Card>
   );
 }

@@ -286,3 +286,45 @@ export async function buscarPaginas(intervalo: Intervalo): Promise<LinhaPagina[]
     receita: num(linha, 'receita'),
   }));
 }
+
+export type ReceitaPorUtmCompleta = {
+  campanha: string;
+  conjunto: string;
+  anuncio: string;
+  origem: string;
+  vendas: number;
+  receita: number;
+};
+
+/**
+ * Receita quebrada pelos três níveis da árvore da Meta.
+ *
+ * A convenção é a das macros do anúncio: `{{campaign.name}}` em
+ * `utm_campaign`, `{{adset.name}}` em `utm_term`, `{{ad.name}}` em
+ * `utm_content`. Campo vazio significa que a macro não estava no anúncio —
+ * e aí o ROAS daquele nível é `—`, não zero.
+ */
+export async function buscarReceitaPorUtmCompleta(
+  intervalo: Intervalo,
+): Promise<ReceitaPorUtmCompleta[]> {
+  const supabase = await criarClienteServidor();
+
+  const { data, error } = await supabase.rpc(
+    'painel_receita_por_utm_completa',
+    janela(intervalo),
+  );
+
+  if (error) {
+    console.error('[painel] receita por utm completa falhou:', error.message);
+    return [];
+  }
+
+  return linhas(data).map((linha) => ({
+    campanha: textoEm(linha, 'utm_campaign') ?? '',
+    conjunto: textoEm(linha, 'utm_term') ?? '',
+    anuncio: textoEm(linha, 'utm_content') ?? '',
+    origem: textoEm(linha, 'utm_source') ?? '',
+    vendas: num(linha, 'vendas'),
+    receita: num(linha, 'receita'),
+  }));
+}

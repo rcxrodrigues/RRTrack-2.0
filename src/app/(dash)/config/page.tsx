@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SecaoContas, type Conta, type ConfigSecao } from './_components/secao-contas';
+import { CodigoDeTeste } from './_components/codigo-de-teste';
 import { SecaoGeral, type Settings } from './_components/secao-geral';
 import { SecaoInstalacao } from './_components/secao-instalacao';
 
@@ -91,6 +92,7 @@ const SECAO_PIXELS: ConfigSecao = {
   ajudaSegredo:
     'Events Manager → seu pixel → Configurações → Conversions API → Gerar token de acesso.',
   vazio: 'Nenhum pixel cadastrado. Sem pixel, nada é enviado para a Meta.',
+  cor: 'chart-1',
 };
 
 const SECAO_GA4: ConfigSecao = {
@@ -105,6 +107,7 @@ const SECAO_GA4: ConfigSecao = {
   ajudaSegredo:
     'GA4 → Admin → Fluxos de dados → seu fluxo → Segredos da API do Measurement Protocol.',
   vazio: 'Nenhuma propriedade cadastrada.',
+  cor: 'chart-2',
 };
 
 const SECAO_ADS: ConfigSecao = {
@@ -119,6 +122,7 @@ const SECAO_ADS: ConfigSecao = {
   ajudaSegredo:
     'Precisa da permissão ads_read. Gerado no Business Manager ou no Graph API Explorer.',
   vazio: 'Nenhuma conta cadastrada. Sem ela, não há ROAS.',
+  cor: 'chart-4',
 };
 
 export default async function ConfigPage() {
@@ -184,7 +188,13 @@ export default async function ConfigPage() {
         </TabsContent>
 
         <TabsContent value="meta">
-          <SecaoContas config={SECAO_PIXELS} contas={pixels} />
+          <SecaoContas
+            config={SECAO_PIXELS}
+            contas={pixels}
+            // O código de teste vive aqui, e não em Geral: ele é da Meta, e
+            // pôr junto do domínio do cookie obrigava a lembrar onde estava.
+            extra={<CodigoDeTeste atual={settings.test_event_code} />}
+          />
         </TabsContent>
 
         <TabsContent value="ga4">

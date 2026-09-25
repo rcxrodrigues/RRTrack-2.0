@@ -9,15 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { MOEDAS } from '@/lib/moedas';
 import { CampoCopiavel } from './campo-copiavel';
 import { gerarWebhookToken, salvarSettings } from '../actions';
 
@@ -83,47 +75,6 @@ export function SecaoGeral({
             <p className="text-muted-foreground text-sm">
               Valem para todos os destinos configurados.
             </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="currency">Moeda</Label>
-              <Select name="currency" defaultValue={settings.currency}>
-                <SelectTrigger id="currency">
-                  <SelectValue placeholder="Escolha a moeda" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOEDAS.map((moeda) => (
-                    <SelectItem key={moeda.codigo} value={moeda.codigo}>
-                      <span className="flex items-center gap-2">
-                        <code className="font-mono text-xs">{moeda.codigo}</code>
-                        <span className="text-muted-foreground">
-                          {moeda.simbolo} · {moeda.nome}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">
-                Vai em toda conversão enviada à Meta e ao GA4.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="test_event_code">Código de teste da Meta</Label>
-              <Input
-                id="test_event_code"
-                name="test_event_code"
-                defaultValue={settings.test_event_code ?? ''}
-                placeholder="TEST12345"
-                className="font-mono"
-              />
-              <p className="text-muted-foreground text-xs">
-                Só enquanto estiver validando: os eventos aparecem em Test
-                Events e <strong>não</strong> contam como conversão.
-              </p>
-            </div>
           </div>
 
           <div className="flex flex-col gap-2">

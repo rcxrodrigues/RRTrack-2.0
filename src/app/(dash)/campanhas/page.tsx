@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { MetricCard } from '@/components/dash/metric-card';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
-import { inteiro, moeda, percentual, razao } from '@/lib/formato';
-import { buscarInsights, type NivelInsights } from '@/lib/meta/insights';
-import { buscarReceitaPorUtm } from '@/lib/painel/consultas';
+import { inteiro, moeda } from '@/lib/formato';
+import { buscarInsights } from '@/lib/meta/insights';
+import { buscarReceitaPorUtmCompleta } from '@/lib/painel/consultas';
+import { montarArvore } from '@/lib/painel/arvore';
 import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
-import { cruzar } from '@/lib/painel/roas';
+
+import { ArvoreCampanhas } from './_components/arvore-campanhas';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -15,20 +17,6 @@ export const metadata = { title: 'Campanhas' };
 
 export const dynamic = 'force-dynamic';
 
-const NIVEIS: { valor: NivelInsights; rotulo: string }[] = [
-  { valor: 'campaign', rotulo: 'Campanhas' },
-  { valor: 'adset', rotulo: 'Conjuntos' },
-  { valor: 'ad', rotulo: 'Anúncios' },
-];
-
-function ehNivel(valor: string | undefined): valor is NivelInsights {
-  return NIVEIS.some((n) => (n.valor as string) === valor);
-}
-
-function lerNivel(bruto: string | string[] | undefined): NivelInsights {
-  const v = Array.isArray(bruto) ? bruto[0] : bruto;
-  return ehNivel(v) ? v : 'campaign';
-}
 
 type Conta = { id: string; label: string | null; ad_account_id: string };
 
@@ -39,7 +27,6 @@ export default async function CampanhasPage({
 }) {
   const params = await searchParams;
   const periodo = lerPeriodo(params.periodo);
-  const nivel = lerNivel(params.nivel);
 
   const { settings } = await carregarConfiguracao();
   const intervalo = intervaloDe(periodo, settings.timezone);
@@ -55,14 +42,6 @@ export default async function CampanhasPage({
   const contas = data ?? [];
   const pedida = Array.isArray(params.conta) ? params.conta[0] : params.conta;
   const conta = contas.find((c) => c.id === pedida) ?? contas[0];
-
-  const link = (extra: Record<string, string>): string =>
-    `?${new URLSearchParams({
-      periodo,
-      nivel,
-      ...(conta ? { conta: conta.id } : {}),
-      ...extra,
-    }).toString()}`;
 
   if (!conta) {
     return (
@@ -82,7 +61,17 @@ export default async function CampanhasPage({
     );
   }
 
-  const [insights, receitas] = await Promise.all([
+  /*
+   * Os TRÊS níveis, para a árvore existir.
+   *
+   * São três chamadas onde antes era uma, e isso é deliberado: a hierarquia
+   * não dá para deduzir de um nível só — o insight de anúncio traz
+   * `adset_id`, não o nome da campanha. As três passam pela MESMA fila
+   * serial por conta e pelo mesmo cache de 15 minutos, então não viram três
+   * vezes o consumo de cota: viram três leituras que o cache atende juntas
+   * enquanto vale.
+   */
+  const pedir = async (nivel: 'campaign' | 'adset' | 'ad') =>
     buscarInsights({
       contaId: conta.id,
       adAccountId: conta.ad_account_id,
@@ -90,19 +79,28 @@ export default async function CampanhasPage({
       de: intervalo.de,
       ate: intervalo.ate,
       fuso: intervalo.fuso,
-    }),
-    buscarReceitaPorUtm(intervalo),
+    });
+
+  const [insights, conjuntos, anuncios, receitas] = await Promise.all([
+    pedir('campaign'),
+    pedir('adset'),
+    pedir('ad'),
+    buscarReceitaPorUtmCompleta(intervalo),
   ]);
 
-  const { linhas, receitaOrfa, vendasOrfas, utmsSemPar } = cruzar(
+  const { raizes, receitaOrfa, vendasOrfas, utmsSemPar } = montarArvore(
     insights.linhas,
+    conjuntos.linhas,
+    anuncios.linhas,
     receitas,
   );
 
-  const gasto = linhas.reduce((s, l) => s + l.gasto, 0);
-  const receita = linhas.reduce((s, l) => s + l.receita, 0);
-  const vendas = linhas.reduce((s, l) => s + l.vendas, 0);
-  const receitaDaMeta = linhas.reduce((s, l) => s + l.receitaDaMeta, 0);
+  // Os totais vêm do nível da CAMPANHA. Somar a árvore inteira contaria o
+  // mesmo gasto três vezes — uma por nível.
+  const gasto = raizes.reduce((s, l) => s + l.gasto, 0);
+  const receita = raizes.reduce((s, l) => s + l.receita, 0);
+  const vendas = raizes.reduce((s, l) => s + l.vendas, 0);
+  const receitaDaMeta = raizes.reduce((s, l) => s + l.receitaDaMeta, 0);
 
   /*
    * Houve venda no período e NENHUMA casou com campanha: o ROAS geral não é
@@ -113,7 +111,6 @@ export default async function CampanhasPage({
   const roasGeral = gasto > 0 && !nadaCasou ? receita / gasto : null;
   const cpaGeral = vendas > 0 ? gasto / vendas : null;
 
-  const ordenadas = linhas.toSorted((a, b) => b.gasto - a.gasto);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
@@ -127,7 +124,7 @@ export default async function CampanhasPage({
           contas.map((c) => (
             <Link
               key={c.id}
-              href={`?${new URLSearchParams({ periodo, nivel, conta: c.id }).toString()}`}
+              href={`?${new URLSearchParams({ periodo, conta: c.id }).toString()}`}
               className={
                 c.id === conta.id
                   ? 'bg-primary text-primary-foreground flex h-9 items-center rounded-md px-3 text-sm font-medium'
@@ -138,21 +135,6 @@ export default async function CampanhasPage({
             </Link>
           ))}
 
-        <div className="glass ml-auto flex gap-1 rounded-lg p-1">
-          {NIVEIS.map((n) => (
-            <Link
-              key={n.valor}
-              href={link({ nivel: n.valor })}
-              className={
-                n.valor === nivel
-                  ? 'bg-primary text-primary-foreground flex h-8 items-center rounded-md px-3 text-xs font-medium'
-                  : 'text-muted-foreground hover:text-foreground flex h-8 items-center rounded-md px-3 text-xs'
-              }
-            >
-              {n.rotulo}
-            </Link>
-          ))}
-        </div>
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -231,7 +213,7 @@ export default async function CampanhasPage({
         <div className="flex flex-col gap-1 px-4 pt-4 pb-3 sm:px-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold tracking-tight">
-              {NIVEIS.find((n) => n.valor === nivel)?.rotulo}
+              Campanhas
             </h3>
             {insights.cacheDe && (
               <span className="text-muted-foreground text-xs">
@@ -244,73 +226,13 @@ export default async function CampanhasPage({
             aparece ao lado quando difere — ela conta a conversão sem descontar
             estorno, porque a Conversions API não tem reversão.
           </p>
+          <p className="text-muted-foreground text-xs">
+            Clique numa campanha para ver os conjuntos, e num conjunto para
+            ver os anúncios. O gasto aparece em cada nível.
+          </p>
         </div>
 
-        {ordenadas.length === 0 ? (
-          <p className="text-muted-foreground border-border/60 border-t px-4 py-8 text-center text-sm sm:px-5">
-            Nenhum gasto neste período.
-          </p>
-        ) : (
-          <div className="border-border/60 border-t">
-            {ordenadas.map((l) => {
-              const divergente =
-                l.receitaDaMeta > 0 &&
-                Math.abs(l.receitaDaMeta - l.receita) / l.receitaDaMeta > 0.1;
-
-              return (
-                <div
-                  key={l.id}
-                  className="border-border/60 flex flex-col gap-2 border-b px-4 py-3 last:border-0 sm:px-5"
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="truncate text-sm font-medium">{l.nome}</span>
-                    <span
-                      data-slot="metric"
-                      className={
-                        l.roas === null
-                          ? 'text-muted-foreground text-sm'
-                          : l.roas >= 1
-                            ? 'text-success text-sm font-semibold'
-                            : 'text-destructive-vivid text-sm font-semibold'
-                      }
-                    >
-                      {l.roas === null ? '—' : `${l.roas.toFixed(2)}×`}
-                    </span>
-                  </div>
-
-                  <div className="text-muted-foreground flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-                    <span className="tabular">gasto {moeda(l.gasto)}</span>
-                    <span className="tabular">receita {moeda(l.receita)}</span>
-                    <span className="tabular">
-                      {inteiro(l.vendas)} {l.vendas === 1 ? 'venda' : 'vendas'}
-                    </span>
-                    {l.cpa !== null && <span className="tabular">CPA {moeda(l.cpa)}</span>}
-                    {l.cliques > 0 && (
-                      <span className="tabular">
-                        CTR{' '}
-                        {percentual(razao(l.cliques, l.impressoes) ?? 0, 2)}
-                      </span>
-                    )}
-                    {l.motivoSemRoas === 'sem-casamento' && (
-                      <span className="text-warning">
-                        {l.comprasDaMeta > 0
-                          ? `a Meta contou ${inteiro(l.comprasDaMeta)} ${
-                              l.comprasDaMeta === 1 ? 'compra' : 'compras'
-                            } e nenhuma casou — confira a utm_campaign do anúncio`
-                          : 'nenhuma venda casou com esta linha'}
-                      </span>
-                    )}
-                    {divergente && (
-                      <span className="tabular">
-                        Meta diz {moeda(l.receitaDaMeta)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <ArvoreCampanhas raizes={raizes} />
       </Card>
 
       {receitaDaMeta > 0 && (
