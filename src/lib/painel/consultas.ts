@@ -251,3 +251,38 @@ export async function buscarReceitaPorUtm(
     receita: num(linha, 'receita'),
   }));
 }
+
+export type LinhaPagina = {
+  url: string;
+  visitantes: number;
+  checkouts: number;
+  compras: number;
+  receita: number;
+};
+
+/**
+ * Conversão por página.
+ *
+ * A atribuição é "o visitante VIU esta página", então quem passou por três
+ * páginas e comprou conta nas três. A soma das colunas não fecha com o total
+ * do painel, e a tela diz isso — número que não fecha sem aviso é pior que
+ * número nenhum.
+ */
+export async function buscarPaginas(intervalo: Intervalo): Promise<LinhaPagina[]> {
+  const supabase = await criarClienteServidor();
+
+  const { data, error } = await supabase.rpc('painel_paginas', janela(intervalo));
+
+  if (error) {
+    console.error('[painel] páginas falhou:', error.message);
+    return [];
+  }
+
+  return linhas(data).map((linha) => ({
+    url: textoEm(linha, 'url') ?? '',
+    visitantes: num(linha, 'visitantes'),
+    checkouts: num(linha, 'checkouts'),
+    compras: num(linha, 'compras'),
+    receita: num(linha, 'receita'),
+  }));
+}

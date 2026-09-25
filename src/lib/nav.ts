@@ -3,7 +3,7 @@ import {
   Activity,
   Palette,
   BarChart3,
-  Globe2,
+  FileText,
   LayoutDashboard,
   Settings,
   Wallet,
@@ -38,7 +38,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
     shortLabel: 'Campanhas',
     icon: BarChart3,
   },
-  { href: '/geo', label: 'Geo', shortLabel: 'Geo', icon: Globe2 },
+  {
+    href: '/paginas',
+    label: 'Páginas',
+    shortLabel: 'Páginas',
+    icon: FileText,
+  },
   {
     href: '/config',
     label: 'Configuração',
@@ -48,7 +53,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/estilo', label: 'Estilo', shortLabel: 'Estilo', icon: Palette },
 ] as const;
 
-/** A barra inferior do celular não comporta seis itens com conforto. */
+/**
+ * A barra inferior do celular não comporta a lista inteira com conforto.
+ *
+ * Fica com as cinco que se olha no celular: o resto é trabalho de mesa.
+ */
 export const MOBILE_NAV_ITEMS: readonly NavItem[] = NAV_ITEMS.filter((item) =>
   ['/', '/eventos', '/faturamento', '/campanhas', '/config'].includes(item.href),
 );

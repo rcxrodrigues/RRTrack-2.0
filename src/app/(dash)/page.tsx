@@ -1,10 +1,17 @@
 import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
+import { SecaoGeo } from '@/components/dash/secao-geo';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
 import { inteiro, moeda, percentual, razao, variacao } from '@/lib/formato';
-import { buscarEventosPorTipo, buscarResumo } from '@/lib/painel/consultas';
+import {
+  buscarEventosPorTipo,
+  buscarGeo,
+  buscarResumo,
+} from '@/lib/painel/consultas';
+import { corDoEvento } from '@/lib/painel/cores-evento';
+import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
 import { montarFunil } from '@/lib/painel/funil';
 import { intervaloAnterior, intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
 import { carregarConfiguracao } from '@/lib/settings';
@@ -26,17 +33,31 @@ export default async function VisaoGeralPage({
   const { settings } = await carregarConfiguracao();
   const intervalo = intervaloDe(periodo, settings.timezone);
 
-  // As três consultas são independentes — em série seriam três idas ao banco
-  // esperando uma pela outra sem motivo.
-  const [resumo, antes, eventos] = await Promise.all([
+  // Independentes entre si — em série seriam cinco idas esperando uma pela
+  // outra sem motivo. O gasto vai junto porque o ROAS precisa dos dois lados.
+  const [resumo, antes, eventos, geo, gasto] = await Promise.all([
     buscarResumo(intervalo),
     buscarResumo(intervaloAnterior(intervalo)),
     buscarEventosPorTipo(intervalo),
+    buscarGeo(intervalo),
+    buscarGastoDoPeriodo(intervalo),
   ]);
 
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
+  const checkout = funil.etapas[1];
   const conversao = razao(resumo.aprovadas, resumo.visitantes);
   const ticket = razao(resumo.receita, resumo.aprovadas);
+
+  /*
+   * ROAS: `null` sempre que um dos dois lados não existe.
+   *
+   * Sem conta de anúncio o gasto é desconhecido, não zero — e receita
+   * dividida por zero daria infinito. Gasto zero com conta cadastrada é
+   * medida real (a campanha não rodou), e aí também não há retorno SOBRE
+   * gasto para calcular.
+   */
+  const roas =
+    gasto.total !== null && gasto.total > 0 ? resumo.receita / gasto.total : null;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
@@ -47,25 +68,51 @@ export default async function VisaoGeralPage({
         <SeletorPeriodo atual={periodo} />
       </div>
 
-      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/*
+        Duas linhas de três, e a ordem é o caminho do dinheiro: quem chegou,
+        quem foi ao checkout, quem comprou — depois quanto custou, quanto
+        entrou e qual o retorno.
+      */}
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <MetricCard
-          label="Visitantes"
+          label="Visitantes únicos"
           value={inteiro(resumo.visitantes)}
           delta={variacao(resumo.visitantes, antes.visitantes)}
           hint={`${inteiro(resumo.identificados)} identificados`}
         />
         <MetricCard
-          label="Eventos"
-          value={inteiro(resumo.eventos)}
+          label="Chegaram no checkout"
+          // Sem o evento, é `—` e não zero: o dado não existe, e afirmar
+          // zero culparia a oferta por uma falha de instalação.
+          value={checkout?.desconhecido ? null : inteiro(checkout?.total ?? 0)}
           accent="cyan"
-          delta={variacao(resumo.eventos, antes.eventos)}
+          hint={
+            checkout?.desconhecido
+              ? 'o snippet não dispara InitiateCheckout'
+              : checkout?.doTopo === null || checkout?.doTopo === undefined
+                ? undefined
+                : `${percentual(checkout.doTopo)} dos visitantes`
+          }
         />
         <MetricCard
           label="Compras"
           value={inteiro(resumo.aprovadas)}
           accent="amber"
           delta={variacao(resumo.aprovadas, antes.aprovadas)}
-          hint={conversao === null ? undefined : `${percentual(conversao, 2)} de conversão`}
+          hint={
+            conversao === null ? undefined : `${percentual(conversao, 2)} de conversão`
+          }
+        />
+
+        <MetricCard
+          label="Gasto"
+          value={gasto.total === null ? null : moeda(gasto.total)}
+          sentido="menor-melhor"
+          hint={
+            gasto.total === null
+              ? 'nenhuma conta de anúncio cadastrada'
+              : `${inteiro(gasto.contas)} ${gasto.contas === 1 ? 'conta' : 'contas'} de anúncio`
+          }
         />
         <MetricCard
           label="Receita"
@@ -73,7 +120,24 @@ export default async function VisaoGeralPage({
           delta={variacao(resumo.receita, antes.receita)}
           hint={ticket === null ? undefined : `ticket ${moeda(ticket)}`}
         />
+        <MetricCard
+          label="ROAS"
+          value={roas === null ? null : `${roas.toFixed(2)}×`}
+          accent="muted"
+          hint={
+            gasto.total === null
+              ? 'falta o gasto para calcular'
+              : 'receita ÷ gasto, sobre vendas aprovadas'
+          }
+        />
       </section>
+
+      {gasto.aviso && (
+        <Card className="gap-1 p-4 sm:p-5">
+          <h3 className="text-sm font-semibold tracking-tight">Gasto de mídia</h3>
+          <p className="text-warning text-sm">{gasto.aviso}</p>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="gap-4 p-4 sm:p-5">
@@ -97,15 +161,20 @@ export default async function VisaoGeralPage({
             </p>
           </div>
           <ListaRanqueada
+            // A cor vem de `cores-evento.ts`, a mesma que a tabela de eventos
+            // usa — cor só vira atalho se for a MESMA em todo lugar.
             itens={eventos.map((e) => ({
               id: e.nome,
               valor: e.total,
-              nota: `${inteiro(e.visitantes)} pessoas`,
+              cor: corDoEvento(e.nome),
+              nota: `${inteiro(e.visitantes)} ${e.visitantes === 1 ? 'pessoa' : 'pessoas'}`,
             }))}
             vazio="Nenhum evento chegou neste período. Confira se o snippet está na página."
           />
         </Card>
       </div>
+
+      <SecaoGeo linhas={geo} />
 
       {/*
         A saúde da atribuição, e não um detalhe: venda órfã entra na receita e
