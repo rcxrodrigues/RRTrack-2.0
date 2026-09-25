@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Quando } from '@/components/dash/quando';
 import { reprocessarWebhook } from '../actions';
 
 export type WebhookRecebido = {
@@ -37,50 +38,6 @@ const RUIDO = new Set([
   'accept', 'accept-encoding', 'accept-language', 'connection', 'host',
   'cache-control', 'pragma', 'te', 'upgrade-insecure-requests',
 ]);
-
-/**
- * A data em UTC, derivada do texto ISO sem passar por `Date`.
- *
- * Determinística de propósito: é o que o servidor renderiza. Formatar com
- * `toLocaleString` aqui seria armadilha — o servidor roda em UTC (a Vercel
- * roda) e o navegador no fuso de quem olha, então os dois produziriam textos
- * diferentes para a mesma linha e a hidratação quebraria.
- */
-function emUtc(iso: string): string {
-  const [data = '', resto = ''] = iso.split('T');
-  const [, mes = '', dia = ''] = data.split('-');
-  return `${dia}/${mes}, ${resto.slice(0, 8)} UTC`;
-}
-
-/**
- * O horário de quem está olhando.
- *
- * Trocado só DEPOIS da montagem: aí o servidor já entregou o texto em UTC,
- * a hidratação casou, e a melhora acontece sem mismatch. Numa tela de
- * depuração o fuso local importa — é ele que bate com o relógio da pessoa
- * que acabou de disparar a venda de teste.
- */
-function Quando({ iso }: { iso: string }) {
-  // `useSyncExternalStore` existe exatamente para isto: ele aceita um
-  // retrato do SERVIDOR e outro do CLIENTE. O servidor entrega UTC, a
-  // hidratação casa, e o cliente passa a mostrar o fuso de quem olha — sem
-  // `setState` em efeito, que dispara render em cascata.
-  const texto = React.useSyncExternalStore(
-    // Nunca muda depois de montado: não há a que assinar.
-    () => () => {},
-    () => formatarLocal(iso),
-    () => emUtc(iso),
-  );
-
-  return <>{texto}</>;
-}
-
-function formatarLocal(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
-}
 
 export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
   const [aberto, setAberto] = React.useState(false);

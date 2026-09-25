@@ -1,5 +1,15 @@
+import Link from 'next/link';
+
+import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
+import { inteiro } from '@/lib/formato';
+import { buscarEventosPorTipo } from '@/lib/painel/consultas';
+import { buscarEventos, lerFiltro, POR_PAGINA } from '@/lib/painel/eventos';
+import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteServidor } from '@/lib/supabase/server';
+
+import { TabelaEventos } from './_components/tabela-eventos';
 import {
   WebhookRecebidoItem,
   type WebhookRecebido,
@@ -16,12 +26,14 @@ export const dynamic = 'force-dynamic';
  * A leitura usa o cliente do USUÁRIO, não o service_role — a tabela tem
  * policy de select para `authenticated`, e é só isso que ela precisa.
  */
-async function carregar(): Promise<WebhookRecebido[]> {
+async function carregarWebhooks(): Promise<WebhookRecebido[]> {
   const supabase = await criarClienteServidor();
 
   const { data } = await supabase
     .from('webhooks_recebidos')
-    .select('id, adaptador, corpo, corpo_texto, headers, transaction_id, motivo, created_at')
+    .select(
+      'id, adaptador, corpo, corpo_texto, headers, transaction_id, motivo, created_at',
+    )
     .order('created_at', { ascending: false })
     .limit(50)
     .returns<WebhookRecebido[]>();
@@ -29,16 +41,132 @@ async function carregar(): Promise<WebhookRecebido[]> {
   return data ?? [];
 }
 
-export default async function EventosPage() {
-  const recebidos = await carregar();
+export default async function EventosPage({
+  searchParams,
+}: {
+  // No Next 16 `searchParams` é uma Promise — ver node_modules/next/dist/docs.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const periodo = lerPeriodo(params.periodo);
+  const filtro = lerFiltro(params);
+
+  const { settings } = await carregarConfiguracao();
+  const intervalo = intervaloDe(periodo, settings.timezone);
+
+  const [{ linhas, total }, tipos, recebidos] = await Promise.all([
+    buscarEventos(intervalo, filtro),
+    buscarEventosPorTipo(intervalo),
+    carregarWebhooks(),
+  ]);
+
   const naoReconhecidos = recebidos.filter((r) => r.adaptador === null).length;
-  // Reconhecido e não lido é pior que não reconhecido: ali o formato é
-  // nosso, o evento parecia importar, e falta cadastro — não adaptador.
   const naoLidos = recebidos.filter((r) => r.motivo !== null).length;
+
+  const ultimaPagina = Math.max(0, Math.ceil(total / POR_PAGINA) - 1);
+  const linkDaPagina = (n: number): string => {
+    const q = new URLSearchParams({ periodo });
+    if (filtro.nome) q.set('nome', filtro.nome);
+    if (filtro.busca) q.set('busca', filtro.busca);
+    if (n > 0) q.set('pagina', String(n));
+    return `?${q.toString()}`;
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-      <h2 className="text-lg font-semibold tracking-tight md:hidden">Eventos</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold tracking-tight md:hidden">Eventos</h2>
+        <SeletorPeriodo atual={periodo} />
+      </div>
+
+      <Card>
+        <div className="flex flex-col gap-3 px-4 pt-4 pb-3 sm:px-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold tracking-tight">
+              Eventos capturados
+            </h3>
+            <span className="text-muted-foreground tabular text-xs">
+              {inteiro(total)} no período
+            </span>
+          </div>
+
+          {/*
+            Formulário GET, sem JS: os filtros viram query string, o estado
+            fica na URL e a tela funciona antes da hidratação. Um filtro é a
+            última coisa que deveria depender de JavaScript.
+          */}
+          <form method="get" className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="periodo" value={periodo} />
+
+            <select
+              name="nome"
+              defaultValue={filtro.nome}
+              aria-label="Tipo de evento"
+              className="bg-input/40 ring-border h-9 min-w-36 rounded-md px-2 text-sm ring-1"
+            >
+              <option value="">Todos os tipos</option>
+              {tipos.map((t) => (
+                <option key={t.nome} value={t.nome}>
+                  {t.nome} ({inteiro(t.total)})
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="search"
+              name="busca"
+              defaultValue={filtro.busca}
+              placeholder="trck_user_id ou event_id"
+              aria-label="Buscar por identificador"
+              className="bg-input/40 ring-border h-9 min-w-52 flex-1 rounded-md px-3 font-mono text-xs ring-1"
+            />
+
+            <button
+              type="submit"
+              className="bg-primary text-primary-foreground h-9 rounded-md px-4 text-sm font-medium"
+            >
+              Filtrar
+            </button>
+
+            {(filtro.nome || filtro.busca) && (
+              <Link
+                href={`?periodo=${periodo}`}
+                className="text-muted-foreground hover:text-foreground flex h-9 items-center px-2 text-sm"
+              >
+                Limpar
+              </Link>
+            )}
+          </form>
+        </div>
+
+        <TabelaEventos linhas={linhas} />
+
+        {ultimaPagina > 0 && (
+          <div className="border-border/60 flex items-center justify-between gap-3 border-t px-4 py-3 sm:px-5">
+            <span className="text-muted-foreground tabular text-xs">
+              Página {inteiro(filtro.pagina + 1)} de {inteiro(ultimaPagina + 1)}
+            </span>
+            <div className="flex gap-2">
+              {filtro.pagina > 0 && (
+                <Link
+                  href={linkDaPagina(filtro.pagina - 1)}
+                  className="ring-border hover:bg-muted/60 flex h-9 items-center rounded-md px-3 text-sm ring-1"
+                >
+                  Anterior
+                </Link>
+              )}
+              {filtro.pagina < ultimaPagina && (
+                <Link
+                  href={linkDaPagina(filtro.pagina + 1)}
+                  className="ring-border hover:bg-muted/60 flex h-9 items-center rounded-md px-3 text-sm ring-1"
+                >
+                  Próxima
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card>
         <div className="flex flex-col gap-1 px-4 pt-4 pb-3 sm:px-5">

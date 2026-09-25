@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { buscarPayload, type PayloadDoEvento } from '@/lib/painel/eventos';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { usuarioAtual } from '@/lib/supabase/server';
@@ -135,4 +136,21 @@ async function marcar(
   if (error) {
     console.error('[eventos] falha ao marcar o adaptador:', error.message);
   }
+}
+
+/**
+ * Os payloads de um evento, sob demanda.
+ *
+ * Buscados só quando a linha abre: `payload_meta`, `response_meta`,
+ * `payload_ga4` e `response_ga4` são jsonb grandes, e cinquenta linhas com os
+ * quatro dariam megabytes numa listagem que mostra vinte campos.
+ */
+export async function carregarPayloadDoEvento(
+  id: string,
+): Promise<PayloadDoEvento | null> {
+  // Server Action é endpoint HTTP: o botão só existir na tela protegida não
+  // impede ninguém de chamá-la direto. E aqui sai payload com dado pessoal.
+  if (!(await usuarioAtual())) return null;
+
+  return buscarPayload(id);
 }

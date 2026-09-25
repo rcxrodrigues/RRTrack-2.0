@@ -356,6 +356,12 @@ diferentes — são a mesma quantidade encolhendo, e quem carrega a magnitude é
 comprimento da barra. Matiz por etapa gastaria três cores para não dizer nada.
 Série única também não pede legenda: o rótulo já está na barra.
 
+> **Neste ambiente a foto tem de ser do BUILD, não do `next dev`.** O
+> websocket de HMR não atravessa o proxy de saída, e sem ele a hidratação não
+> completa: o componente aparece certo e **não responde a clique**. Passei um
+> tempo achando que o `onClick` estava errado. Para conferir qualquer coisa
+> interativa: `npm run build && npx next start -p 3100`.
+
 **O passo 7 da skill é literal: renderize e olhe.** O validador checa cor, não
 layout. Sem credenciais do Supabase dá para montar uma rota `previa` temporária
 com dados falsos, liberar o caminho em `ROTAS_PUBLICAS`, tirar a foto com o
