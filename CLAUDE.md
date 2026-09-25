@@ -362,6 +362,14 @@ Série única também não pede legenda: o rótulo já está na barra.
 > tempo achando que o `onClick` estava errado. Para conferir qualquer coisa
 > interativa: `npm run build && npx next start -p 3100`.
 
+**Função não atravessa a fronteira servidor→cliente.** Passar
+`formatar={moeda}` de um Server Component para um gráfico dá *"Functions
+cannot be passed directly to Client Components"* — e não é erro de build só:
+a serialização do RSC não tem como mandar código. O nome do formato viaja
+(`formato="moeda"`), o componente escolhe. Quem pegou foi o **build da rota
+de prévia**, que é estática; a tela real é `force-dynamic` e teria estourado
+em produção.
+
 **O passo 7 da skill é literal: renderize e olhe.** O validador checa cor, não
 layout. Sem credenciais do Supabase dá para montar uma rota `previa` temporária
 com dados falsos, liberar o caminho em `ROTAS_PUBLICAS`, tirar a foto com o
@@ -370,6 +378,20 @@ saíram dessa foto e nenhum teste os pegaria: o `0,0%` acima, uma seta `↓` ao
 lado de `10,6%` que lia como "caiu 10,6%" quando o número era o que PASSOU (a
 seta virou `↳` e o texto virou "seguiram"), e `R$ 37.158,70` partindo em duas
 linhas no celular com o "R$" sozinho parecendo outro número.
+
+A do gráfico de série pegou mais dois: os rótulos do eixo ficavam **por cima
+do dado** do começo do período (ganharam calha própria, num flex), e o SVG
+posicionado por `left`/`right` **não ganhava largura calculada** — caía no
+tamanho intrínseco do `viewBox`, 600px, e no celular atravessava a tela
+inteira. Calha e quadro viraram irmãos num flex, e todo `%` passou a ser
+relativo só ao quadro.
+
+E o teto do eixo tem degraus finos (`[1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]`)
+porque com os grossos um pico de 5.120 subia para 10.000 e a curva ficava
+espremida na metade de baixo, **parecendo plana num período que dobrou**. O
+eixo sempre começa em zero: cortar a base é a forma mais fácil de mentir com
+um gráfico, e num painel de faturamento vira decisão de mídia tomada em cima
+de uma ilusão. `serie.test.ts` trava as duas coisas.
 
 ---
 
