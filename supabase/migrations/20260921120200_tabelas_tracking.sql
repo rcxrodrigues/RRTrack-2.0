@@ -168,8 +168,10 @@ create index if not exists purchases_utm_source_idx  on public.purchases (utm_so
 create index if not exists purchases_nao_enviadas_idx
   on public.purchases (created_at) where sent_at is null;
 
+drop trigger if exists visitors_touch on public.visitors;
 create trigger visitors_touch before update on public.visitors
   for each row execute function private.touch_updated_at();
+drop trigger if exists purchases_touch on public.purchases;
 create trigger purchases_touch before update on public.purchases
   for each row execute function private.touch_updated_at();
 
@@ -180,10 +182,13 @@ alter table public.visitors   enable row level security;
 alter table public.events_log enable row level security;
 alter table public.purchases  enable row level security;
 
+drop policy if exists "visitors: leitura autenticada" on public.visitors;
 create policy "visitors: leitura autenticada"
   on public.visitors for select to authenticated using (true);
+drop policy if exists "events_log: leitura autenticada" on public.events_log;
 create policy "events_log: leitura autenticada"
   on public.events_log for select to authenticated using (true);
+drop policy if exists "purchases: leitura autenticada" on public.purchases;
 create policy "purchases: leitura autenticada"
   on public.purchases for select to authenticated using (true);
 

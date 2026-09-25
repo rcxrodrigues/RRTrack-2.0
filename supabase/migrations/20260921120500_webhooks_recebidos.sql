@@ -52,6 +52,7 @@ create index if not exists webhooks_recebidos_desconhecidos_idx
 -- -----------------------------------------------------------------------------
 alter table public.webhooks_recebidos enable row level security;
 
+drop policy if exists "webhooks_recebidos: leitura autenticada" on public.webhooks_recebidos;
 create policy "webhooks_recebidos: leitura autenticada"
   on public.webhooks_recebidos for select to authenticated using (true);
 

@@ -60,3 +60,25 @@ if echo "$relatorio" | grep -q "FALHA"; then
   echo "o instalador não passou na própria verificação" >&2
   exit 1
 fi
+
+# ── e precisa rodar DE NOVO, no mesmo banco ────────────────────────────────
+# Não é zelo: é como migration nova chega a um banco que já existe. O fluxo
+# aqui não tem runner que saiba o que já foi aplicado — a pessoa cola o
+# arquivo inteiro outra vez. Sem isso, a instalação trava no primeiro objeto
+# que já existe, e o erro (`trigger "settings_touch" already exists`) não diz
+# nada sobre o que ela estava tentando fazer: acrescentar as duas migrations
+# do fim. O cabeçalho do INSTALAR.sql promete essa propriedade desde sempre;
+# até aqui nada a verificava.
+#
+# O COMPACTO é testado junto, e não por simetria: ele é o arquivo que a
+# pessoa realmente cola, e passa por um gerador que pode divergir do fonte.
+echo "── e de novo, no mesmo banco (é assim que migration nova chega) ──"
+for arquivo in INSTALAR.sql INSTALAR-COMPACTO.sql; do
+  printf '  %s ... ' "$arquivo"
+  saida="$("${PSQL[@]}" -q -d "${DB}_instalar" -f "$RAIZ/supabase/$arquivo" 2>&1)" || {
+    echo "FALHOU"
+    echo "$saida" | grep -E "ERROR|DETAIL" | head -5 | sed 's/^/    /'
+    exit 1
+  }
+  echo "ok"
+done

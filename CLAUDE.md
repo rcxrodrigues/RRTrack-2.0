@@ -1057,7 +1057,19 @@ como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica.
 - Código e comentários em **português**. Nomes de tabela e coluna em inglês
   (`visitors`, `events_log`), como já estão especificados.
 - Migrations em `supabase/migrations/`, numeradas e **nunca editadas depois de
-  aplicadas** — corrija com uma migration nova.
+  aplicadas** — corrija com uma migration nova. **A exceção é idempotência**,
+  que não muda o que a migration faz: ver abaixo.
+- **Toda migration roda duas vezes sem erro.** Não é zelo — é como migration
+  nova chega a um banco que já existe: aqui não há runner que saiba o que já
+  foi aplicado, a pessoa cola o arquivo inteiro outra vez. `create trigger` e
+  `create policy` não têm `if not exists`, então vão sempre precedidos de
+  `drop … if exists`. Sem isso a instalação trava no primeiro objeto que já
+  existe, e o erro (`trigger "settings_touch" already exists`) não diz nada
+  sobre o que se estava tentando fazer — acrescentar as migrations do fim.
+  Consertar isso é o único caso em que se edita migration já aplicada: o
+  resultado num banco limpo é idêntico, só deixa de quebrar no banco que já
+  tem. `aplicar.sh` aplica tudo **duas vezes**, e o INSTALAR-COMPACTO junto
+  porque é o arquivo que a pessoa realmente cola.
 - Toda entrada pública tem um schema Zod no mesmo arquivo do handler.
 - Log de erro nunca imprime segredo, token ou payload inteiro com dado pessoal.
 - `npm run check` antes de cada commit.

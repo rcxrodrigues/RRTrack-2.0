@@ -103,6 +103,7 @@ alter table public.meta_insights_cache enable row level security;
 
 -- rate_limits não tem policy nenhuma: nem o painel precisa ler. Com RLS ligada
 -- e zero policies, ninguém alcança a tabela a não ser o service_role.
+drop policy if exists "meta_insights_cache: leitura autenticada" on public.meta_insights_cache;
 create policy "meta_insights_cache: leitura autenticada"
   on public.meta_insights_cache for select to authenticated using (true);
 

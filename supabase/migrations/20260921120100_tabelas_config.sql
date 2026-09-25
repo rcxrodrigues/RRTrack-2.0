@@ -69,12 +69,16 @@ create table if not exists public.meta_ad_accounts (
   constraint meta_ad_account_numerico check (ad_account_id ~ '^[0-9]{5,}$')
 );
 
+drop trigger if exists settings_touch on public.settings;
 create trigger settings_touch before update on public.settings
   for each row execute function private.touch_updated_at();
+drop trigger if exists ga4_accounts_touch on public.ga4_accounts;
 create trigger ga4_accounts_touch before update on public.ga4_accounts
   for each row execute function private.touch_updated_at();
+drop trigger if exists meta_pixels_touch on public.meta_pixels;
 create trigger meta_pixels_touch before update on public.meta_pixels
   for each row execute function private.touch_updated_at();
+drop trigger if exists meta_ad_accounts_touch on public.meta_ad_accounts;
 create trigger meta_ad_accounts_touch before update on public.meta_ad_accounts
   for each row execute function private.touch_updated_at();
 
@@ -87,12 +91,16 @@ alter table public.ga4_accounts     enable row level security;
 alter table public.meta_pixels      enable row level security;
 alter table public.meta_ad_accounts enable row level security;
 
+drop policy if exists "settings: leitura autenticada" on public.settings;
 create policy "settings: leitura autenticada"
   on public.settings for select to authenticated using (true);
+drop policy if exists "ga4_accounts: leitura autenticada" on public.ga4_accounts;
 create policy "ga4_accounts: leitura autenticada"
   on public.ga4_accounts for select to authenticated using (true);
+drop policy if exists "meta_pixels: leitura autenticada" on public.meta_pixels;
 create policy "meta_pixels: leitura autenticada"
   on public.meta_pixels for select to authenticated using (true);
+drop policy if exists "meta_ad_accounts: leitura autenticada" on public.meta_ad_accounts;
 create policy "meta_ad_accounts: leitura autenticada"
   on public.meta_ad_accounts for select to authenticated using (true);
 
@@ -248,9 +256,12 @@ begin
 end;
 $b0110$;
 
+drop trigger if exists ga4_accounts_limpa_segredo on public.ga4_accounts;
 create trigger ga4_accounts_limpa_segredo after delete on public.ga4_accounts
   for each row execute function private.limpar_segredo_da_conta();
+drop trigger if exists meta_pixels_limpa_segredo on public.meta_pixels;
 create trigger meta_pixels_limpa_segredo after delete on public.meta_pixels
   for each row execute function private.limpar_segredo_da_conta();
+drop trigger if exists meta_ad_accounts_limpa_segredo on public.meta_ad_accounts;
 create trigger meta_ad_accounts_limpa_segredo after delete on public.meta_ad_accounts
   for each row execute function private.limpar_segredo_da_conta();
