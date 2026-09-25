@@ -2,7 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { buscarPayload, type PayloadDoEvento } from '@/lib/painel/eventos';
+import {
+  buscarPayload,
+  carregarVisitante,
+  type PayloadDoEvento,
+  type Visitante,
+} from '@/lib/painel/eventos';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { usuarioAtual } from '@/lib/supabase/server';
@@ -153,4 +158,19 @@ export async function carregarPayloadDoEvento(
   if (!(await usuarioAtual())) return null;
 
   return buscarPayload(id);
+}
+
+/**
+ * O visitante de uma linha de evento, com o histórico dele.
+ *
+ * Passa pelo cliente do USUÁRIO, não pelo `service_role`: as duas tabelas têm
+ * policy de select para `authenticated`, e é só isso que a gaveta precisa.
+ * Usar o admin aqui seria dar ao painel um caminho que ignora RLS para
+ * responder uma pergunta que a RLS já responde.
+ */
+export async function carregarVisitanteDoEvento(
+  trckUserId: string,
+): Promise<Visitante | null> {
+  await usuarioAtual();
+  return carregarVisitante(trckUserId);
 }
