@@ -1,7 +1,9 @@
 import { ehObjeto, lista, numero, texto } from '@/lib/json';
 import {
   deCentavos,
+  indeciso,
   type Adaptador,
+  type Indeciso,
   type CompraNormalizada,
   type ProdutoComprado,
   type StatusCompra,
@@ -50,9 +52,37 @@ const EVENTOS: Record<string, StatusCompra> = {
 
   // Desfaz receita já contada.
   order_refund: 'estornada',
-  order_partial_refund: 'estornada',
   order_chargeback_in_treatment: 'chargeback',
+  // `order_partial_refund` está FORA daqui de propósito — ver abaixo.
 };
+
+/**
+ * O estorno parcial da Appmax, e por que ele não vira `estornada`.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ A Appmax tem evento próprio para estorno parcial — e NÃO informa o valor │
+ * │ devolvido. O único campo de estorno no `data` é `refund_at`, que é       │
+ * │ data/hora. O `total` continua sendo o valor ORIGINAL do pedido.          │
+ * │ Confirmado na doc em 25/09/2026.                                         │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Tratar como `estornada` mandaria ao GA4 um `refund` do valor CHEIO: um
+ * estorno de R$ 20 numa venda de R$ 200 faria a venda inteira desaparecer da
+ * receita. Errado por R$ 180.
+ *
+ * Não tratar deixa a receita R$ 20 alta. Errado por R$ 20 — nove vezes menos,
+ * e sem fazer uma venda real sumir.
+ *
+ * Mas errar calado seria pior que os dois. Volta como `Indeciso`: a venda
+ * fica intacta, e a linha aparece em VERMELHO no painel dizendo o que houve,
+ * para o ajuste ser deliberado. A alternativa honesta seria consultar a API
+ * do pedido — que exige chave, e ela ainda não existe aqui.
+ */
+const MOTIVO_ESTORNO_PARCIAL =
+  'estorno parcial: a Appmax não informa o valor devolvido (só `refund_at`), ' +
+  'e o `total` continua sendo o do pedido inteiro. A venda foi mantida como ' +
+  'está — desfazer o valor cheio tiraria do caixa muito mais do que voltou ' +
+  'ao cliente. Ajuste à mão, ou consulte o pedido na API da Appmax.';
 
 /**
  * Os eventos que existem e NÃO interessam ao faturamento.
@@ -146,7 +176,7 @@ export const appmax: Adaptador = {
     );
   },
 
-  normalizar(corpo: unknown): CompraNormalizada | null {
+  normalizar(corpo: unknown): CompraNormalizada | Indeciso | null {
     if (!ehObjeto(corpo)) return null;
 
     const evento = texto(corpo, 'event');
@@ -157,6 +187,10 @@ export const appmax: Adaptador = {
     // vezes.
     if (IGNORADOS.has(evento) || texto(corpo, 'event_type') === 'subscription') {
       return null;
+    }
+
+    if (evento === 'order_partial_refund') {
+      return indeciso(MOTIVO_ESTORNO_PARCIAL);
     }
 
     const status = EVENTOS[evento];

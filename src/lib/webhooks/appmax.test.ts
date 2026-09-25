@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { appmax } from './appmax';
-import { soVenda } from './tipos';
+import { ehIndeciso, soVenda } from './tipos';
 
 /** Normaliza e descarta o `Indeciso`: aqui só interessa se virou venda. */
 const ler = (corpo: unknown) => soVenda(appmax.normalizar(corpo));
@@ -147,9 +147,13 @@ describe('normalizar — os quatro eventos de um cartão viram UMA venda', () =>
 });
 
 describe('normalizar — o que desfaz receita', () => {
+  /*
+   * `order_partial_refund` saiu desta tabela em 25/09/2026, quando a doc
+   * confirmou que a Appmax não informa o valor devolvido. Ver o bloco "o
+   * estorno parcial da Appmax", no fim do arquivo.
+   */
   it.each([
     ['order_refund', 'estornada'],
-    ['order_partial_refund', 'estornada'],
     ['order_chargeback_in_treatment', 'chargeback'],
   ])('%s → %s', (event, esperado) => {
     expect(ler({ ...APROVADO_CARTAO, event })?.status).toBe(esperado);
@@ -281,5 +285,50 @@ describe('pix', () => {
 
   it('pix expirado não é venda aprovada', () => {
     expect(ler({ ...PIX_PAGO, event: 'order_pix_expired' })?.status).toBe('recusada');
+  });
+});
+
+/*
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ A Appmax tem evento próprio para estorno parcial e NÃO informa o valor │
+ * │ devolvido. O único campo de estorno é `refund_at` (data/hora); o       │
+ * │ `total` continua sendo o do pedido inteiro. Confirmado na doc em       │
+ * │ 25/09/2026.                                                             │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Tratar como `estornada` mandaria ao GA4 um refund do valor CHEIO — um
+ * estorno de R$ 20 numa venda de R$ 200 faria a venda inteira sumir da
+ * receita. Errado por R$ 180 em vez de por R$ 20.
+ */
+describe('o estorno parcial da Appmax', () => {
+  const PARCIAL = {
+    event: 'order_partial_refund',
+    event_type: 'order',
+    data: { order_id: 3531, status: 'estornado', total: 25990, refund_at: '2026-09-25T10:00:00Z' },
+  };
+
+  it('NÃO vira estornada — desfazer o valor cheio tira mais do que voltou', () => {
+    expect(ehIndeciso(appmax.normalizar(PARCIAL))).toBe(true);
+    // E `ler` (que descarta o indeciso) devolve null: nenhuma venda nasce.
+    expect(ler(PARCIAL)).toBeNull();
+  });
+
+  it('o motivo diz o que houve e o que fazer', () => {
+    const lido = appmax.normalizar(PARCIAL);
+    expect(ehIndeciso(lido)).toBe(true);
+    if (!ehIndeciso(lido)) return;
+    expect(lido.motivo).toContain('estorno parcial');
+    expect(lido.motivo).toContain('refund_at');
+  });
+
+  it('o estorno TOTAL continua desfazendo normalmente', () => {
+    const total = { ...PARCIAL, event: 'order_refund' };
+    expect(ler(total)?.status).toBe('estornada');
+  });
+
+  it('indeciso não é ignorado: nota fiscal e afins seguem devolvendo null', () => {
+    // A distinção é o que faz o painel mostrar vermelho num caso e verde no
+    // outro. `order_integrated` é tratado e não há nada a fazer.
+    expect(appmax.normalizar({ ...PARCIAL, event: 'order_integrated' })).toBeNull();
   });
 });

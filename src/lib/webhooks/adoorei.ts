@@ -1,4 +1,5 @@
 import { ehObjeto, lista, numero, texto } from '@/lib/json';
+import { pareceYampi } from '@/lib/webhooks/envelope-yampi';
 import type {
   Adaptador,
   CompraNormalizada,
@@ -97,19 +98,11 @@ export const adoorei: Adaptador = {
     if (!evento.startsWith('order.') && !evento.startsWith('cart.')) return false;
 
     /*
-     * A YAMPI USA O MESMO ENVELOPE — `{event, time, merchant, resource}` com
-     * eventos `order.*`. Sem esta recusa explícita, a Adoorei engoliria o
-     * payload dela, e o pedido seria lido com as regras erradas: valor no
-     * campo que não existe, cliente vazio, status que não bate.
-     *
-     * O que separa é o embrulho: na Yampi `status` é `{data: {...}}`; aqui
-     * é texto puro. Depender só da ORDEM do registro seria frágil — bastaria
-     * alguém reordenar a lista para quebrar em silêncio.
+     * A YAMPI USA O MESMO ENVELOPE. A recusa é explícita e nos dois sentidos
+     * — depender da ORDEM do registro seria frágil, bastaria alguém
+     * reordenar a lista para quebrar em silêncio. Ver `envelope-yampi.ts`.
      */
-    const status = corpo.resource.status;
-    if (ehObjeto(status) && 'data' in status) return false;
-
-    return true;
+    return !pareceYampi(corpo);
   },
 
   normalizar(corpo: unknown): CompraNormalizada | null {

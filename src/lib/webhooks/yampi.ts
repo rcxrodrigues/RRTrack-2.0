@@ -1,4 +1,5 @@
 import { ehObjeto, numero, texto } from '@/lib/json';
+import { pareceYampi } from '@/lib/webhooks/envelope-yampi';
 import {
   indeciso,
   type Adaptador,
@@ -48,6 +49,21 @@ import {
  * volta como `Indeciso`, com o alias no motivo, e aparece no painel para
  * ser cadastrado e reprocessado.
  */
+/**
+ * Os prefixos de evento da Yampi.
+ *
+ * `order.` e `cart.` colidem com a Adoorei; os outros quatro são só dela.
+ * Quem separa de verdade é o embrulho `.data` — ver `envelope-yampi.ts`.
+ */
+const PREFIXOS = [
+  'order.',
+  'transaction.',
+  'cart.',
+  'customer.',
+  'product.',
+  'cashback.',
+] as const;
+
 const PADRAO_DE_FABRICA: Record<string, StatusCompra> = {
   waiting_payment: 'pendente',
   paid: 'aprovada',
@@ -138,14 +154,22 @@ export const yampi: Adaptador = {
   reconhece(corpo: unknown): boolean {
     if (!ehObjeto(corpo)) return false;
     if (!ehObjeto(corpo.merchant) || !ehObjeto(corpo.resource)) return false;
-    // `order.*` E `transaction.*`: a recusa de pagamento chega como
-    // `transaction.payment.refused`, e exigir só `order.` a perderia.
+    /*
+     * Os seis prefixos da lista real (confirmada em 25/09/2026): 14 eventos
+     * na tabela da doc, 13 no enum da API — `cashback.expiring` só aparece
+     * na tabela. Reconhecer todos e IGNORAR o que não é venda é melhor que
+     * não reconhecer: assim o painel mostra "yampi · ignorado", verde, em
+     * vez de "nenhum adaptador leu", amarelo, que pediria ação à toa.
+     *
+     * `transaction.` não é opcional: a recusa de pagamento chega como
+     * `transaction.payment.refused`, e exigir só `order.` a perderia.
+     */
     const evento = texto(corpo, 'event') ?? '';
-    if (!evento.startsWith('order.') && !evento.startsWith('transaction.')) return false;
+    const conhecido = PREFIXOS.some((p) => evento.startsWith(p));
+    if (!conhecido) return false;
 
     // O embrulho `.data` é o que a distingue da Adoorei.
-    const status = corpo.resource.status;
-    return ehObjeto(status) && 'data' in status;
+    return pareceYampi(corpo);
   },
 
   normalizar(
@@ -159,8 +183,20 @@ export const yampi: Adaptador = {
 
     const recurso = ehObjeto(corpo.resource) ? corpo.resource : {};
 
-    // Nota fiscal não mexe em dinheiro.
-    if (evento.startsWith('order.invoice.')) return null;
+    /*
+     * Reconhecido e ignorado de propósito — a maioria dos eventos dela.
+     * Nota fiscal não mexe em dinheiro; carrinho abandonado é sinal de
+     * remarketing; cliente, produto e cashback são outro domínio.
+     */
+    if (
+      evento.startsWith('order.invoice.') ||
+      evento.startsWith('cart.') ||
+      evento.startsWith('customer.') ||
+      evento.startsWith('product.') ||
+      evento.startsWith('cashback.')
+    ) {
+      return null;
+    }
 
     /*
      * O EVENTO decide quando ele mesmo já responde — e esses dois vêm da

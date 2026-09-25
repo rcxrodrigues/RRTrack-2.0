@@ -498,11 +498,15 @@ reconhece o formato é o adaptador, não configuração no painel — pedir para
 alguém declarar qual gateway é qual seria mais uma coisa para errar às três da
 manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
 
-- **O token é aceito em TRÊS lugares**, porque cada gateway escolheu o seu:
-  `?token=` (Appmax e Pagou, que não mandam header nenhum),
-  `x-webhook-token` (para quem não deixa pôr query na URL) e
-  `Authorization: Bearer` (a Zedy documenta assim). Nem todo painel deixa
-  escolher, e é isso que permite um endpoint só atender a todos.
+- **O token é aceito em QUATRO lugares**, porque cada gateway escolheu o seu
+  e nenhum deixa mudar: `?token=` (Appmax e Pagou, que não mandam header
+  nenhum), `Authorization: Bearer` (a Zedy documenta assim),
+  **`X-Adoorei-hash`** (a Adoorei — e o nome engana: "hash" é o **TOKEN do
+  cadastro**, comparado por igualdade; não há fórmula, algoritmo nem
+  assinatura sobre o corpo em lugar nenhum da doc dela) e `x-webhook-token`
+  como alternativa genérica. Descobrir o da Adoorei tarde custaria **401 em
+  toda venda**. Aceitar todos não enfraquece nada: a comparação é sempre
+  contra o mesmo token configurado, em tempo constante.
   Comparação em tempo constante
   (`timingSafeEqual` sobre SHA-256 dos dois), senão o tempo de resposta vaza o
   prefixo correto e o token se reconstrói caractere a caractere.
@@ -548,6 +552,32 @@ manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
   que guarda estado, porque o que decide é um `where` que roda no banco:
   ler o código não provaria nada.
 
+### Assinatura: quem assina, quem não assina, e quem se contradiz
+
+| gateway | assina? |
+|---|---|
+| **Yampi** | **sim** — `X-Yampi-Hmac-SHA256`, `base64(HMAC-SHA256(corpo_cru, segredo))`. **Base64, não hex** |
+| **MillionsPay** | **sim** — `X-SoarLabz-Signature`, `sha256=<hex>`, sem timestamp |
+| **Adoorei** | não. `X-Adoorei-hash` é token do cadastro, apesar do nome |
+| **Zedy** | não. `Authorization: Bearer` com token estático |
+| **Appmax** | não. A doc diz com todas as letras que não envia |
+| **Pagou** | não — e ela **afirma** isso: *"The public contract exposes no signature"* |
+
+> **As duas que assinam se contradizem, e da mesma forma.** O texto manda
+> assinar o **corpo cru**; o exemplo de código **re-serializa** — a Yampi com
+> `json_encode($body)` em PHP, a MillionsPay com `JSON.stringify(req.body)`
+> em Node. `JSON.stringify` de um objeto já parseado muda espaçamento e
+> ordem de chaves: o hash não é o mesmo.
+>
+> Não dá para deduzir qual vale — é contradição da doc, não falta de
+> atenção. Resolve-se no primeiro postback real, comparando os dois. É por
+> isso que a rota preserva o corpo cru desde o começo: a verificação entra
+> depois sem mexer em mais nada.
+>
+> A Yampi ainda tem uma segunda contradição própria: a nota diz que o base64
+> é sobre o HMAC **binário**, e o valor de saída do exemplo dela é base64 de
+> uma string **hex**. Texto e exemplo discordam.
+
 ### Valores: sempre centavos, com uma exceção
 
 Appmax e Pagou mandam tudo em centavos (`25990` = R$ 259,90). **A exceção:** em
@@ -588,6 +618,16 @@ Onde o **evento** já responde, ele ganha: `order.paid` e
 alias. Se passassem, uma loja com status renomeado perderia a venda paga —
 que é o que mais importa.
 
+> **E a Yampi NÃO TEM evento de estorno nem de chargeback.** Confirmado na
+> doc em 25/09/2026: as duas listas autoritativas dela (14 eventos na tabela,
+> 13 no enum da API) não trazem nenhum. O **único** caminho documentado para
+> saber que uma venda voltou é `order.status.updated` + o alias.
+>
+> Isso torna o cadastro de `status_aliases` **obrigatório** para quem usar a
+> Yampi, não opcional. Sem o alias de estorno daquela loja, o `refund` nunca
+> chega ao GA4 e o faturamento fica inflado por uma venda devolvida — e não
+> há evento nenhum para servir de rede.
+
 ### Centavos OU reais — depende do gateway
 
 **Não existe regra global.** Cada adaptador decide, e errar é invisível:
@@ -618,6 +658,19 @@ campo que não existe, cliente vazio, status que não bate.
 O que separa: a **Yampi embrulha toda relação em `.data`**
 (`status.data`, `customer.data`, `items.data`); na Adoorei `status` é texto
 puro e `customer` é objeto plano.
+
+**A checagem olha CINCO relações, não só `status`** — `pareceYampi()` em
+`src/lib/webhooks/envelope-yampi.ts`, num arquivo só para os dois lados não
+divergirem. Olhar só `status` tinha furo: a lista real de eventos da Yampi
+inclui `cart.reminder`, `customer.*`, `product.*` e `cashback.expiring`, e um
+carrinho abandonado pode não ter status nenhum — aí o teste não rejeitava e a
+Adoorei reivindicava um payload da Yampi. Não escrevia dado errado (o `cart.`
+é ignorado dos dois lados), mas o painel mostrava o adaptador errado, e a
+próxima relação que a Yampi acrescentar pioraria isso.
+
+A Yampi reconhece **todos** os seis prefixos dela e ignora o que não é venda:
+"reconhecido e ignorado" é verde no painel, "ninguém reconheceu" é amarelo e
+pede ação — e pedir ação à toa ensina a ignorar o aviso.
 
 Os dois `reconhece` checam isso **explicitamente**, nos dois sentidos —
 depender da ordem do registro seria frágil, bastaria alguém reordenar a
@@ -715,6 +768,20 @@ erram de formas opostas, as duas caladas:
 |---|---|---|
 | o pedaço (R$ 20) | valor da venda | a venda de R$ 200 passa a valer R$ 20 no faturamento |
 | o total (R$ 200) | valor devolvido | um estorno de R$ 20 subtrai R$ 200 no GA4 |
+
+> **A Appmax é o caso em que nem isso salva.** Ela tem evento próprio para
+> estorno parcial (`order_partial_refund`) e **não informa o valor
+> devolvido** — o único campo é `refund_at`, que é data/hora, e o `total`
+> continua sendo o do pedido inteiro.
+>
+> Tratar como `estornada` mandaria ao GA4 um `refund` do valor **cheio**: um
+> estorno de R$ 20 numa venda de R$ 200 faria a venda inteira sumir da
+> receita. Errado por R$ 180. Não tratar deixa a receita R$ 20 alta — errado
+> por R$ 20, nove vezes menos, e sem fazer uma venda real desaparecer.
+>
+> Errar calado seria pior que os dois, então o adaptador devolve `Indeciso`:
+> a venda fica intacta e a linha aparece em **vermelho** no painel dizendo o
+> que houve. O ajuste é deliberado, não automático e errado.
 
 A saída **não passa por descobrir qual é**: são colunas separadas. Evento de
 reversão nunca toca `value`; o `refund` do GA4 usa `reverted_value ?? value`,

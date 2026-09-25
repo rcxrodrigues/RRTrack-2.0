@@ -28,6 +28,28 @@ export const dynamic = 'force-dynamic';
  * o único lugar onde um segredo cabe.
  */
 
+/**
+ * Cabeçalhos em que algum gateway manda o token.
+ *
+ * Cresce quando um gateway novo inventa o seu. A Adoorei chama o dela de
+ * "hash" e é token puro — descobrir isso tarde custaria 401 em toda venda.
+ */
+const CABECALHOS_DE_TOKEN = [
+  'x-webhook-token',
+  'x-adoorei-hash',
+] as const;
+
+function primeiroCabecalho(
+  headers: Headers,
+  nomes: readonly string[],
+): string | null {
+  for (const nome of nomes) {
+    const valor = headers.get(nome)?.trim();
+    if (valor) return valor;
+  }
+  return null;
+}
+
 /** Resposta sem corpo útil: quem chama é robô, não navegador. */
 function responder(status: number, corpo: Record<string, unknown>): NextResponse {
   return NextResponse.json(corpo, {
@@ -61,20 +83,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = criarClienteAdmin();
 
   /*
-   * O token aceita TRÊS lugares, porque cada gateway escolheu o seu:
+   * O token vem de ONDE cada gateway resolveu mandar, e nenhum deles deixa
+   * escolher:
    *
    *   ?token=…                    Appmax e Pagou (não mandam header nenhum)
-   *   x-webhook-token: …          alternativa para quem não deixa pôr query
    *   Authorization: Bearer …     a Zedy documenta assim
+   *   X-Adoorei-hash: …           a Adoorei manda aqui — e o nome engana:
+   *                               "hash" é o TOKEN do cadastro, comparado por
+   *                               igualdade. Não há fórmula, algoritmo nem
+   *                               assinatura sobre o corpo em lugar nenhum
+   *                               da doc dela.
+   *   x-webhook-token: …          alternativa genérica, para quem não deixa
+   *                               pôr query string no campo de URL
    *
-   * Nem todo painel deixa pôr query string no campo de URL, e nem todo
-   * gateway deixa escolher o header. Aceitar os três é o que permite um
-   * endpoint só atender a todos.
+   * Aceitar todos é o que permite um endpoint só atender a todos. Não
+   * enfraquece nada: a comparação é sempre contra o mesmo token configurado,
+   * em tempo constante — mais portas de entrada não tornam a fechadura pior.
    */
   const autorizacao = request.headers.get('authorization') ?? '';
   const recebido =
     request.nextUrl.searchParams.get('token') ??
-    request.headers.get('x-webhook-token') ??
+    primeiroCabecalho(request.headers, CABECALHOS_DE_TOKEN) ??
     (autorizacao.toLowerCase().startsWith('bearer ')
       ? autorizacao.slice(7).trim()
       : '');

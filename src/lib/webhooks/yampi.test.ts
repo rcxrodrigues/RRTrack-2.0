@@ -283,3 +283,61 @@ describe('o vínculo com a visita', () => {
     expect(c?.trckUserId).toBe(ID);
   });
 });
+
+/*
+ * A lista REAL de eventos da Yampi, confirmada na doc em 25/09/2026: 14 na
+ * tabela, 13 no enum da API (`cashback.expiring` só aparece na tabela), e um
+ * `order.updated` citado num comentário de exemplo que não existe em
+ * nenhuma das duas.
+ *
+ * O que isso mudou aqui: o adaptador reconhecia só `order.` e
+ * `transaction.`. Um `cart.reminder` da Yampi não era reconhecido por ela —
+ * e a Adoorei, que aceita `cart.`, o reivindicava, porque o teste de
+ * separação olhava só `resource.status` e um carrinho pode não ter status.
+ * Não escrevia dado errado, mas o painel mostrava o adaptador errado.
+ */
+/** Envelope da Yampi: uma relação embrulhada basta para separá-la da Adoorei. */
+function envelopeYampi(event: string, recurso: Record<string, unknown> = {}) {
+  return {
+    event,
+    time: '2026-09-25T10:00:00Z',
+    merchant: { id: '1', alias: 'lojateste' },
+    resource: { customer: { data: { email: 'a@b.com' } }, ...recurso },
+  };
+}
+
+describe('os eventos que não são venda', () => {
+  it.each([
+    'cart.reminder',
+    'customer.created',
+    'customer.address.created',
+    'product.created',
+    'product.updated',
+    'product.deleted',
+    'product.inventory.updated',
+    'cashback.expiring',
+  ])('%s é RECONHECIDO pela Yampi e ignorado', (event) => {
+    const payload = envelopeYampi(event);
+    expect(yampi.reconhece(payload), event).toBe(true);
+    // Reconhecido e ignorado de propósito: verde no painel, não amarelo.
+    expect(yampi.normalizar(payload), event).toBeNull();
+  });
+
+  it('e a Adoorei NÃO reivindica o carrinho da Yampi', () => {
+    expect(adoorei.reconhece(envelopeYampi('cart.reminder'))).toBe(false);
+  });
+
+  it('a separação vale mesmo sem `status` no recurso', () => {
+    // O furo antigo: sem status, o teste de embrulho não rejeitava nada.
+    const semStatus = envelopeYampi('order.created', { items: { data: [] } });
+    expect(yampi.reconhece(semStatus)).toBe(true);
+    expect(adoorei.reconhece(semStatus)).toBe(false);
+  });
+
+  it('evento fora dos seis prefixos não é reconhecido', () => {
+    // `order.updated` aparece num comentário da doc e não existe em nenhuma
+    // das duas listas — mas cai no prefixo `order.`, então é reconhecido e
+    // decidido pelo alias, que é o certo. O que não existe mesmo fica fora:
+    expect(yampi.reconhece(envelopeYampi('pedido.criado'))).toBe(false);
+  });
+});
