@@ -23,6 +23,27 @@ export type ReceitaPorUtm = {
   receita: number;
 };
 
+/**
+ * Por que uma linha ficou sem ROAS.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ `0.00×` E "não casou" SÃO COISAS DIFERENTES, e confundi-las custa caro.   │
+ * │                                                                          │
+ * │ Zero é uma medida: gastou e não vendeu. "Não casou" é ausência de        │
+ * │ medida: vendeu, e a UTM não bateu — quase sempre a macro do anúncio      │
+ * │ escrita errado.                                                          │
+ * │                                                                          │
+ * │ Mostrar `0.00×` no segundo caso pinta de vermelho justamente a campanha  │
+ * │ que mais gastou, que é a que mais vende. O operador corta a melhor       │
+ * │ campanha achando que está cortando a pior.                               │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+export type MotivoSemRoas =
+  /** Gasto zero: dividir por zero não é infinito, é "não dá". */
+  | 'sem-gasto'
+  /** Houve venda, e ela não casou com esta linha. */
+  | 'sem-casamento';
+
 export type LinhaDeRoas = {
   id: string;
   nome: string;
@@ -33,8 +54,10 @@ export type LinhaDeRoas = {
   /** A receita NOSSA, casada por UTM. */
   receita: number;
   vendas: number;
-  /** `null` quando não houve gasto: dividir por zero não é infinito, é "não dá". */
+  /** `null` quando não dá para calcular. `motivoSemRoas` diz por quê. */
   roas: number | null;
+  /** Por que o ROAS não pôde ser calculado — `null` quando pôde. */
+  motivoSemRoas: MotivoSemRoas | null;
   /** Custo por aquisição. `null` sem venda. */
   cpa: number | null;
   /** O que a Meta diz. Guardado para o painel poder mostrar a divergência. */
@@ -97,8 +120,30 @@ export function cruzar(
     });
   }
 
+  /*
+   * Nenhuma receita casou com campanha nenhuma, MAS houve venda no período.
+   *
+   * Aí o problema não é de uma campanha: é a ponte da UTM que não está de pé
+   * na conta inteira — a macro `{{campaign.name}}` faltando no anúncio, por
+   * exemplo. Sem esta checagem a tela inteira ficaria vermelha de `0.00×`,
+   * dizendo de cada campanha uma coisa que só vale para a configuração.
+   *
+   * Sem venda nenhuma no período é outra história: aí o zero é real.
+   */
+  const nenhumaCasou = acumulado.size === 0 && (receitaOrfa > 0 || vendasOrfas > 0);
+
   const linhas = insights.map((linha) => {
     const nosso = acumulado.get(linha.id) ?? { receita: 0, vendas: 0 };
+
+    /*
+     * A Meta contou compra e nós não casamos nenhuma: a venda existe, o
+     * vínculo é que falhou. O ROAS é DESCONHECIDO, não zero.
+     */
+    const vendeuSemCasar =
+      nosso.vendas === 0 && (linha.comprasDaMeta > 0 || nenhumaCasou);
+
+    const motivoSemRoas: MotivoSemRoas | null =
+      linha.gasto <= 0 ? 'sem-gasto' : vendeuSemCasar ? 'sem-casamento' : null;
 
     return {
       id: linha.id,
@@ -109,9 +154,10 @@ export function cruzar(
       cliques: linha.cliques,
       receita: nosso.receita,
       vendas: nosso.vendas,
-      // Sem gasto não há retorno sobre gasto. `Infinity` apareceria na tela
-      // como número e ninguém saberia o que fazer com ele.
-      roas: linha.gasto > 0 ? nosso.receita / linha.gasto : null,
+      // `Infinity` apareceria na tela como número e ninguém saberia o que
+      // fazer com ele; `0.00×` mentiria. Ver `MotivoSemRoas`.
+      roas: motivoSemRoas === null ? nosso.receita / linha.gasto : null,
+      motivoSemRoas,
       cpa: nosso.vendas > 0 ? linha.gasto / nosso.vendas : null,
       receitaDaMeta: linha.receitaDaMeta,
       comprasDaMeta: linha.comprasDaMeta,

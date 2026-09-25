@@ -324,6 +324,16 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   **Foi a captura de tela que pegou essa**: o funil mostrava `0,0%` logo acima
   de um aviso dizendo "não porque ninguém passou por lá". O número contradizia
   o texto.
+- **No ROAS a mesma regra custa dinheiro, e o caso tem nome.** `0.00×` é
+  *medida* (gastou e não vendeu); "não casou" é *ausência de medida* (vendeu, e
+  a `utm_campaign` não bateu). O que separa os dois é o número da própria Meta:
+  se ela contou compra e nós casamos nenhuma, a venda existe e o vínculo é que
+  falhou → `—` com o diagnóstico, nunca `0.00×`. `motivoSemRoas` em
+  `src/lib/painel/roas.ts` carrega essa distinção até a tela. Sem ela, quanto
+  MAIOR o gasto mais vermelho fica — e a primeira campanha a ser cortada seria
+  a que mais vende. O mesmo vale para a conta inteira: se nenhuma receita do
+  período casou com campanha nenhuma, quem está caída é a ponte da UTM, e a
+  tela toda vermelha diria isso de cada campanha em vez de dizer uma vez.
 - **Número na tela nunca passa por `Intl.NumberFormat`.** Ele depende do ICU, e
   o do Node não é o do navegador: em moeda pt-BR a diferença é o tipo de espaço
   depois do "R$" — o texto parece igual, o React vê diferente, e a hidratação
@@ -386,11 +396,13 @@ em produção.
 **O passo 7 da skill é literal: renderize e olhe.** O validador checa cor, não
 layout. Sem credenciais do Supabase dá para montar uma rota `previa` temporária
 com dados falsos, liberar o caminho em `ROTAS_PUBLICAS`, tirar a foto com o
-Playwright nos dois temas e em 390px, e apagar tudo depois. Três problemas
-saíram dessa foto e nenhum teste os pegaria: o `0,0%` acima, uma seta `↓` ao
+Playwright nos dois temas e em 390px, e apagar tudo depois. Quatro problemas
+saíram dessas fotos e nenhum teste os pegaria: o `0,0%` acima, uma seta `↓` ao
 lado de `10,6%` que lia como "caiu 10,6%" quando o número era o que PASSOU (a
-seta virou `↳` e o texto virou "seguiram"), e `R$ 37.158,70` partindo em duas
-linhas no celular com o "R$" sozinho parecendo outro número.
+seta virou `↳` e o texto virou "seguiram"), `R$ 37.158,70` partindo em duas
+linhas no celular com o "R$" sozinho parecendo outro número, e o `0.00×`
+vermelho numa campanha que a Meta dizia ter 2 compras — a venda existia, a UTM
+é que tinha um erro de digitação.
 
 A do gráfico de série pegou mais dois: os rótulos do eixo ficavam **por cima
 do dado** do começo do período (ganharam calha própria, num flex), e o SVG

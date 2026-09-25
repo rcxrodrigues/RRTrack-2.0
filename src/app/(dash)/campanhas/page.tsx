@@ -104,7 +104,13 @@ export default async function CampanhasPage({
   const vendas = linhas.reduce((s, l) => s + l.vendas, 0);
   const receitaDaMeta = linhas.reduce((s, l) => s + l.receitaDaMeta, 0);
 
-  const roasGeral = gasto > 0 ? receita / gasto : null;
+  /*
+   * Houve venda no período e NENHUMA casou com campanha: o ROAS geral não é
+   * zero, é desconhecido — e a ponte da UTM é que está caída. Mostrar
+   * `0,00×` na métrica grande diria que a mídia toda não deu retorno.
+   */
+  const nadaCasou = vendas === 0 && (receitaOrfa > 0 || vendasOrfas > 0);
+  const roasGeral = gasto > 0 && !nadaCasou ? receita / gasto : null;
   const cpaGeral = vendas > 0 ? gasto / vendas : null;
 
   const ordenadas = linhas.toSorted((a, b) => b.gasto - a.gasto);
@@ -161,7 +167,7 @@ export default async function CampanhasPage({
           label="ROAS"
           value={roasGeral === null ? null : `${roasGeral.toFixed(2)}×`}
           accent="amber"
-          hint="receita ÷ gasto"
+          hint={nadaCasou ? 'nenhuma venda casou por UTM' : 'receita ÷ gasto'}
         />
         <MetricCard
           label="CPA"
@@ -285,9 +291,13 @@ export default async function CampanhasPage({
                         {percentual(razao(l.cliques, l.impressoes) ?? 0, 2)}
                       </span>
                     )}
-                    {l.semReceitaCasada && l.gasto > 0 && (
+                    {l.motivoSemRoas === 'sem-casamento' && (
                       <span className="text-warning">
-                        nenhuma venda casou com esta linha
+                        {l.comprasDaMeta > 0
+                          ? `a Meta contou ${inteiro(l.comprasDaMeta)} ${
+                              l.comprasDaMeta === 1 ? 'compra' : 'compras'
+                            } e nenhuma casou — confira a utm_campaign do anúncio`
+                          : 'nenhuma venda casou com esta linha'}
                       </span>
                     )}
                     {divergente && (

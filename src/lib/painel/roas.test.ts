@@ -112,9 +112,55 @@ describe('cruzar', () => {
   });
 
   it('campanha sem venda tem CPA null, não divisão por zero', () => {
-    const { linhas } = cruzar([anuncio()], []);
+    const { linhas } = cruzar([anuncio({ comprasDaMeta: 0, receitaDaMeta: 0 })], []);
     expect(linhas[0]?.cpa).toBeNull();
+    // Gastou, a Meta também não contou compra: o zero aqui é MEDIDA.
     expect(linhas[0]?.roas).toBe(0);
+    expect(linhas[0]?.motivoSemRoas).toBeNull();
+  });
+
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────────┐
+   * │ `0.00×` e "não casou" são coisas DIFERENTES.                            │
+   * │                                                                        │
+   * │ Foi a captura de tela que pegou: uma campanha com R$ 980 de gasto       │
+   * │ aparecia em vermelho com `0.00×` — e a Meta dizia 2 compras. A venda    │
+   * │ existia; a `utm_campaign` do anúncio é que tinha um erro de digitação.  │
+   * │ Quanto MAIOR o gasto, mais vermelho — então a primeira campanha a ser   │
+   * │ cortada seria a que mais vende.                                         │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  it('a Meta contou compra e nada casou: ROAS é DESCONHECIDO, não zero', () => {
+    const { linhas } = cruzar(
+      [anuncio({ nome: 'TESTE-CRIATIVO' })],
+      // A UTM chegou com o nome trocado — não casa com anúncio nenhum.
+      [receita({ campanha: 'TESTE-CRIATVO' })],
+    );
+    expect(linhas[0]?.roas).toBeNull();
+    expect(linhas[0]?.motivoSemRoas).toBe('sem-casamento');
+  });
+
+  it('nenhuma receita do período casou: a ponte caiu, e não é culpa da campanha', () => {
+    // Duas campanhas, venda no período, e nada casa: é a macro do anúncio.
+    const { linhas, receitaOrfa } = cruzar(
+      [anuncio({ id: 'a', nome: 'A', comprasDaMeta: 0, receitaDaMeta: 0 }), anuncio({ id: 'b', nome: 'B', comprasDaMeta: 0, receitaDaMeta: 0 })],
+      [receita({ campanha: 'nome-que-ninguem-usa' })],
+    );
+    expect(receitaOrfa).toBe(2599);
+    expect(linhas.every((l) => l.roas === null)).toBe(true);
+    expect(linhas.every((l) => l.motivoSemRoas === 'sem-casamento')).toBe(true);
+  });
+
+  it('sem venda NENHUMA no período o zero é real — a tela não vira traço', () => {
+    // A diferença do caso acima: aqui não houve receita para casar.
+    const { linhas } = cruzar([anuncio({ comprasDaMeta: 0, receitaDaMeta: 0 })], []);
+    expect(linhas[0]?.roas).toBe(0);
+    expect(linhas[0]?.motivoSemRoas).toBeNull();
+  });
+
+  it('gasto zero é sem-gasto, não sem-casamento', () => {
+    const { linhas } = cruzar([anuncio({ gasto: 0 })], [receita()]);
+    expect(linhas[0]?.motivoSemRoas).toBe('sem-gasto');
   });
 
   it('o CPA é o gasto dividido pelas NOSSAS vendas, não as da Meta', () => {
