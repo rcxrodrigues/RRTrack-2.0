@@ -3,6 +3,7 @@ import 'server-only';
 import { numero as numeroEm, texto as textoEm } from '@/lib/json';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
+import type { ReceitaPorUtm } from './roas';
 import type { Intervalo } from './periodo';
 
 /**
@@ -219,4 +220,34 @@ export async function buscarGeo(intervalo: Intervalo): Promise<LinhaGeo[]> {
           },
         ];
   });
+}
+
+/**
+ * A receita aprovada por UTM — o outro lado do ROAS.
+ *
+ * A campanha vazia agrupa a venda **sem atribuição**, que é receita real
+ * fora de campanha nenhuma. Ela vem junto de propósito: sem esse número o
+ * ROAS parece pior do que é e ninguém sabe o quanto.
+ */
+export async function buscarReceitaPorUtm(
+  intervalo: Intervalo,
+): Promise<ReceitaPorUtm[]> {
+  const supabase = await criarClienteServidor();
+
+  const { data, error } = await supabase.rpc(
+    'painel_receita_por_utm',
+    janela(intervalo),
+  );
+
+  if (error) {
+    console.error('[painel] receita por utm falhou:', error.message);
+    return [];
+  }
+
+  return linhas(data).map((linha) => ({
+    campanha: textoEm(linha, 'utm_campaign') ?? '',
+    origem: textoEm(linha, 'utm_source') ?? '',
+    vendas: num(linha, 'vendas'),
+    receita: num(linha, 'receita'),
+  }));
 }

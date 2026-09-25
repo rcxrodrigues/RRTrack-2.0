@@ -899,6 +899,60 @@ não um gateway com cinco segundos de paciência.
 
 ---
 
+## Campanhas — o ROAS, e onde ele quebra calado
+
+O gasto vem da Meta; a receita vem daqui. O que os liga é a **UTM de
+campanha**, e é exatamente aí que o ROAS quebra na vida real: quem monta o
+anúncio escreve `utm_campaign` à mão, ou usa `{{campaign.name}}`, ou
+`{{campaign.id}}`.
+
+`cruzar()` em `src/lib/painel/roas.ts` tenta as **duas** formas (id e nome,
+sem caixa e sem espaço). E o que NÃO casou **aparece na tela, com nome**:
+
+> um ROAS calculado sobre metade da receita é pior que ROAS nenhum — ele
+> parece certo, e a campanha é cortada por um número que estava errado.
+
+A venda **sem UTM nenhuma** é contada à parte, e não como erro: ela não tem o
+que casar. É receita real fora de campanha, e o painel diz quanto.
+
+`null`, nunca `Infinity`: campanha sem gasto não tem "retorno sobre gasto", e
+`Infinity` apareceria na tela como número.
+
+### O rate limit da Meta — três travas, nenhuma por zelo
+
+A Meta **não** limita por requisições por minuto: dá uma **pontuação** por
+conta de negócio, e estourar não devolve 429 educado — a conta fica
+**bloqueada por até uma hora**, e nesse tempo o painel não mostra ROAS
+nenhum.
+
+| trava | por quê |
+|---|---|
+| **cache de 15 min** (`meta_insights_cache`) | gasto de mídia não muda de minuto a minuto; abrir a tela cinco vezes não deve custar cinco vezes a cota |
+| **fila serial por conta** | em paralelo, três chamadas leem a pontuação ANTES de qualquer uma responder, e as três passam pelo teto juntas |
+| **teto de 25%** (`buc.ts`) | a doc trata 70-80% como alerta. Paramos bem antes: painel atrasado cinco minutos é irritante, painel bloqueado uma hora é inútil |
+
+`X-Business-Use-Case-Usage` traz **três** indicadores e o maior manda:
+`call_count` é o óbvio, mas uma consulta pesada estoura `total_cputime` muito
+antes — olhar só a contagem deixaria a conta ser bloqueada por uma consulta
+só. Cabeçalho ausente devolve **zero**, não pânico: a Meta nem sempre manda,
+e tratar ausência como "cheio" pararia o painel sem motivo.
+
+**O token vai no cabeçalho `Authorization`, nunca na query.** Ele LÊ a conta
+de anúncio inteira — gasto, criativo, público —, e query string aparece em
+log de proxy e em histórico de erro.
+
+**Cache velho é melhor que tela vazia**, e por isso a falha devolve o que
+havia com a data dita: um número de ontem rotulado é informação; um branco
+não é.
+
+### O `ate` da Meta é inclusivo; o nosso não
+
+O intervalo do painel tem fim **exclusivo**; o `time_range` da Meta é
+inclusivo. Sem o `-1 dia` na conversão, um período de "7 dias" pediria 8 à
+Meta — e um ROAS que não fecha é pior que ROAS nenhum.
+
+---
+
 ## Autenticação — o que não pode quebrar
 
 - **`setAll` recebe DOIS parâmetros** no `@supabase/ssr` 0.12: `(cookies,
@@ -967,7 +1021,7 @@ não um gateway com cinco segundos de paciência.
 - [x] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
 - [x] **Fase 5** — Webhook de compra (Appmax · Pagou · Yampi · Adoorei · Zedy)
 - [x] **Fase 6** — Dashboard (visão geral, eventos, faturamento, geo)
-- [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
+- [x] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
 - [ ] **Fase 8** — Retenção, auditoria e publicação
 
 Cada fase termina em commit e espera aprovação antes da seguinte.

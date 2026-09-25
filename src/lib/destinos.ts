@@ -56,6 +56,13 @@ export async function segredoDoGa4(contaId: string): Promise<string | null> {
   return segredoDaConta('get_ga4_secret', contaId);
 }
 
+/** O token de leitura de uma conta de anúncio, com o mesmo cache. */
+export async function segredoDaContaDeAnuncio(
+  contaId: string,
+): Promise<string | null> {
+  return segredoDaConta('get_meta_ad_account_secret', contaId);
+}
+
 async function segredoDaConta(rpc: string, contaId: string): Promise<string | null> {
   const chave = `${rpc}:${contaId}`;
   const guardado = cacheTokens.get(chave);
