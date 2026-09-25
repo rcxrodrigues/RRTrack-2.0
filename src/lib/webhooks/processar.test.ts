@@ -312,6 +312,65 @@ describe('concluirCompra', () => {
     expect(linha.ga_client_id).toBe('123.456');
   });
 
+  /*
+   * A Pagou captura `fbp`/`fbc` no checkout dela e devolve no webhook. Um
+   * visitante casado por E-MAIL pode não ter `fbp` — escrever o nulo dele
+   * por cima jogaria fora a única identificação que a venda tinha, e a
+   * conversão iria para a Meta PIOR do que iria sem casar.
+   */
+  it('o que o visitante não tem NÃO apaga o que o gateway trouxe', async () => {
+    visitantePor.mockReturnValue({
+      trck_user_id: ID,
+      fbp: null,
+      fbc: null,
+      utm_source: 'facebook',
+    });
+
+    await concluirCompra(compra({ email: 'ana@exemplo.com' }));
+
+    const linha = atualizado();
+    expect(linha).not.toHaveProperty('fbp');
+    expect(linha).not.toHaveProperty('fbc');
+    // O que ele TEM continua entrando.
+    expect(linha.utm_source).toBe('facebook');
+  });
+
+  it('mas o vínculo e o motivo escrevem SEMPRE', async () => {
+    // São a resposta do casamento: `null` ali seria "não respondi", não
+    // "não sei", e o painel precisa poder contar as órfãs.
+    visitantePor.mockReturnValue({ trck_user_id: ID });
+
+    await concluirCompra(compra({ trckUserId: ID }));
+
+    const linha = atualizado();
+    expect(linha.trck_user_id).toBe(ID);
+    expect(linha.match_method).toBe('trck_user_id');
+  });
+
+  it('a identidade do gateway é gravada na compra', async () => {
+    await gravarCompra(
+      compra({
+        atribuicao: {
+          fbp: 'fb.1.2.3',
+          fbc: 'fb.1.2.abc',
+          utmSource: 'instagram',
+          utmCampaign: 'black-friday',
+        },
+      }),
+      null,
+    );
+
+    const linha = gravado();
+    expect(linha.fbp).toBe('fb.1.2.3');
+    expect(linha.utm_campaign).toBe('black-friday');
+  });
+
+  it('sem atribuição do gateway, os campos nem entram no upsert', async () => {
+    await gravarCompra(compra(), null);
+    expect(gravado()).not.toHaveProperty('fbp');
+    expect(gravado()).not.toHaveProperty('utm_source');
+  });
+
   it('registra "nenhum" quando não casa — órfã é uma resposta, não um vazio', async () => {
     await concluirCompra(compra({ email: 'ninguem@exemplo.com' }));
 

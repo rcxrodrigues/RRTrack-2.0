@@ -2,6 +2,7 @@ import { ehObjeto, lista, numero, texto } from '@/lib/json';
 import {
   deCentavos,
   type Adaptador,
+  type AtribuicaoDoGateway,
   type CompraNormalizada,
   type ProdutoComprado,
   type StatusCompra,
@@ -68,6 +69,20 @@ function trckUserIdDe(dados: unknown, envelope: unknown): string | null {
     }
   }
 
+  /*
+   * `src` e `sck` do objeto `attribution`, e eles NÃO são redundância.
+   *
+   * A doc é explícita: `informations` "só aparece quando você enviou
+   * entradas customizadas na criação; transações sem elas (ou criadas por
+   * CHECKOUT LINKS) omitem o campo". Numa loja que manda o comprador para um
+   * link de checkout — que é o caso da primeira oferta — a ponte documentada
+   * simplesmente não volta. `src`/`sck` são parâmetros de URL, e atravessam.
+   */
+  const atribuicao = ehObjeto(dados) && ehObjeto(dados.attribution)
+    ? dados.attribution
+    : undefined;
+  candidatos.push(texto(atribuicao, 'src'), texto(atribuicao, 'sck'));
+
   // `external_ref` e `correlation_id` são o mesmo valor com dois nomes: o
   // primeiro na criação, o segundo no webhook.
   candidatos.push(
@@ -82,6 +97,33 @@ function trckUserIdDe(dados: unknown, envelope: unknown): string | null {
     if (achado) return achado[0].toLowerCase();
   }
   return null;
+}
+
+/**
+ * O que o checkout da Pagou capturou por conta própria.
+ *
+ * Ela guarda `fbp`, `fbc` e as cinco UTMs em `data.attribution` — nenhum
+ * outro dos cinco faz isso. Vale para a venda ÓRFÃ: sem casamento, a
+ * conversão iria para a Meta sem identificação nenhuma; com isto vai ao
+ * menos com o que o checkout viu.
+ */
+function atribuicaoDe(dados: unknown): AtribuicaoDoGateway | undefined {
+  if (!ehObjeto(dados) || !ehObjeto(dados.attribution)) return undefined;
+  const a = dados.attribution;
+
+  const capturada: AtribuicaoDoGateway = {
+    fbp: texto(a, 'fbp') ?? null,
+    fbc: texto(a, 'fbc') ?? null,
+    utmSource: texto(a, 'utm_source') ?? null,
+    utmMedium: texto(a, 'utm_medium') ?? null,
+    utmCampaign: texto(a, 'utm_campaign') ?? null,
+    utmTerm: texto(a, 'utm_term') ?? null,
+    utmContent: texto(a, 'utm_content') ?? null,
+  };
+
+  // Objeto presente e todo nulo não é atribuição: é ruído que só ocuparia
+  // espaço na linha da compra.
+  return Object.values(capturada).some((v) => v !== null) ? capturada : undefined;
 }
 
 function produtosDe(dados: unknown): ProdutoComprado[] {
@@ -100,15 +142,23 @@ function compradorDe(dados: unknown): {
   primeiroNome: string | null;
   sobrenome: string | null;
 } {
-  const buyer = ehObjeto(dados) && ehObjeto(dados.buyer) ? dados.buyer : undefined;
+  /*
+   * `customer` é o que o webhook REAL manda — confirmado nos dois exemplos
+   * publicados (22/09/2026). `buyer` veio do OpenAPI da criação e continua
+   * aceito, mas ler só ele perdia o comprador inteiro: sem e-mail, o plano B
+   * do casamento nunca rodaria, e toda venda da Pagou chegaria órfã.
+   */
+  const comprador = ehObjeto(dados)
+    ? (ehObjeto(dados.customer) ? dados.customer : ehObjeto(dados.buyer) ? dados.buyer : undefined)
+    : undefined;
 
   // A Pagou manda o nome inteiro num campo só; a Meta quer separado.
-  const inteiro = texto(buyer, 'name') ?? texto(dados, 'customer_name') ?? '';
+  const inteiro = texto(comprador, 'name') ?? texto(dados, 'customer_name') ?? '';
   const partes = inteiro.trim().split(/\s+/).filter((p) => p.length > 0);
 
   return {
-    email: texto(buyer, 'email') ?? texto(dados, 'customer_email') ?? null,
-    telefone: texto(buyer, 'phone') ?? null,
+    email: texto(comprador, 'email') ?? texto(dados, 'customer_email') ?? null,
+    telefone: texto(comprador, 'phone') ?? null,
     primeiroNome: partes[0] ?? null,
     sobrenome: partes.length > 1 ? partes.slice(1).join(' ') : null,
   };
@@ -168,6 +218,7 @@ export const pagou: Adaptador = {
       ipCliente: texto(dados, 'ip_address') ?? null,
       produtos: produtosDe(dados),
       ocorridoEm: texto(dados, 'paid_at') ?? texto(dados, 'created_at') ?? null,
+      atribuicao: atribuicaoDe(dados),
     };
   },
 };

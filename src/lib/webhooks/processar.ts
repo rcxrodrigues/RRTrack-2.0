@@ -69,6 +69,19 @@ export async function gravarCompra(
      * preenchido no casamento, que é onde existe o dado de verdade.
      */
     ip: compra.ipCliente,
+    /*
+     * A identidade que o CHECKOUT capturou, quando ele captura (a Pagou
+     * captura). O casamento passa por cima quando acha o visitante — o dele
+     * é mais completo e tem os hashes. Quando não acha, isto é o que salva a
+     * venda órfã de chegar à Meta sem nada.
+     */
+    fbp: compra.atribuicao?.fbp ?? null,
+    fbc: compra.atribuicao?.fbc ?? null,
+    utm_source: compra.atribuicao?.utmSource ?? null,
+    utm_medium: compra.atribuicao?.utmMedium ?? null,
+    utm_campaign: compra.atribuicao?.utmCampaign ?? null,
+    utm_term: compra.atribuicao?.utmTerm ?? null,
+    utm_content: compra.atribuicao?.utmContent ?? null,
     raw_webhook: cru,
     updated_at: new Date().toISOString(),
   };
@@ -188,11 +201,19 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
 
       if (!data) continue;
 
-      // eslint-disable-next-line no-await-in-loop
-      const { error } = await supabase
-        .from('purchases')
-        .update({
-          trck_user_id: data.trck_user_id,
+      /*
+       * O que o visitante NÃO tem não apaga o que o gateway trouxe.
+       *
+       * A Pagou devolve `fbp`/`fbc` capturados no checkout dela. Um
+       * visitante casado por e-mail pode não ter `fbp` — escrever o nulo
+       * dele por cima jogaria fora a única identificação que a venda tinha,
+       * e a conversão iria para a Meta pior do que iria sem casar.
+       *
+       * O que SEMPRE escreve é o vínculo e o motivo: são a resposta do
+       * casamento, e `null` ali seria "não respondi", não "não sei".
+       */
+      const doVisitante = Object.fromEntries(
+        Object.entries({
           utm_source: data.utm_source,
           utm_medium: data.utm_medium,
           utm_campaign: data.utm_campaign,
@@ -206,6 +227,15 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
           geo_country: data.geo_country,
           geo_region: data.geo_region,
           geo_city: data.geo_city,
+        }).filter(([, v]) => v !== null && v !== undefined),
+      );
+
+      // eslint-disable-next-line no-await-in-loop
+      const { error } = await supabase
+        .from('purchases')
+        .update({
+          ...doVisitante,
+          trck_user_id: data.trck_user_id,
           match_method: tentativa.metodo,
           match_reason: `casou por ${tentativa.coluna}`,
         })

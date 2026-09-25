@@ -31,8 +31,15 @@ Em `POST /v2/transactions`:
 > *"Custom key/value metadata to attach to the transaction and **echo on the
 > webhook**."* — até 50 pares, chave de 64 e valor de 255 caracteres.
 
-A documentação afirma o eco. **Falta confirmar na prática**: o exemplo de
-webhook publicado é mínimo e não mostra `informations` (ver pendência abaixo).
+**CONFIRMADO em 25/09/2026**, com dois exemplos de payload publicados. Mas a
+mesma página traz a condição, e ela importa mais que a confirmação:
+
+> "Só aparece quando você enviou entradas customizadas na criação;
+> transações sem elas (ou **criadas por checkout links**) omitem o campo."
+
+**Numa loja que manda o comprador para um link de checkout — que é o caso da
+primeira oferta — `informations` não volta.** A ponte documentada some
+exatamente no cenário que temos. O que salva é o `attribution` abaixo.
 
 ### 3. A Pagou já captura fbp, fbc e UTM no checkout dela
 
@@ -142,3 +149,84 @@ Roteamento, segundo a própria doc:
 Faz sentido: a mesma transação emite `created`, `pending`, `paid`, `refunded`.
 Para nós isso significa: a LINHA é uma por transação (o `id` do recurso), mas
 o processamento de cada evento distingue pelo `id` do topo.
+
+
+---
+
+## O payload real (25/09/2026) — e o que ele corrigiu
+
+```json
+{
+  "id": "evt_pay_1001",
+  "event": "transaction",
+  "api_version": "v1",
+  "data": {
+    "id": "018f1f2e-…", "event_type": "transaction.paid",
+    "correlation_id": "order_1001", "method": "pix",
+    "status": "paid", "amount": 1500, "currency": "BRL",
+    "informations": [{ "key": "order_id", "value": "order_1001" }],
+    "customer":  { "name": "Ana Souza", "email": "…", "phone": "…" },
+    "products":  [{ "id": "…", "title": "…", "unit_price": 1500, "quantity": 1 }],
+    "attribution": {
+      "utm_source": "instagram", "utm_medium": "cpc", "utm_campaign": "black-friday",
+      "utm_content": null, "utm_term": null,
+      "fbc": null, "fbp": null, "gclid": null, "ttclid": null,
+      "src": null, "sck": null,
+      "checkout_url": "…", "referrer_url": "…"
+    }
+  }
+}
+```
+
+### O bug que ele pegou: `customer`, não `buyer`
+
+Eu tinha escrito `buyer`, que é o nome no OpenAPI da **criação**. O webhook
+manda `customer`. Lendo só `buyer`, **o comprador se perdia inteiro** — sem
+e-mail, sem telefone, sem nome.
+
+E isso não seria um detalhe cosmético: numa venda criada por checkout link,
+onde `informations` não volta, **o e-mail é a única ponte que sobra**. Toda
+venda da Pagou chegaria órfã, e o ROAS por campanha ficaria cego nela.
+
+É por isso que adaptador se escreve contra o payload real, não contra a
+leitura de um schema de outro endpoint.
+
+### A Pagou captura `fbp` e `fbc` — nenhum outro dos cinco faz isso
+
+`data.attribution` traz as cinco UTMs, `fbp`, `fbc`, `gclid`, `ttclid`,
+`src`, `sck`, `checkout_url` e `referrer_url`.
+
+Isso muda o pior caso do sistema. A **venda órfã** — a que não casa com
+visitante nenhum — hoje vai para a Meta sem identificação, e o match é quase
+zero. Com o `attribution`, ela vai ao menos com o `fbp`/`fbc` que o checkout
+viu.
+
+Duas travas que isso exigiu:
+
+- **`CompraNormalizada.atribuicao`** carrega o que o gateway capturou, e
+  `gravarCompra` grava. Os campos vazios são filtrados como todos os outros.
+- **O casamento parou de apagar com `null`.** Um visitante casado por e-mail
+  pode não ter `fbp`; escrever o nulo dele por cima jogaria fora a única
+  identificação que a venda tinha, e a conversão iria para a Meta **pior do
+  que iria sem casar**. O vínculo e o motivo continuam escrevendo sempre —
+  ali `null` seria "não respondi", não "não sei".
+
+### `src` / `sck` são a segunda ponte, e a que atravessa link de checkout
+
+Parâmetros de URL, então sobrevivem ao redirecionamento. É o plano A quando
+o pedido nasce de um link e `informations` não volta.
+
+### Moeda não é sempre BRL
+
+Um dos exemplos publicados está em **MXN**. O adaptador lê `data.currency` e
+nunca crava — mas vale saber que a conta do painel tem de respeitar isso.
+
+### Assinatura: não existe, e a doc diz isso
+
+Procura em 99 arquivos-fonte: nenhum header de verificação, nenhum HMAC,
+nenhum segredo. A única linha com `signature` em toda a doc diz
+**"The public contract exposes no signature"**.
+
+O que a Pagou prescreve como defesa é dedupe pelo `id` de topo e
+reconciliação por `GET`. O token na URL é convenção **nossa**, não esquema
+dela — e continua sendo a única autenticação possível aqui.

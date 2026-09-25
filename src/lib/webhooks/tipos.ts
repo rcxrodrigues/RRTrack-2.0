@@ -133,6 +133,35 @@ export type CompraNormalizada = {
 
   /** Quando a venda aconteceu, se o gateway informar. ISO-8601. */
   ocorridoEm: string | null;
+
+  /**
+   * A identidade que o CHECKOUT já capturou, quando ele captura.
+   *
+   * ┌─────────────────────────────────────────────────────────────────────┐
+   * │ Normalmente isto vem do VISITANTE, copiado no casamento. Mas a      │
+   * │ Pagou captura `fbp`, `fbc` e as UTMs no checkout dela e devolve no  │
+   * │ webhook, em `data.attribution`.                                     │
+   * └─────────────────────────────────────────────────────────────────────┘
+   *
+   * Vale para o caso que mais dói: a venda ÓRFÃ. Sem casamento, hoje a
+   * conversão vai para a Meta sem identificação nenhuma e o match é quase
+   * zero. Com isto, ela vai ao menos com o `fbp`/`fbc` que o checkout viu.
+   *
+   * Quando o casamento acha o visitante, o dele prevalece — é mais completo
+   * e tem os hashes. Quando não acha, isto é tudo que existe.
+   */
+  atribuicao?: AtribuicaoDoGateway;
+};
+
+/** O que o checkout capturou por conta própria. Tudo opcional. */
+export type AtribuicaoDoGateway = {
+  fbp?: string | null;
+  fbc?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmTerm?: string | null;
+  utmContent?: string | null;
 };
 
 /**

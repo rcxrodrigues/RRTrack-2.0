@@ -82,19 +82,69 @@ Sem ele, o caminho longo é uma página só: **`GET /v1/charges/{id}`
 o mesmo que vem dentro do webhook. Só que ela também é `<APIPage>`, então
 teria de ser **captura de tela**, não texto colado.
 
-### O que ainda falta, em ordem de importância
+## O que a extensão confirmou (25/09/2026)
 
-1. **O objeto `charge`** — sem ele não há como ler valor, status, cliente nem
-   campo livre. É o que trava o adaptador inteiro.
-2. **Centavos ou reais** — está no objeto `charge`. Errar dá 100× de
-   diferença, em silêncio (a Yampi e a Adoorei mandam em reais; a Appmax, a
-   Pagou e a Zedy em centavos — não há regra global).
-3. **Campo livre que volte no webhook** (`metadata`, `external_reference`) —
-   está no `POST /v1/charges`. É a ponte da atribuição: sem ela o
-   `trck_user_id` não atravessa e só sobra o plano B por e-mail.
-4. **A lista de eventos `charge.*`** — vimos `charge.captured` e
-   `charge.refunded` de passagem.
-5. **A fórmula exata do HMAC** — sobre o corpo cru? corpo + timestamp?
+### Valor: CENTAVOS, e documentado com todas as letras
+
+| campo | |
+|---|---|
+| `amount` | number, **em centavos** — "ex: R$ 100,00 = 10000" |
+| `shipping_amount` | centavos |
+| `total_amount` | centavos |
+
+Sem ambiguidade, ao contrário da Yampi e da Adoorei. Entra em `deCentavos()`.
+
+### Campo livre: **só** `metadata`
+
+`metadata: object | null`. E o que **não** existe, verificado página a
+página: `external_reference`, `correlation_id`, `custom_*`, `reference`.
+Existe um `external_id`, mas é **da adquirente**, não nosso.
+
+Então a ponte da atribuição da MillionsPay é `metadata`, e só.
+
+### Datas
+
+`created_at`, `updated_at`, `captured_at`, `refunded_at` no charge;
+`occurred_at` no envelope.
+
+### O cliente NÃO volta completo no webhook
+
+No objeto `charge` do webhook existe só `customer: object | null`. Nome,
+e-mail, telefone e `tax_id` aparecem no **Request Body de `createCharge`**,
+não no charge que chega. Endereço (`billing_address` / `shipping_address`)
+não volta de jeito nenhum — só existe na criação.
+
+**Consequência para o plano B:** se o `customer` do webhook vier vazio ou
+parcial, o casamento por e-mail não roda, e a ponte por `metadata` vira a
+única. Confirmar no primeiro postback real.
+
+### O HMAC: a doc se contradiz
+
+O que está resolvido: header `X-SoarLabz-Signature`, HMAC-SHA256,
+hexadecimal, prefixo `sha256=`, sem timestamp.
+
+O que **não** está: o texto diz "corpo da requisição" (cru), e o exemplo em
+Node assina `JSON.stringify(req.body)` — que é **reserialização**, não o
+corpo cru. `JSON.stringify` de um objeto já parseado muda espaçamento e
+ordem de chaves; o hash não é o mesmo.
+
+Não dá para deduzir: é contradição da própria doc, e se resolve no primeiro
+postback real comparando os dois. É exatamente por isso que a rota preserva o
+corpo cru — a verificação pode ser acrescentada depois sem mexer em mais nada.
+
+## O que ainda falta para escrever o adaptador
+
+1. **Os 8 valores do enum de `status`** — confirmados como existindo em dois
+   lugares da doc, mas a lista não foi copiada.
+2. **Os 9 nomes dos eventos `charge.*`** — idem: contados, não listados.
+3. **Os 20 nomes de campo da raiz do `charge`** — idem.
+
+Sem esses três, o adaptador não sai: não há como mapear status nem decidir
+por evento. São três listas curtas, e o resto já está aqui.
+
+Depois delas, o buraco que sobra é `payment_details` de **PIX e boleto** (só
+o exemplo de cartão foi aberto) — e esse é o que mais provavelmente pega
+depois, porque muda por método de pagamento.
 
 ## Endpoints de gerenciamento (já conhecidos)
 
