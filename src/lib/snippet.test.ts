@@ -7,6 +7,7 @@ import type { Configuracao } from './settings';
 const CONFIG: Configuracao = {
   settings: {
     currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
     testEventCode: 'TEST123',
     cookieDomain: '.transforlar.com',
     origensPermitidas: ['https://transforlar.com'],

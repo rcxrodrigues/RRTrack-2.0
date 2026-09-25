@@ -81,6 +81,7 @@ const APROVADA = {
   status: 'aprovada',
   value: 199.9,
   currency: 'BRL',
+  timezone: 'America/Sao_Paulo',
   email_hash: 'a'.repeat(64),
   phone_hash: 'b'.repeat(64),
   first_name: 'Cliente',

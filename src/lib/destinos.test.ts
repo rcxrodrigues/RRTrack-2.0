@@ -41,6 +41,7 @@ function configCom(pixels: { id: string; pixelId: string }[], testEventCode: str
   return {
     settings: {
       currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
       testEventCode,
       cookieDomain: null,
       origensPermitidas: [],

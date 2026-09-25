@@ -16,6 +16,13 @@ import { ehStatusCompra, type StatusCompra } from '@/lib/webhooks/tipos';
 
 export type Settings = {
   currency: string;
+  /**
+   * O fuso em que o painel agrupa os dias.
+   *
+   * UTC racharia o dia de vendas em duas linhas e o total não bateria com o
+   * painel do gateway, que conta em fuso local.
+   */
+  timezone: string;
   testEventCode: string | null;
   cookieDomain: string | null;
   origensPermitidas: string[];
@@ -78,6 +85,7 @@ let cache: { valor: Configuracao; expiraEm: number } | null = null;
 const PADRAO: Configuracao = {
   settings: {
     currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
     testEventCode: null,
     cookieDomain: null,
     origensPermitidas: [],
@@ -149,7 +157,7 @@ async function buscar(): Promise<Configuracao> {
   const [settings, ga4, pixels] = await Promise.all([
     supabase
       .from('settings')
-      .select('currency, test_event_code, cookie_domain, allowed_origins, checkout_domains, status_aliases')
+      .select('currency, timezone, test_event_code, cookie_domain, allowed_origins, checkout_domains, status_aliases')
       .eq('id', true)
       .maybeSingle(),
     // Só os destinos ATIVOS: desativar uma conta no painel precisa parar o
@@ -166,6 +174,7 @@ async function buscar(): Promise<Configuracao> {
   return {
     settings: {
       currency: texto(linha?.currency) ?? 'BRL',
+      timezone: texto(linha?.timezone) ?? 'America/Sao_Paulo',
       testEventCode: texto(linha?.test_event_code),
       cookieDomain: texto(linha?.cookie_domain),
       origensPermitidas: listaDeTexto(linha?.allowed_origins),

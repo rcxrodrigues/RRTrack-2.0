@@ -319,7 +319,51 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   `h-11` no celular). Sidebar no desktop, barra inferior no celular —
   `src/lib/nav.ts` é a fonte única das duas.
 - Métrica sem dado mostra **`—`, nunca `0`**: zero é um número, "sem dado" não é.
-  É o que o `MetricCard` faz quando recebe `value={null}`.
+  É o que o `MetricCard` faz quando recebe `value={null}` — e o que a etapa
+  `desconhecido` do funil faz quando o evento que a alimenta nunca chegou.
+  **Foi a captura de tela que pegou essa**: o funil mostrava `0,0%` logo acima
+  de um aviso dizendo "não porque ninguém passou por lá". O número contradizia
+  o texto.
+- **Número na tela nunca passa por `Intl.NumberFormat`.** Ele depende do ICU, e
+  o do Node não é o do navegador: em moeda pt-BR a diferença é o tipo de espaço
+  depois do "R$" — o texto parece igual, o React vê diferente, e a hidratação
+  quebra. `src/lib/formato.ts` formata à mão, com vetores em `formato.test.ts`.
+  É a mesma armadilha do `toLocaleString` em data, por outra porta, e pior:
+  o erro depende de qual navegador abriu a página.
+
+### Gráfico: a cor é computável, então compute
+
+Antes da primeira linha de gráfico, carregue a skill **`dataviz`**. Ela traz o
+procedimento (forma → cor → validar → marcas → interação → acessibilidade →
+**olhar**) e o validador.
+
+O que já foi feito e não precisa repetir, salvo se mexer nos tokens:
+
+```bash
+node <skill>/scripts/validate_palette.js \
+  "#3d71ff,#00999e,#9d7b0b,#b710fe,#e60579" --mode dark  --surface "#070a12"
+node <skill>/scripts/validate_palette.js \
+  "#2e66ff,#0299a1,#9c7002,#b903dd,#e00040" --mode light --surface "#fcfcfd"
+```
+
+Os cinco `--chart-*` passam nos seis checks nos dois temas, contra as
+superfícies REAIS (não as padrão do validador). O `globals.test.ts` cobre ΔE e
+contraste; o validador cobre banda de luminosidade, piso de croma e separação
+sob daltonismo, que contraste sozinho não pega.
+
+**Funil e lista ranqueada usam UMA cor.** As etapas não são identidades
+diferentes — são a mesma quantidade encolhendo, e quem carrega a magnitude é o
+comprimento da barra. Matiz por etapa gastaria três cores para não dizer nada.
+Série única também não pede legenda: o rótulo já está na barra.
+
+**O passo 7 da skill é literal: renderize e olhe.** O validador checa cor, não
+layout. Sem credenciais do Supabase dá para montar uma rota `previa` temporária
+com dados falsos, liberar o caminho em `ROTAS_PUBLICAS`, tirar a foto com o
+Playwright nos dois temas e em 390px, e apagar tudo depois. Três problemas
+saíram dessa foto e nenhum teste os pegaria: o `0,0%` acima, uma seta `↓` ao
+lado de `10,6%` que lia como "caiu 10,6%" quando o número era o que PASSOU (a
+seta virou `↳` e o texto virou "seguiram"), e `R$ 37.158,70` partindo em duas
+linhas no celular com o "R$" sozinho parecendo outro número.
 
 ---
 
@@ -814,7 +858,7 @@ não um gateway com cinco segundos de paciência.
 - [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [x] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
 - [x] **Fase 5** — Webhook de compra (Appmax · Pagou · Yampi · Adoorei · Zedy)
-- [ ] **Fase 6** — Dashboard
+- [ ] **Fase 6** — Dashboard (visão geral pronta; faltam eventos, faturamento e geo)
 - [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
 - [ ] **Fase 8** — Retenção, auditoria e publicação
 

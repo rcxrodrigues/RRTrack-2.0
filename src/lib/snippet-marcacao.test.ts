@@ -26,6 +26,7 @@ function configCom(checkout: string[]): Configuracao {
   return {
     settings: {
       currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
       testEventCode: null,
       cookieDomain: '.minhaloja.com',
       origensPermitidas: ['https://minhaloja.com'],
