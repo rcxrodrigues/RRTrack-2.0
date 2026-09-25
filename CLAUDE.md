@@ -865,6 +865,18 @@ sem deixar rastro.
 painel, e o adaptador é escrito contra ele, não contra documentação. Os
 cabeçalhos vão junto — é neles que se descobre como o gateway assina.
 
+**Menos o token.** Ele chega num cabeçalho — `Authorization: Bearer` na Zedy,
+`x-webhook-token` no genérico, `x-adoorei-hash` na Adoorei — e a linha de
+auditoria é lida pelo painel e **impressa na tela**. Gravá-lo cru seria segredo
+em repouso numa coluna nossa: a mesma armadilha que o `payload_meta` já desvia,
+por outra porta, e exatamente o que a escolha do Vault existe para evitar.
+`cabecalhosSeguros()` mascara **por valor, não por nome** — a lista de nomes
+cresce a cada gateway e esquecer um é silencioso, enquanto comparar contra o
+token configurado pega até o nome que um gateway futuro inventar. O **nome** de
+todos fica, porque é ele que diagnostica; a assinatura HMAC também, porque é
+resumo de um payload só e não segredo reutilizável — e é o que falta para
+fechar as fórmulas da Yampi e da MillionsPay.
+
 O acerto é por **regex de 32 hexadecimais**, não por igualdade: o checkout pode
 devolver o valor embrulhado em texto. E o exemplo da Appmax traz
 `client_key: "merchant-key-123"` — chave do lojista, não da visita. Aceitar

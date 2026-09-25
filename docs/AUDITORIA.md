@@ -78,6 +78,42 @@ falharia igual, e o gateway precisa saber que o problema é o tamanho.
 
 ---
 
+### O token do webhook ficava em texto puro na linha de auditoria
+
+`registrarRecebido()` gravava `Object.fromEntries(headers.entries())` — todos
+os cabeçalhos, verbatim. E o token chega num deles: `Authorization: Bearer` na
+Zedy, `x-webhook-token` no genérico, `x-adoorei-hash` na Adoorei.
+
+Isso punha o token:
+
+1. numa coluna `jsonb` que qualquer `authenticated` lê pelo PostgREST;
+2. **impresso na tela** do painel, na gaveta de cabeçalhos;
+3. em todo backup do banco, por 30 dias, até a retenção zerar a coluna.
+
+É a mesma armadilha que o `payload_meta` já desvia — *"um token ali seria
+segredo vazado em repouso"* — por outra porta. E é exatamente o que a escolha
+do Vault existe para evitar: o valor nunca deve passar por uma coluna nossa.
+
+O estrago não é hipotético: esse token é o que autoriza gravar uma venda.
+Vazado, dá para inventar faturamento e mandar conversão falsa para a Meta.
+
+**Corrigido** em `cabecalhosSeguros()`. O mascaramento é por **valor**, não por
+nome: a lista de nomes cresce a cada gateway — já são três mais o
+`authorization` — e esquecer um seria silencioso. Comparar contra o token
+configurado pega qualquer cabeçalho que o carregue, inclusive o que um gateway
+futuro inventar.
+
+O **nome** de todos fica, porque é ele que tem valor de diagnóstico. As
+assinaturas HMAC também ficam: são resumo de um payload só, não segredo
+reutilizável, e são o que falta para fechar as fórmulas da Yampi e da
+MillionsPay. Oito testes em `cabecalhos.test.ts`.
+
+> 🔴 **Se você já disparou algum webhook de teste antes desta correção**, as
+> linhas antigas ainda têm o token. Gere um token novo no painel — é um
+> clique — ou apague as linhas de `webhooks_recebidos`.
+
+---
+
 ## ⚠️ Exceções deliberadas, com o motivo
 
 A regra do projeto diz *"todo endpoint público valida com Zod e tem rate

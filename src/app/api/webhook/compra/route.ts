@@ -53,6 +53,50 @@ function primeiroCabecalho(
   return null;
 }
 
+/**
+ * Os cabeçalhos guardados para auditoria, SEM o token.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ O token do webhook chega num cabeçalho, e a linha de auditoria é lida    │
+ * │ pelo painel e impressa na tela. Gravá-lo cru seria segredo em repouso    │
+ * │ numa coluna nossa — exatamente o que o Vault existe para evitar, e a     │
+ * │ mesma armadilha que o `payload_meta` já desvia por outra porta.          │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * O mascaramento é por VALOR, não por nome. A lista de nomes cresce a cada
+ * gateway novo — já são três mais o `authorization` — e esquecer um seria
+ * silencioso. Comparar contra o token configurado pega qualquer cabeçalho que
+ * o carregue, inclusive o que um gateway futuro inventar.
+ *
+ * O NOME fica sempre, e é ele que tem o valor de diagnóstico: é assim que se
+ * descobre como cada gateway assina. As assinaturas HMAC também ficam — são
+ * resumo de um payload só, não segredo reutilizável, e são o que falta para
+ * fechar as fórmulas da Yampi e da MillionsPay.
+ */
+const OCULTO = '(oculto: carregava o token)';
+
+export function cabecalhosSeguros(
+  headers: Headers,
+  token: string,
+): Record<string, string> {
+  // Token curto demais casaria por acaso e mascararia tudo.
+  const comparavel = token.length >= 8 ? token : null;
+  const saida: Record<string, string> = {};
+
+  for (const [nome, valor] of headers.entries()) {
+    const chave = nome.toLowerCase();
+    const carrega =
+      chave === 'authorization' ||
+      chave === 'proxy-authorization' ||
+      chave === 'cookie' ||
+      (comparavel !== null && valor.includes(comparavel));
+
+    saida[nome] = carrega ? OCULTO : valor;
+  }
+
+  return saida;
+}
+
 /** Resposta sem corpo útil: quem chama é robô, não navegador. */
 function responder(status: number, corpo: Record<string, unknown>): NextResponse {
   return NextResponse.json(corpo, {
@@ -193,6 +237,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       adaptador,
       transactionId,
       motivo,
+      token: esperado,
     });
   });
 
@@ -255,6 +300,7 @@ async function registrarRecebido({
   adaptador,
   transactionId,
   motivo,
+  token,
 }: {
   corpo: unknown;
   corpoCru: string;
@@ -263,6 +309,7 @@ async function registrarRecebido({
   adaptador: string | null;
   transactionId: string | null;
   motivo: string | null;
+  token: string;
 }): Promise<void> {
   try {
     await criarClienteAdmin().from('webhooks_recebidos').insert({
@@ -274,8 +321,9 @@ async function registrarRecebido({
       // Guardado só quando NÃO é JSON: payload quebrado também é informação.
       corpo_texto: corpo === null ? corpoCru.slice(0, 20_000) : null,
       // É aqui que se descobre como o gateway assina — o header da
-      // MillionsPay e o X-Adoorei-hash aparecem neste objeto.
-      headers: Object.fromEntries(headers.entries()),
+      // MillionsPay e o X-Adoorei-hash aparecem neste objeto. O NOME de
+      // todos fica; o valor que carregava o token, não.
+      headers: cabecalhosSeguros(headers, token),
       ip,
       transaction_id: transactionId,
     });
