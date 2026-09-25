@@ -331,6 +331,19 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   É a mesma armadilha do `toLocaleString` em data, por outra porta, e pior:
   o erro depende de qual navegador abriu a página.
 
+### Geo é tabela, não mapa — e é escolha, não preguiça
+
+Um mapa colorido mostra **concentração** e nada mais. Comparar dois tons de
+azul é o pior jeito de comparar dois números, e a skill de `dataviz` lista
+coroplética acima de três séries como anti-padrão.
+
+O que decide frete, fraude e corte de campanha é o **número por região** — e
+a **conversão** por região, que num mapa não cabe. A tela põe receita e
+visitantes lado a lado de propósito: região que aparece numa lista e não na
+outra é tráfego que não converte, e isso é a leitura que interessa.
+
+Se o mapa entrar um dia, entra **ao lado** da tabela, nunca no lugar dela.
+
 ### Gráfico: a cor é computável, então compute
 
 Antes da primeira linha de gráfico, carregue a skill **`dataviz`**. Ela traz o
@@ -953,7 +966,7 @@ não um gateway com cinco segundos de paciência.
 - [x] **Fase 3** — Captura (`/t.js`, `/api/identify`, `/api/event`)
 - [x] **Fase 4** — Destinos server-side (Meta CAPI + GA4)
 - [x] **Fase 5** — Webhook de compra (Appmax · Pagou · Yampi · Adoorei · Zedy)
-- [ ] **Fase 6** — Dashboard (visão geral pronta; faltam eventos, faturamento e geo)
+- [x] **Fase 6** — Dashboard (visão geral, eventos, faturamento, geo)
 - [ ] **Fase 7** — Campanhas (Meta Ads Insights + ROAS)
 - [ ] **Fase 8** — Retenção, auditoria e publicação
 
