@@ -315,6 +315,15 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   do servidor e outro do cliente — não `setState` num efeito, que dispara
   render em cascata e o lint recusa. Ver `Quando` em
   `src/app/(dash)/eventos/_components/webhook-recebido.tsx`.
+- **O funil tem QUATRO etapas, e a tela busca por `id` — nunca por índice.**
+  Visitou → Adicionou ao carrinho → Chegou no checkout → Comprou. Ele nasceu
+  com três e o carrinho entrou no meio: quem lesse `etapas[1]` para "chegou no
+  checkout" passaria a ler o CARRINHO **sem erro nenhum aparecer** — o número
+  só ficaria maior, e ninguém conferiria porque nada quebrou. `etapaDe(funil,
+  'checkout')` é o acesso; `funil.test.ts` prova que `etapas[1]` é o carrinho.
+  Quando dois nomes alimentam a mesma etapa (o pixel manda `AddToCart`, a gtag
+  manda `add_to_cart`), vale o MAIOR e não a soma: somar contaria a mesma
+  pessoa duas vezes e o meio ficaria maior que o topo.
 - **Mobile-first.** Alvos de toque ≥ 44px (o `size="default"` do Button já dá
   `h-11` no celular). Sidebar no desktop, barra inferior no celular —
   `src/lib/nav.ts` é a fonte única das duas.

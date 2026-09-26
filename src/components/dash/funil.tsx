@@ -163,11 +163,19 @@ export function FunilEtapas({ funil }: { funil: Funil }) {
         </div>
       </div>
 
-      {funil.semEventoDeCheckout && (
+      {funil.eventosFaltando.length > 0 && (
         <p className="text-warning text-xs">
-          Nenhum evento de checkout chegou neste período. O meio do funil está
-          vazio porque o dado não existe — não porque ninguém passou por lá.
-          Confira se o snippet dispara <code>InitiateCheckout</code>.
+          {funil.eventosFaltando.length === 1
+            ? 'Um degrau do funil está vazio porque o dado não existe'
+            : 'Dois degraus do funil estão vazios porque o dado não existe'}{' '}
+          — não porque ninguém passou por lá. Confira se o snippet dispara{' '}
+          {funil.eventosFaltando.map((nome, i) => (
+            <span key={nome}>
+              {i > 0 && ' e '}
+              <code>{nome}</code>
+            </span>
+          ))}
+          .
         </p>
       )}
     </div>

@@ -1,117 +1,123 @@
 import { describe, expect, it } from 'vitest';
 
-import { montarFunil } from './funil';
 import type { EventoPorTipo } from './consultas';
+
+import { etapaDe, montarFunil } from './funil';
+
+/**
+ * O funil erra de um jeito específico: ele engorda no meio.
+ *
+ * Acontece por contar EVENTOS em vez de pessoas — quem abriu o checkout três
+ * vezes vira três —, e o gráfico resultante não é só feio: é ilegível, porque
+ * funil que alarga não tem leitura.
+ */
 
 function evento(nome: string, total: number, visitantes: number): EventoPorTipo {
   return { nome, total, visitantes };
 }
 
+const CARRINHO = evento('AddToCart', 60, 40);
+const CHECKOUT = evento('InitiateCheckout', 30, 20);
+
 describe('montarFunil', () => {
-  it('conta PESSOAS na etapa do meio, não eventos', () => {
-    /*
-     * Cem visitantes abriram o checkout, e alguns voltaram: 250 eventos, 100
-     * pessoas. Usar o total daria uma etapa do meio MAIOR que o topo — um
-     * funil que engorda no meio não é funil, é gráfico errado.
-     */
-    const { etapas } = montarFunil(
-      1000,
-      [evento('InitiateCheckout', 250, 100)],
-      13,
+  it('conta PESSOAS, não eventos', () => {
+    const { etapas } = montarFunil(100, [CARRINHO, CHECKOUT], 5);
+    // 60 eventos de carrinho, 40 pessoas. Vale 40.
+    expect(etapaDe({ etapas, eventosFaltando: [] }, 'carrinho')?.total).toBe(40);
+    expect(etapaDe({ etapas, eventosFaltando: [] }, 'checkout')?.total).toBe(20);
+  });
+
+  it('as quatro etapas, na ordem do caminho', () => {
+    const { etapas } = montarFunil(100, [CARRINHO, CHECKOUT], 5);
+    expect(etapas.map((e) => e.id)).toEqual([
+      'visitou',
+      'carrinho',
+      'checkout',
+      'comprou',
+    ]);
+  });
+
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────────┐
+   * │ A TELA BUSCA POR `id`, NUNCA POR ÍNDICE.                               │
+   * │                                                                        │
+   * │ O funil nasceu com três etapas e o carrinho entrou no meio. Quem lesse │
+   * │ `etapas[1]` para "chegou no checkout" passaria a ler o CARRINHO sem    │
+   * │ erro nenhum aparecer — o número só ficaria maior, e ninguém conferiria │
+   * │ porque nada quebrou.                                                   │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  it('etapaDe acha pelo id, e o índice do checkout NÃO é 1', () => {
+    const funil = montarFunil(100, [CARRINHO, CHECKOUT], 5);
+    expect(etapaDe(funil, 'checkout')?.total).toBe(20);
+    expect(funil.etapas[1]?.id).toBe('carrinho');
+  });
+
+  it('a fração da etapa anterior é o que diz onde se perde gente', () => {
+    const funil = montarFunil(100, [CARRINHO, CHECKOUT], 5);
+    expect(etapaDe(funil, 'carrinho')?.daAnterior).toBeCloseTo(0.4);
+    expect(etapaDe(funil, 'checkout')?.daAnterior).toBeCloseTo(0.5);
+    expect(etapaDe(funil, 'comprou')?.daAnterior).toBeCloseTo(0.25);
+  });
+
+  it('o topo não tem etapa anterior, e é 100% dele mesmo', () => {
+    const funil = montarFunil(100, [CARRINHO, CHECKOUT], 5);
+    expect(etapaDe(funil, 'visitou')?.daAnterior).toBeNull();
+    expect(etapaDe(funil, 'visitou')?.doTopo).toBe(1);
+  });
+
+  it('tolera as convenções de nome de cada etapa', () => {
+    for (const nome of ['addtocart', 'ADD_TO_CART', 'Carrinho']) {
+      const funil = montarFunil(100, [evento(nome, 9, 9)], 2);
+      expect(etapaDe(funil, 'carrinho')?.total, nome).toBe(9);
+      expect(funil.eventosFaltando, nome).not.toContain('AddToCart');
+    }
+    for (const nome of ['initiatecheckout', 'BEGIN_CHECKOUT', 'Checkout']) {
+      const funil = montarFunil(100, [evento(nome, 9, 9)], 2);
+      expect(etapaDe(funil, 'checkout')?.total, nome).toBe(9);
+    }
+  });
+
+  /*
+   * O pixel e a gtag podem disparar a MESMA ação com nomes diferentes
+   * (`AddToCart` e `add_to_cart`). Somar contaria a pessoa duas vezes, e o
+   * meio do funil ficaria maior que o topo.
+   */
+  it('dois nomes para a mesma ação não somam a mesma pessoa duas vezes', () => {
+    const funil = montarFunil(
+      100,
+      [evento('AddToCart', 50, 40), evento('add_to_cart', 50, 40)],
+      5,
     );
-
-    expect(etapas[1]?.total).toBe(100);
-    expect(etapas[1]?.doTopo).toBeCloseTo(0.1);
+    expect(etapaDe(funil, 'carrinho')?.total).toBe(40);
   });
 
-  it('a conversão de cada etapa é sobre a ANTERIOR', () => {
-    const { etapas } = montarFunil(1000, [evento('InitiateCheckout', 200, 200)], 40);
+  it('evento que nunca chegou é DESCONHECIDO, não zero', () => {
+    const funil = montarFunil(100, [evento('PageView', 300, 100)], 2);
+    const carrinho = etapaDe(funil, 'carrinho');
 
-    // É este número que diz onde se perde gente: 20% chegaram ao checkout,
-    // e desses 20% compraram.
-    expect(etapas[1]?.daAnterior).toBeCloseTo(0.2);
-    expect(etapas[2]?.daAnterior).toBeCloseTo(0.2);
-    // E o do topo é outro: 4% dos visitantes compraram.
-    expect(etapas[2]?.doTopo).toBeCloseTo(0.04);
+    expect(carrinho?.desconhecido).toBe(true);
+    expect(carrinho?.doTopo).toBeNull();
+    expect(carrinho?.daAnterior).toBeNull();
+    expect(funil.eventosFaltando).toEqual(['AddToCart', 'InitiateCheckout']);
   });
 
-  it('o topo não tem "anterior"', () => {
-    const { etapas } = montarFunil(10, [], 1);
-    expect(etapas[0]?.daAnterior).toBeNull();
-    expect(etapas[0]?.doTopo).toBe(1);
+  it('etapa desconhecida apaga a conta da SEGUINTE também', () => {
+    // Sem carrinho, "20 de quanto?" não tem resposta medida.
+    const funil = montarFunil(100, [CHECKOUT], 2);
+    expect(etapaDe(funil, 'checkout')?.daAnterior).toBeNull();
+    // Mas a fração do TOPO continua válida: o topo existe.
+    expect(etapaDe(funil, 'checkout')?.doTopo).toBeCloseTo(0.2);
   });
 
-  it('aceita o nome do evento em qualquer caixa e nas convenções conhecidas', () => {
-    for (const nome of ['InitiateCheckout', 'initiatecheckout', 'begin_checkout', 'Checkout']) {
-      const { etapas, semEventoDeCheckout } = montarFunil(100, [evento(nome, 9, 9)], 2);
-      expect(semEventoDeCheckout, nome).toBe(false);
-      expect(etapas[1]?.total, nome).toBe(9);
-    }
+  it('zero medido é zero, e não vira desconhecido', () => {
+    const funil = montarFunil(100, [evento('AddToCart', 0, 0), CHECKOUT], 0);
+    expect(etapaDe(funil, 'carrinho')?.desconhecido).toBe(false);
+    expect(etapaDe(funil, 'carrinho')?.doTopo).toBe(0);
   });
 
-  /*
-   * A distinção que evita culpar a oferta por falha de instalação: se o
-   * snippet não dispara o evento de checkout, o funil não TEM meio. Mostrar
-   * 0% ali diria que ninguém chegou ao checkout, o que é diferente de "eu
-   * não sei se alguém chegou".
-   */
-  it('avisa quando nenhum evento de checkout chegou', () => {
-    const { semEventoDeCheckout } = montarFunil(100, [evento('PageView', 300, 100)], 2);
-    expect(semEventoDeCheckout).toBe(true);
-  });
-
-  /*
-   * A regra do projeto: `—`, nunca `0`. Aqui ela é o que impede o painel de
-   * AFIRMAR que ninguém chegou ao checkout quando o que não chegou foi o
-   * evento — e de contradizer, com um número, o aviso logo abaixo dele.
-   */
-  it('a etapa sem evento fica DESCONHECIDA, não zerada', () => {
-    const { etapas } = montarFunil(100, [evento('PageView', 300, 100)], 2);
-
-    expect(etapas[1]?.desconhecido).toBe(true);
-    expect(etapas[1]?.doTopo).toBeNull();
-    expect(etapas[1]?.daAnterior).toBeNull();
-  });
-
-  it('e apaga a conta da etapa SEGUINTE também', () => {
-    // Dividir por um número que não existe daria um percentual com cara de
-    // medido. A venda continua contada; o que some é a comparação.
-    const { etapas } = montarFunil(100, [evento('PageView', 300, 100)], 2);
-
-    expect(etapas[2]?.total).toBe(2);
-    expect(etapas[2]?.daAnterior).toBeNull();
-    // O do topo continua valendo: esse não passa pelo meio.
-    expect(etapas[2]?.doTopo).toBeCloseTo(0.02);
-  });
-
-  it('com o evento presente, nenhuma etapa é desconhecida', () => {
-    const { etapas } = montarFunil(100, [evento('InitiateCheckout', 9, 9)], 2);
-    expect(etapas.map((e) => e.desconhecido)).toEqual([false, false, false]);
-  });
-
-  it('checkout que existe e deu ZERO é zero mesmo, não desconhecido', () => {
-    // O evento chegou no período, só que nenhuma pessoa distinta bateu o
-    // filtro. Aí 0% é a resposta certa, e dizer "—" esconderia um problema
-    // real da oferta.
-    const { etapas } = montarFunil(100, [evento('InitiateCheckout', 0, 0)], 0);
-
-    expect(etapas[1]?.desconhecido).toBe(false);
-    expect(etapas[1]?.doTopo).toBe(0);
-  });
-
-  it('período sem visitante nenhum devolve null, não zero', () => {
-    const { etapas } = montarFunil(0, [], 0);
-    for (const etapa of etapas) {
-      expect(etapa.doTopo).toBeNull();
-    }
-    // E não divide por zero na cascata.
-    expect(etapas[1]?.daAnterior).toBeNull();
-  });
-
-  it('venda sem visitante casado não estoura a conta', () => {
-    // A venda órfã existe: chegou pelo webhook e não casou com ninguém.
-    // A etapa pode passar de 100% do topo, e isso é informação, não bug.
-    const { etapas } = montarFunil(1, [], 5);
-    expect(etapas[2]?.doTopo).toBe(5);
+  it('sem visitante no topo, nada tem base — e não divide por zero', () => {
+    const funil = montarFunil(0, [CARRINHO, CHECKOUT], 0);
+    expect(etapaDe(funil, 'carrinho')?.doTopo).toBeNull();
   });
 });

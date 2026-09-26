@@ -12,7 +12,7 @@ import {
 } from '@/lib/painel/consultas';
 import { corDoEvento } from '@/lib/painel/cores-evento';
 import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
-import { montarFunil } from '@/lib/painel/funil';
+import { etapaDe, montarFunil } from '@/lib/painel/funil';
 import { intervaloAnterior, intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
 import { carregarConfiguracao } from '@/lib/settings';
 
@@ -44,7 +44,9 @@ export default async function VisaoGeralPage({
   ]);
 
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
-  const checkout = funil.etapas[1];
+  // Por `id`, nunca por índice: o carrinho entrou no meio do funil, e
+  // `etapas[1]` passaria a ser ele — sem erro nenhum aparecer.
+  const checkout = etapaDe(funil, 'checkout');
   const conversao = razao(resumo.aprovadas, resumo.visitantes);
   const ticket = razao(resumo.receita, resumo.aprovadas);
 

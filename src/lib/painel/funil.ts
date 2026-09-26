@@ -3,30 +3,40 @@ import { razao } from '@/lib/formato';
 import type { EventoPorTipo } from './consultas';
 
 /**
- * O funil Visitou → Checkout → Comprou.
+ * O funil Visitou → Carrinho → Checkout → Comprou.
  *
- * As três etapas contam PESSOAS, não eventos: quem abriu o checkout três
- * vezes é uma pessoa. Contar eventos daria uma etapa do meio maior que o
- * topo, e um funil que engorda no meio não é funil — é um gráfico errado que
- * ninguém sabe ler.
+ * As etapas contam PESSOAS, não eventos: quem abriu o checkout três vezes é
+ * uma pessoa. Contar eventos daria uma etapa do meio maior que o topo, e um
+ * funil que engorda no meio não é funil — é um gráfico errado que ninguém
+ * sabe ler.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ CADA ETAPA TEM `id`, E A TELA BUSCA POR ELE — NUNCA POR ÍNDICE.          │
+ * │                                                                          │
+ * │ O funil nasceu com três etapas e o carrinho entrou no meio. Quem lesse   │
+ * │ `etapas[1]` para "chegou no checkout" passaria a ler o CARRINHO, sem     │
+ * │ erro nenhum aparecer: o número simplesmente ficaria maior, e ninguém     │
+ * │ conferiria porque nada quebrou.                                          │
+ * └───────────────────────────────────────────────────────────────────────────┘
  */
+
+export type IdEtapa = 'visitou' | 'carrinho' | 'checkout' | 'comprou';
 
 /**
- * Os nomes que valem como "chegou no checkout", em ordem de preferência.
+ * Os nomes que valem para cada etapa, em ordem de preferência.
  *
- * `InitiateCheckout` é o evento padrão da Meta e o que o snippet deve
- * disparar. Os outros são tolerância: quem instala pode ter escrito o nome
- * em português ou na convenção do GA4, e um funil vazio por causa de
+ * O primeiro de cada lista é o evento padrão da Meta, e é o que o snippet
+ * deve disparar. Os outros são tolerância: quem instala pode ter escrito o
+ * nome na convenção do GA4 ou em português, e um funil vazio por causa de
  * maiúscula seria diagnóstico ruim de um problema trivial.
  */
-const NOMES_DE_CHECKOUT = [
-  'initiatecheckout',
-  'begin_checkout',
-  'checkout',
-  'iniciarcheckout',
-] as const;
+const NOMES: Record<'carrinho' | 'checkout', readonly string[]> = {
+  carrinho: ['addtocart', 'add_to_cart', 'adicionaraocarrinho', 'carrinho'],
+  checkout: ['initiatecheckout', 'begin_checkout', 'checkout', 'iniciarcheckout'],
+};
 
 export type Etapa = {
+  id: IdEtapa;
   rotulo: string;
   total: number;
   /** Fração do TOPO do funil. `null` quando não dá para calcular. */
@@ -38,7 +48,7 @@ export type Etapa = {
    *
    * Acontece quando o evento que a alimenta nunca chegou. A distinção é a
    * regra do projeto: zero é um número, "sem dado" não é. Mostrar 0% aqui
-   * afirmaria que ninguém passou pelo checkout, que é diferente de "eu não
+   * afirmaria que ninguém passou pelo carrinho, que é diferente de "eu não
    * sei se alguém passou" — e contradiria o aviso logo abaixo.
    */
   desconhecido: boolean;
@@ -47,52 +57,75 @@ export type Etapa = {
 export type Funil = {
   etapas: Etapa[];
   /**
-   * `true` quando nenhum evento de checkout chegou no período.
+   * As etapas do meio cujo evento não chegou, pelo nome do evento esperado.
    *
    * Vale distinguir de "chegou zero": se o snippet não dispara o evento, o
-   * funil não tem meio — e mostrar 0% ali culparia a oferta por uma falha de
-   * instalação.
+   * funil não tem aquele degrau — e mostrar 0% ali culparia a oferta por uma
+   * falha de instalação.
    */
-  semEventoDeCheckout: boolean;
+  eventosFaltando: string[];
 };
+
+/** Quantas PESSOAS dispararam algum dos nomes daquela etapa. */
+function pessoasEm(eventos: EventoPorTipo[], nomes: readonly string[]): number | null {
+  const achados = eventos.filter((e) => nomes.includes(e.nome.toLowerCase()));
+  if (achados.length === 0) return null;
+  /*
+   * O MAIOR, não a soma.
+   *
+   * Uma loja que dispara `AddToCart` e `add_to_cart` ao mesmo tempo (o pixel
+   * e a gtag, cada um com sua convenção) somaria a mesma pessoa duas vezes e
+   * o meio do funil ficaria maior que o topo. O maior é o mais próximo da
+   * verdade sem poder cruzar visitante por visitante aqui.
+   */
+  return Math.max(...achados.map((e) => e.visitantes));
+}
 
 export function montarFunil(
   visitantes: number,
   eventos: EventoPorTipo[],
   compras: number,
 ): Funil {
-  const checkout = eventos.find((e) =>
-    (NOMES_DE_CHECKOUT as readonly string[]).includes(e.nome.toLowerCase()),
-  );
+  const carrinho = pessoasEm(eventos, NOMES.carrinho);
+  const checkout = pessoasEm(eventos, NOMES.checkout);
 
-  const semEventoDeCheckout = checkout === undefined;
+  const cru: { id: IdEtapa; rotulo: string; total: number | null }[] = [
+    { id: 'visitou', rotulo: 'Visitou', total: visitantes },
+    { id: 'carrinho', rotulo: 'Adicionou ao carrinho', total: carrinho },
+    { id: 'checkout', rotulo: 'Chegou no checkout', total: checkout },
+    { id: 'comprou', rotulo: 'Comprou', total: compras },
+  ];
 
-  // Pessoas, não eventos — ver a nota no topo.
-  const noCheckout = checkout?.visitantes ?? 0;
-
-  const totais = [visitantes, noCheckout, compras];
-  const rotulos = ['Visitou', 'Chegou no checkout', 'Comprou'];
-  // Só o meio pode ser desconhecido: o topo vem de `visitors` e o fim de
-  // `purchases`, e as duas tabelas existem sempre.
-  const desconhecidas = [false, semEventoDeCheckout, false];
-
-  const etapas: Etapa[] = totais.map((total, i) => {
-    const desconhecido = desconhecidas[i] ?? false;
-    // Etapa desconhecida também apaga a conta da SEGUINTE: dividir por um
-    // número que não existe daria um percentual que parece medido.
-    const anteriorDesconhecida = i > 0 && (desconhecidas[i - 1] ?? false);
+  const etapas: Etapa[] = cru.map((e, i) => {
+    const desconhecido = e.total === null;
+    /*
+     * Etapa desconhecida apaga a conta da SEGUINTE também: dividir por um
+     * número que não existe daria um percentual que parece medido.
+     */
+    const anteriorDesconhecida = i > 0 && cru[i - 1]?.total === null;
+    const anterior = cru[i - 1]?.total ?? 0;
 
     return {
-      rotulo: rotulos[i] ?? '',
-      total,
-      doTopo: desconhecido ? null : razao(total, visitantes),
+      id: e.id,
+      rotulo: e.rotulo,
+      total: e.total ?? 0,
+      doTopo: desconhecido ? null : razao(e.total ?? 0, visitantes),
       daAnterior:
         i === 0 || desconhecido || anteriorDesconhecida
           ? null
-          : razao(total, totais[i - 1] ?? 0),
+          : razao(e.total ?? 0, anterior),
       desconhecido,
     };
   });
 
-  return { etapas, semEventoDeCheckout };
+  const eventosFaltando: string[] = [];
+  if (carrinho === null) eventosFaltando.push('AddToCart');
+  if (checkout === null) eventosFaltando.push('InitiateCheckout');
+
+  return { etapas, eventosFaltando };
+}
+
+/** A etapa pelo `id` — nunca por índice. Ver o aviso no topo. */
+export function etapaDe(funil: Funil, id: IdEtapa): Etapa | undefined {
+  return funil.etapas.find((e) => e.id === id);
 }
