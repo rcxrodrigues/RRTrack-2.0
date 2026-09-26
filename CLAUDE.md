@@ -458,6 +458,25 @@ de copiar.
   para pendurá-lo nos links de checkout e de WhatsApp. Não é descuido.
 - **O cache de `settings` guarda também a falha**, por 5 segundos. Sem isso,
   numa queda do Supabase cada pageview do site esperava o timeout da conexão.
+- **O `PageView` passa pelo `api.track`, nunca por um `fbq` solto.** Um
+  `fbq('track','PageView')` sem `eventID` vai só pelo navegador: sem
+  deduplicação, e sem NADA quando um bloqueador mata o pixel — que é o
+  problema que este sistema existe para resolver. Pelo `track` ele sai pelos
+  dois caminhos com o mesmo id, e de quebra entra no `events_log`, que é o
+  que alimenta a aba de Páginas. O GA4 fica de fora (`ga4: false`): a gtag já
+  manda `page_view` no config, e um evento a mais com outro nome mediria a
+  mesma coisa duas vezes.
+- **E ele dispara DEPOIS do `/api/identify`.** Numa visita nova o `_trck`
+  ainda não existe — quem o cria é a resposta. Disparar antes gravaria o
+  evento sem `trck_user_id`, e como a maioria do tráfego de uma loja é visita
+  nova, a maioria dos PageView nasceria órfã.
+- **O snippet é gerado dentro de um template literal, e isso morde duas
+  vezes.** Backtick em comentário FECHA a string — essa o build pega. Pior:
+  barra escapada numa regex vira barra simples no JavaScript emitido, então
+  `/\/cart/` sai como `//cart`, que é **comentário** — o build passa, o
+  snippet sobe, e a detecção some em silêncio na loja do cliente. Por isso a
+  detecção do carrinho não usa regex, e `snippet-carrinho.test.ts` compila o
+  que foi gerado antes de executá-lo.
 - **`/t.js` não tem allowlist** — tag de script não manda `Origin`, e o arquivo
   só contém ids de GA4 e de pixel, que qualquer visitante já enxerga. Token
   nenhum passa por ali.

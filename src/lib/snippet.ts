@@ -228,7 +228,9 @@ export function montarSnippet(base: string, config: Configuracao): string {
       d.head.appendChild(t);
     }
     CFG.pixels.forEach(function (id) { w.fbq('init', id); });
-    w.fbq('track', 'PageView');
+    /* O PageView NÃO sai daqui. Um fbq('track','PageView') solto vai só
+       pelo navegador e sem eventID — sem deduplicação, e sem nada quando um
+       bloqueador mata o pixel. Ele passa pelo api.track, na partida. */
   }
 
   /* ---------------------------------------------------------------------
@@ -240,7 +242,7 @@ export function montarSnippet(base: string, config: Configuracao): string {
   }
 
   /* rrtrack.track('Lead', { value: 97, currency: 'BRL' }) */
-  api.track = seguro(function (nome, dados) {
+  api.track = seguro(function (nome, dados, opcoes) {
     var eventId = novoEventId();
     var custom = dados || {};
 
@@ -248,7 +250,11 @@ export function montarSnippet(base: string, config: Configuracao): string {
     if (w.fbq && CFG.pixels.length) {
       w.fbq('track', nome, custom, { eventID: eventId });
     }
-    if (w.gtag && CFG.ga4.length) {
+    /* "ga4: false" existe para um caso só: o PageView. A gtag já manda
+       page_view sozinha no config, e um evento a mais chamado "PageView"
+       seria um segundo evento no relatório, com outro nome, medindo a mesma
+       coisa. */
+    if (w.gtag && CFG.ga4.length && !(opcoes && opcoes.ga4 === false)) {
       w.gtag('event', nome, custom);
     }
 
@@ -450,7 +456,29 @@ export function montarSnippet(base: string, config: Configuracao): string {
   --------------------------------------------------------------------- */
   seguro(carregarPixel)();
   seguro(carregarGa4)();
-  seguro(identificar)();
+
+  /* ---------------------------------------------------------------------
+     O PageView sai DEPOIS da identificação, e isso não é detalhe de ordem.
+
+     Numa visita nova o _trck ainda não existe: quem o cria é a resposta
+     do /api/identify. Disparar antes gravaria o evento sem trck_user_id
+     — e como a maioria do tráfego de uma loja é visita nova, a maioria dos
+     PageView nasceria órfã, fora do funil e sem nada para a Meta casar.
+
+     O enviar() já engole a falha e resolve com null, então a promessa
+     sempre chega ao fim: um /api/identify fora do ar atrasa o PageView, não
+     o cancela.
+  --------------------------------------------------------------------- */
+  function dispararPageView() {
+    api.track('PageView', {}, { ga4: false });
+  }
+
+  var identificacao = seguro(identificar)();
+  if (identificacao && identificacao.then) {
+    identificacao.then(seguro(dispararPageView), seguro(dispararPageView));
+  } else {
+    seguro(dispararPageView)();
+  }
 
   /* Segunda identificação: o _fbp só existe depois que o Pixel roda, e sem
      ele a Conversions API recebe um evento sem quem. */

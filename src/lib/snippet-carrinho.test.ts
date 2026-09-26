@@ -44,6 +44,8 @@ type Enviado = {
 
 type Ambiente = {
   enviados: Enviado[];
+  /** Os caminhos chamados, na ordem — é o que prova a sequência. */
+  caminhos: string[];
   /** Dispara um clique com o alvo dado. */
   clicar: (seletor: string) => void;
   /** Dispara um submit de formulário com a `action` dada. */
@@ -52,6 +54,7 @@ type Ambiente = {
 
 function montar(): Ambiente {
   const enviados: Enviado[] = [];
+  const caminhos: string[] = [];
   const ouvintes: Record<string, ((e: unknown) => void)[]> = {};
 
   const documento = {
@@ -81,6 +84,9 @@ function montar(): Ambiente {
     document: documento,
     setTimeout: () => 0,
     fetch: (url: string, opcoes?: { body?: string }) => {
+      if (url.includes('/api/')) {
+        caminhos.push(url.includes('/api/identify') ? '/api/identify' : '/api/event');
+      }
       if (url.includes('/api/event') && opcoes?.body) {
         // As guardas de `lib/json.ts` em vez de asserção: é a mesma razão de
         // elas existirem no código de produção — `JSON.parse` devolve `any`,
@@ -122,6 +128,7 @@ function montar(): Ambiente {
 
   return {
     enviados,
+    caminhos,
     clicar: (seletor) => {
       disparar('click', {
         target: { closest: (s: string) => (s.includes(seletor) ? {} : null) },
@@ -137,6 +144,72 @@ function montar(): Ambiente {
 function nomes(a: Ambiente): string[] {
   return a.enviados.map((e) => e.event_name);
 }
+
+/*
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ O SNIPPET É GERADO DENTRO DE UM TEMPLATE LITERAL, E ISSO TEM DUAS        │
+ * │ ARMADILHAS QUE JÁ MORDERAM TRÊS VEZES NUM DIA:                          │
+ * │                                                                          │
+ * │ 1. Um backtick num comentário FECHA a string e o arquivo para de         │
+ * │    compilar — essa o build pega, e é a menos grave.                      │
+ * │ 2. Uma barra escapada numa regex vira barra simples no JavaScript        │
+ * │    emitido: `/\/cart/` sai como `//cart`, que é COMENTÁRIO. O build     │
+ * │    passa, o snippet sobe, e a detecção some em silêncio na loja do       │
+ * │    cliente.                                                              │
+ * │                                                                          │
+ * │ A segunda é o motivo deste teste existir: ele executa o que foi gerado.  │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+describe('o que é gerado é JavaScript válido', () => {
+  it('não vira comentário nem string quebrada', () => {
+    const js = montarSnippet('https://track.minhaloja.com', CONFIG);
+
+    // Compila sem executar: erro de sintaxe estoura aqui.
+    expect(() => new vm.Script(js)).not.toThrow();
+
+    // As duas funções que a detecção precisa têm de sobreviver à geração.
+    expect(js).toContain('function ehAdicionar');
+    expect(js).toContain('function dispararPageView');
+  });
+
+  it('o PageView passa pelo track, não por um fbq solto', () => {
+    const js = montarSnippet('https://track.minhaloja.com', CONFIG);
+    /*
+     * Um `fbq('track','PageView')` sem eventID vai só pelo navegador: sem
+     * deduplicação, e sem nada quando um bloqueador mata o pixel — que é o
+     * problema que este sistema existe para resolver.
+     */
+    expect(js).not.toContain("fbq('track', 'PageView')");
+    expect(js).toContain("api.track('PageView'");
+  });
+});
+
+describe('PageView', () => {
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────────┐
+   * │ O PAGEVIEW SAI DEPOIS DA IDENTIFICAÇÃO, E A ORDEM É O TESTE.           │
+   * │                                                                        │
+   * │ Numa visita nova o cookie ainda não existe: quem o cria é a resposta   │
+   * │ do /api/identify. Disparar antes grava o evento sem trck_user_id — e   │
+   * │ como a maioria do tráfego de uma loja é visita nova, a maioria dos     │
+   * │ PageView nasceria órfã, fora do funil e sem nada para a Meta casar.    │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  it('chega ao /api/event, e depois do identify', async () => {
+    const a = montar();
+    /*
+     * Um turno inteiro do event loop, não N voltas de microtask: a cadeia é
+     * fetch → json → then do identificar → then do PageView, e contar os
+     * saltos à mão deixaria o teste quebrando a cada refator da cadeia.
+     */
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    expect(nomes(a)).toContain('PageView');
+    expect(a.caminhos.indexOf('/api/identify')).toBeLessThan(
+      a.caminhos.indexOf('/api/event'),
+    );
+  });
+});
 
 describe('detecção do carrinho da Shopify', () => {
   it('o submit do formulário de /cart/add vira AddToCart', () => {
