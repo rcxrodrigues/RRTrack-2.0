@@ -24,6 +24,10 @@ export function montarSnippet(base: string, config: Configuracao): string {
     base,
     cookie: COOKIE_TRCK,
     params: PARAMS_TRCK,
+    // A moeda vai junto porque o valor do carrinho é lido aqui, no
+    // navegador: mandar o evento sem ela faria a Meta assumir a do pixel,
+    // que pode não ser a da loja.
+    moeda: config.settings.currency,
     ga4: config.ga4.map((c) => c.measurementId),
     pixels: config.pixels.map((p) => p.pixelId),
     // `d` = domínio, `p` = nome do parâmetro. Abreviado porque isto vai
@@ -270,6 +274,173 @@ export function montarSnippet(base: string, config: Configuracao): string {
 
   /* Re-marca links que apareceram depois (popup, checkout embutido). */
   api.marcarLinks = seguro(marcarLinks);
+
+  /* ---------------------------------------------------------------------
+     Shopify: carrinho e checkout, sem tocar no tema
+
+     O snippet dispara PageView sozinho e expoe rrtrack.track para o resto.
+     Numa loja Shopify o resto da para detectar: os endpoints sao fixos
+     (/cart/add, /cart.js, /checkout) e valem para qualquer tema.
+
+     Por que aqui e nao num bloco colado no theme.liquid: tema e o lugar
+     onde mexer da errado, e um ajuste nesta deteccao viraria outra rodada
+     de editar Liquid. Aqui ele chega sozinho no proximo carregamento.
+
+     TRES CAMINHOS PARA A MESMA ACAO, e por isso a trava de repeticao:
+     tema moderno manda fetch para /cart/add.js, tema antigo faz submit do
+     formulario, e alguns fazem os dois. Sem a trava a mesma adicao viraria
+     dois ou tres AddToCart, e o meio do funil ficaria maior que o topo.
+  --------------------------------------------------------------------- */
+  var fetchOriginal = w.fetch;
+  var carrinho = null;          /* ultimo total conhecido, em reais */
+  var ultimoDisparo = {};
+
+  function umaVezSo(nome) {
+    var agora = new Date().getTime();
+    if (ultimoDisparo[nome] && agora - ultimoDisparo[nome] < 1200) return false;
+    ultimoDisparo[nome] = agora;
+    return true;
+  }
+
+  /* O CAMINHO da URL, nao o texto dela.
+     Um indexOf no href casaria com https://golpe.com/?x=/cart/add e
+     dispararia evento a partir de um link de terceiro. */
+  function caminhoDe(url) {
+    try { return new URL(String(url), w.location.origin).pathname; }
+    catch (e) { return ''; }
+  }
+
+  /* Sem regex de proposito: dentro do template literal que gera este
+     arquivo, a barra escapada virava barra simples no JavaScript emitido e
+     a regex inteira aparecia como comentario. Texto nao tem essa
+     armadilha. */
+  function terminaEm(texto, fim) {
+    return texto.length >= fim.length && texto.slice(-fim.length) === fim;
+  }
+
+  function ehAdicionar(url) {
+    var p = caminhoDe(url);
+    return terminaEm(p, '/cart/add') || terminaEm(p, '/cart/add.js');
+  }
+
+  /* Shopify manda preco em CENTAVOS. Dividir aqui e nao no servidor porque
+     e aqui que se sabe que a origem e Shopify. */
+  function resumo(o) {
+    if (!o) return null;
+    var itens = (o.items && o.items.length) ? o.items : [o];
+    var total = 0;
+    var ids = [];
+    for (var i = 0; i < itens.length; i++) {
+      var it = itens[i] || {};
+      if (typeof it.price === 'number') total += it.price * (it.quantity || 1);
+      if (it.product_id) ids.push(String(it.product_id));
+    }
+    if (typeof o.total_price === 'number') total = o.total_price;
+    return { value: total / 100, content_ids: ids };
+  }
+
+  function dispararCarrinho(dados) {
+    if (!umaVezSo('AddToCart')) return;
+    var d2 = { currency: CFG.moeda || 'BRL' };
+    if (dados) {
+      if (dados.value) d2.value = dados.value;
+      if (dados.content_ids && dados.content_ids.length) {
+        d2.content_ids = dados.content_ids;
+        d2.content_type = 'product';
+      }
+    }
+    api.track('AddToCart', d2);
+    /* O total mudou: o InitiateCheckout seguinte precisa do numero novo. */
+    lerCarrinho();
+  }
+
+  function lerCarrinho() {
+    if (!fetchOriginal) return;
+    fetchOriginal(w.location.origin + '/cart.js', {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin'
+    }).then(function (r) { return r.json(); })
+      .then(function (c) { carrinho = resumo(c); })
+      .catch(function () { /* nao e Shopify, ou carrinho vazio */ });
+  }
+
+  /* --- AddToCart pelo fetch do tema ------------------------------------ */
+  if (fetchOriginal) {
+    w.fetch = function (entrada, opcoes) {
+      var url = (entrada && entrada.url) ? entrada.url : entrada;
+      var resposta = fetchOriginal.apply(this, arguments);
+      if (!ehAdicionar(url)) return resposta;
+
+      /* A resposta e clonada: consumir o corpo original deixaria o tema
+         sem o que ler, e o carrinho dele pararia de atualizar. */
+      return resposta.then(function (r) {
+        try {
+          r.clone().json().then(seguro(function (o) { dispararCarrinho(resumo(o)); }))
+            .catch(function () { dispararCarrinho(null); });
+        } catch (e) { dispararCarrinho(null); }
+        return r;
+      });
+    };
+  }
+
+  /* --- AddToCart pelo XHR, que tema antigo ainda usa -------------------- */
+  if (w.XMLHttpRequest && w.XMLHttpRequest.prototype) {
+    var abrirOriginal = w.XMLHttpRequest.prototype.open;
+    w.XMLHttpRequest.prototype.open = function (metodo, url) {
+      try { this.__rrAdd = ehAdicionar(url); } catch (e) { /* silencio */ }
+      return abrirOriginal.apply(this, arguments);
+    };
+    var enviarOriginal = w.XMLHttpRequest.prototype.send;
+    w.XMLHttpRequest.prototype.send = function () {
+      var xhr = this;
+      if (xhr.__rrAdd) {
+        xhr.addEventListener('load', seguro(function () {
+          var o = null;
+          try { o = JSON.parse(xhr.responseText); } catch (e) { /* nao e json */ }
+          dispararCarrinho(resumo(o));
+        }));
+      }
+      return enviarOriginal.apply(this, arguments);
+    };
+  }
+
+  /* --- AddToCart e InitiateCheckout por formulario e clique ------------- */
+  var ALVOS_CHECKOUT = [
+    '[name="checkout"]',
+    'a[href$="/checkout"]',
+    'a[href*="/checkout?"]',
+    '.cart__checkout',
+    '#checkout'
+  ].join(',');
+
+  function dispararCheckout() {
+    if (!umaVezSo('InitiateCheckout')) return;
+    var d2 = { currency: CFG.moeda || 'BRL' };
+    /* O total vem do carrinho ja lido: pedir /cart.js agora seria uma ida
+       ao servidor competindo com a navegacao que acabou de comecar, e a
+       resposta chegaria depois de a pagina ter ido embora. */
+    if (carrinho) {
+      if (carrinho.value) d2.value = carrinho.value;
+      if (carrinho.content_ids && carrinho.content_ids.length) {
+        d2.content_ids = carrinho.content_ids;
+        d2.content_type = 'product';
+      }
+    }
+    api.track('InitiateCheckout', d2);
+  }
+
+  d.addEventListener('click', seguro(function (e) {
+    var alvo = e.target && e.target.closest && e.target.closest(ALVOS_CHECKOUT);
+    if (alvo) dispararCheckout();
+  }), true);
+
+  d.addEventListener('submit', seguro(function (e) {
+    var f = e.target;
+    if (!f || !f.action) return;
+    if (ehAdicionar(f.action)) { dispararCarrinho(null); return; }
+    var botao = d.activeElement;
+    if (botao && botao.name === 'checkout') dispararCheckout();
+  }), true);
 
   api.__carregado = true;
   w.rrtrack = api;
