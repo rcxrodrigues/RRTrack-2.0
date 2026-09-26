@@ -25,15 +25,27 @@ export const dynamic = 'force-dynamic';
  *
  * A leitura usa o cliente do USUÁRIO, não o service_role — a tabela tem
  * policy de select para `authenticated`, e é só isso que ela precisa.
+ *
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ SEM `corpo`, `corpo_texto` NEM `headers`, DE PROPÓSITO.                │
+ * │                                                                        │
+ * │ São os três campos pesados: `corpo` é o pedido inteiro do gateway —    │
+ * │ cliente, itens, endereço — e passa de dez quilobytes com folga.        │
+ * │ Cinquenta linhas os traziam todos no payload do RSC **com todas as    │
+ * │ linhas fechadas**, em toda abertura da aba: centenas de quilobytes    │
+ * │ para desenhar cinquenta badges e cinquenta datas.                     │
+ * │                                                                        │
+ * │ Quem abre a linha busca o corpo dela pela Server Action                │
+ * │ `carregarCorpoDoWebhook`. É a mesma regra que `events_log` já seguia   │
+ * │ com `buscarPayload`; esta lista tinha ficado de fora.                  │
+ * └─────────────────────────────────────────────────────────────────────────┘
  */
 async function carregarWebhooks(): Promise<WebhookRecebido[]> {
   const supabase = await criarClienteServidor();
 
   const { data } = await supabase
     .from('webhooks_recebidos')
-    .select(
-      'id, adaptador, corpo, corpo_texto, headers, transaction_id, motivo, created_at',
-    )
+    .select('id, adaptador, transaction_id, motivo, created_at')
     .order('created_at', { ascending: false })
     .limit(50)
     .returns<WebhookRecebido[]>();

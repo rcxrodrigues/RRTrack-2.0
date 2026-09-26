@@ -196,6 +196,60 @@ export async function buscarPayload(id: string): Promise<PayloadDoEvento | null>
   };
 }
 
+/** O corpo e os cabeçalhos de um webhook guardado — ver `buscarCorpoDoWebhook`. */
+export type CorpoDoWebhook = {
+  corpo: unknown;
+  corpoTexto: string | null;
+  headers: Record<string, string> | null;
+};
+
+/**
+ * O payload de um webhook, sob demanda.
+ *
+ * MESMA razão do `buscarPayload` acima, e a lista de webhooks tinha ficado de
+ * fora: `corpo` é o pedido inteiro do gateway — cliente, itens, endereço —, e
+ * um payload de checkout passa de dez quilobytes com folga. Cinquenta linhas
+ * viajavam com os cinquenta corpos no payload do RSC **com todas as linhas
+ * fechadas**, em toda abertura da aba. Eram centenas de quilobytes para
+ * mostrar cinco badges e cinco datas.
+ *
+ * Os cabeçalhos vêm daqui pelo mesmo motivo. O token já sai mascarado na
+ * gravação (`cabecalhosSeguros`), então o que trafega aqui é o que a tela
+ * mostra — só deixa de trafegar quando ninguém pediu.
+ */
+export async function buscarCorpoDoWebhook(
+  id: string,
+): Promise<CorpoDoWebhook | null> {
+  const supabase = await criarClienteServidor();
+
+  // `returns<...>` em vez de uma asserção de tipo: o oxlint recusa
+  // `as` inseguro, e aqui a forma da linha é conhecida pelo `select`.
+  const { data, error } = await supabase
+    .from('webhooks_recebidos')
+    .select('corpo, corpo_texto, headers')
+    .eq('id', id)
+    .returns<
+      {
+        corpo: unknown;
+        corpo_texto: string | null;
+        headers: Record<string, string> | null;
+      }[]
+    >()
+    .maybeSingle();
+
+  if (error) {
+    console.error('[painel] corpo do webhook falhou:', error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  return {
+    corpo: data.corpo ?? null,
+    corpoTexto: data.corpo_texto ?? null,
+    headers: data.headers ?? null,
+  };
+}
+
 export type EventoDoVisitante = {
   id: string;
   nome: string;

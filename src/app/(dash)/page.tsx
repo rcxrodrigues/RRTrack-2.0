@@ -1,5 +1,7 @@
+import { cache, Suspense } from 'react';
 import Link from 'next/link';
 
+import { EsqueletoMetrica } from '@/components/dash/esqueletos';
 import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
@@ -20,6 +22,7 @@ import {
   intervaloAnterior,
   intervaloDe,
   lerPeriodo,
+  type Intervalo,
 } from '@/lib/painel/periodo';
 import { caminhoDaUrl } from '@/lib/painel/url';
 import { carregarConfiguracao } from '@/lib/settings';
@@ -28,6 +31,83 @@ export const metadata = { title: 'Visão geral' };
 
 /** Painel de operação: a razão de abrir é ver o que está acontecendo agora. */
 export const dynamic = 'force-dynamic';
+
+/*
+ * O gasto, buscado UMA vez por renderização.
+ *
+ * Três lugares o pedem — o cartão de gasto, o de ROAS e o aviso —, e cada um
+ * vive no seu próprio `Suspense` para um não segurar o outro. Sem o `cache()`
+ * do React seriam três idas à API da Meta na mesma tela: três vezes a cota,
+ * três vezes o tempo. Com ele, o primeiro que pedir busca e os outros dois
+ * esperam a mesma promessa.
+ *
+ * A memoização é por IDENTIDADE do argumento, e é por isso que os três
+ * recebem o MESMO objeto `intervalo`, montado uma vez na página. Montar um
+ * intervalo novo em cada componente passaria pelo cache sem acertar nada.
+ */
+const gastoDoPeriodo = cache(buscarGastoDoPeriodo);
+
+type ComIntervalo = { intervalo: Intervalo };
+
+async function CartaoGasto({ intervalo }: ComIntervalo) {
+  const gasto = await gastoDoPeriodo(intervalo);
+
+  return (
+    <MetricCard
+      label="Gasto"
+      value={gasto.total === null ? null : moeda(gasto.total)}
+      sentido="menor-melhor"
+      hint={
+        gasto.total === null
+          ? 'nenhuma conta de anúncio cadastrada'
+          : `${inteiro(gasto.contas)} ${gasto.contas === 1 ? 'conta' : 'contas'} de anúncio`
+      }
+    />
+  );
+}
+
+async function CartaoRoas({
+  intervalo,
+  receita,
+}: ComIntervalo & { receita: number }) {
+  const gasto = await gastoDoPeriodo(intervalo);
+
+  /*
+   * ROAS: `null` sempre que um dos dois lados não existe.
+   *
+   * Sem conta de anúncio o gasto é desconhecido, não zero — e receita
+   * dividida por zero daria infinito. Gasto zero com conta cadastrada é
+   * medida real (a campanha não rodou), e aí também não há retorno SOBRE
+   * gasto para calcular.
+   */
+  const roas =
+    gasto.total !== null && gasto.total > 0 ? receita / gasto.total : null;
+
+  return (
+    <MetricCard
+      label="ROAS"
+      value={roas === null ? null : `${roas.toFixed(2)}×`}
+      accent="muted"
+      hint={
+        gasto.total === null
+          ? 'falta o gasto para calcular'
+          : 'receita ÷ gasto, sobre vendas aprovadas'
+      }
+    />
+  );
+}
+
+async function AvisoDoGasto({ intervalo }: ComIntervalo) {
+  const gasto = await gastoDoPeriodo(intervalo);
+  if (!gasto.aviso) return null;
+
+  return (
+    <Card className="gap-1 p-4 sm:p-5">
+      <h3 className="text-sm font-semibold tracking-tight">Gasto de mídia</h3>
+      <p className="text-warning text-sm">{gasto.aviso}</p>
+    </Card>
+  );
+}
 
 export default async function VisaoGeralPage({
   searchParams,
@@ -41,15 +121,23 @@ export default async function VisaoGeralPage({
   const { settings } = await carregarConfiguracao();
   const intervalo = intervaloDe(periodo, settings.timezone);
 
-  // Independentes entre si — em série seriam cinco idas esperando uma pela
-  // outra sem motivo. O gasto vai junto porque o ROAS precisa dos dois lados.
-  const [resumo, antes, eventos, geo, paginas, gasto] = await Promise.all([
+  /*
+   * Independentes entre si — em série seriam cinco idas esperando uma pela
+   * outra sem motivo.
+   *
+   * O GASTO NÃO ESTÁ AQUI, e isso é o ponto. Ele é o único dado desta tela
+   * que não sai do nosso banco: vai à API da Meta, e na pior hora (cache de
+   * 15 minutos vencido, fila serial por conta) é de longe o mais lento.
+   * Dentro deste `Promise.all` ele prendia a tela INTEIRA — as contagens já
+   * estavam prontas e ninguém as via. Agora ele entra em `Suspense`, por
+   * último, e só os dois cartões que dependem dele esperam.
+   */
+  const [resumo, antes, eventos, geo, paginas] = await Promise.all([
     buscarResumo(intervalo),
     buscarResumo(intervaloAnterior(intervalo)),
     buscarEventosPorTipo(intervalo),
     buscarGeo(intervalo),
     buscarPaginas(intervalo),
-    buscarGastoDoPeriodo(intervalo),
   ]);
 
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
@@ -58,17 +146,6 @@ export default async function VisaoGeralPage({
   const checkout = etapaDe(funil, 'checkout');
   const conversao = razao(resumo.aprovadas, resumo.visitantes);
   const ticket = razao(resumo.receita, resumo.aprovadas);
-
-  /*
-   * ROAS: `null` sempre que um dos dois lados não existe.
-   *
-   * Sem conta de anúncio o gasto é desconhecido, não zero — e receita
-   * dividida por zero daria infinito. Gasto zero com conta cadastrada é
-   * medida real (a campanha não rodou), e aí também não há retorno SOBRE
-   * gasto para calcular.
-   */
-  const roas =
-    gasto.total !== null && gasto.total > 0 ? resumo.receita / gasto.total : null;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
@@ -115,40 +192,24 @@ export default async function VisaoGeralPage({
           }
         />
 
-        <MetricCard
-          label="Gasto"
-          value={gasto.total === null ? null : moeda(gasto.total)}
-          sentido="menor-melhor"
-          hint={
-            gasto.total === null
-              ? 'nenhuma conta de anúncio cadastrada'
-              : `${inteiro(gasto.contas)} ${gasto.contas === 1 ? 'conta' : 'contas'} de anúncio`
-          }
-        />
+        <Suspense fallback={<EsqueletoMetrica />}>
+          <CartaoGasto intervalo={intervalo} />
+        </Suspense>
         <MetricCard
           label="Receita"
           value={resumo.aprovadas > 0 ? moeda(resumo.receita) : null}
           delta={variacao(resumo.receita, antes.receita)}
           hint={ticket === null ? undefined : `ticket ${moeda(ticket)}`}
         />
-        <MetricCard
-          label="ROAS"
-          value={roas === null ? null : `${roas.toFixed(2)}×`}
-          accent="muted"
-          hint={
-            gasto.total === null
-              ? 'falta o gasto para calcular'
-              : 'receita ÷ gasto, sobre vendas aprovadas'
-          }
-        />
+        <Suspense fallback={<EsqueletoMetrica />}>
+          <CartaoRoas intervalo={intervalo} receita={resumo.receita} />
+        </Suspense>
       </section>
 
-      {gasto.aviso && (
-        <Card className="gap-1 p-4 sm:p-5">
-          <h3 className="text-sm font-semibold tracking-tight">Gasto de mídia</h3>
-          <p className="text-warning text-sm">{gasto.aviso}</p>
-        </Card>
-      )}
+      {/* Sem fallback: um aviso que talvez não exista não reserva espaço. */}
+      <Suspense fallback={null}>
+        <AvisoDoGasto intervalo={intervalo} />
+      </Suspense>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="gap-4 p-4 sm:p-5">

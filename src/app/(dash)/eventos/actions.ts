@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache';
 
 import {
+  buscarCorpoDoWebhook,
   buscarPayload,
   carregarVisitante,
+  type CorpoDoWebhook,
   type PayloadDoEvento,
   type Visitante,
 } from '@/lib/painel/eventos';
@@ -173,4 +175,21 @@ export async function carregarVisitanteDoEvento(
 ): Promise<Visitante | null> {
   await usuarioAtual();
   return carregarVisitante(trckUserId);
+}
+
+/**
+ * O corpo de um webhook guardado, sob demanda.
+ *
+ * Gêmea da `carregarPayloadDoEvento`, e pela mesma razão: o payload de um
+ * pedido tem o cliente inteiro e passa de dez quilobytes. Cinquenta deles
+ * viajavam a cada abertura da aba de Eventos com as linhas todas FECHADAS.
+ */
+export async function carregarCorpoDoWebhook(
+  id: string,
+): Promise<CorpoDoWebhook | null> {
+  // Server Action é endpoint HTTP: a linha só existir na tela protegida não
+  // impede ninguém de chamá-la direto. E aqui sai dado pessoal do comprador.
+  if (!(await usuarioAtual())) return null;
+
+  return buscarCorpoDoWebhook(id);
 }

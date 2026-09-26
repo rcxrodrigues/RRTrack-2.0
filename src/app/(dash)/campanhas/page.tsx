@@ -1,5 +1,10 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 
+import {
+  EsqueletoCartao,
+  EsqueletoMetricas,
+} from '@/components/dash/esqueletos';
 import { MetricCard } from '@/components/dash/metric-card';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
@@ -7,7 +12,11 @@ import { inteiro, moeda } from '@/lib/formato';
 import { buscarInsights } from '@/lib/meta/insights';
 import { buscarReceitaPorUtmCompleta } from '@/lib/painel/consultas';
 import { montarArvore } from '@/lib/painel/arvore';
-import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import {
+  intervaloDe,
+  lerPeriodo,
+  type Intervalo,
+} from '@/lib/painel/periodo';
 
 import { ArvoreCampanhas } from './_components/arvore-campanhas';
 import { carregarConfiguracao } from '@/lib/settings';
@@ -62,6 +71,67 @@ export default async function CampanhasPage({
   }
 
   /*
+   * A CASCA SAI NA HORA; O QUE DEPENDE DA META ENTRA EM STREAMING.
+   *
+   * Tudo abaixo do seletor de contas vem da API da Meta — e são três
+   * chamadas em fila serial (campanha, conjunto, anúncio). Com elas no corpo
+   * da página, o clique na aba ficava esperando as três antes de trocar a
+   * tela. Agora o cabeçalho e a escolha de conta aparecem no primeiro frame,
+   * e a árvore entra quando a Meta responde.
+   *
+   * A conta vem de uma consulta ao NOSSO banco, que é rápida, e por isso
+   * fica fora do boundary: sem ela não há o que mostrar de casca.
+   */
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold tracking-tight md:hidden">Campanhas</h2>
+        <SeletorPeriodo atual={periodo} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {contas.length > 1 &&
+          contas.map((c) => (
+            <Link
+              key={c.id}
+              href={`?${new URLSearchParams({ periodo, conta: c.id }).toString()}`}
+              className={
+                c.id === conta.id
+                  ? 'bg-primary text-primary-foreground flex h-9 items-center rounded-md px-3 text-sm font-medium'
+                  : 'ring-border text-muted-foreground hover:text-foreground flex h-9 items-center rounded-md px-3 text-sm ring-1'
+              }
+            >
+              {c.label ?? c.ad_account_id}
+            </Link>
+          ))}
+      </div>
+
+      <Suspense fallback={<EsqueletoCorpo />}>
+        <CorpoCampanhas conta={conta} intervalo={intervalo} />
+      </Suspense>
+    </div>
+  );
+}
+
+/** O esqueleto do que a Meta traz: quatro métricas e a árvore. */
+function EsqueletoCorpo() {
+  return (
+    <>
+      <EsqueletoMetricas quantos={4} colunas={4} />
+      <EsqueletoCartao linhas={6} />
+    </>
+  );
+}
+
+async function CorpoCampanhas({
+  conta,
+  intervalo,
+}: {
+  conta: Conta;
+  intervalo: Intervalo;
+}) {
+
+  /*
    * Os TRÊS níveis, para a árvore existir.
    *
    * São três chamadas onde antes era uma, e isso é deliberado: a hierarquia
@@ -113,30 +183,7 @@ export default async function CampanhasPage({
 
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold tracking-tight md:hidden">Campanhas</h2>
-        <SeletorPeriodo atual={periodo} />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {contas.length > 1 &&
-          contas.map((c) => (
-            <Link
-              key={c.id}
-              href={`?${new URLSearchParams({ periodo, conta: c.id }).toString()}`}
-              className={
-                c.id === conta.id
-                  ? 'bg-primary text-primary-foreground flex h-9 items-center rounded-md px-3 text-sm font-medium'
-                  : 'ring-border text-muted-foreground hover:text-foreground flex h-9 items-center rounded-md px-3 text-sm ring-1'
-              }
-            >
-              {c.label ?? c.ad_account_id}
-            </Link>
-          ))}
-
-      </div>
-
+    <>
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard label="Gasto" value={gasto > 0 ? moeda(gasto) : null} sentido="menor-melhor" />
         <MetricCard
@@ -243,6 +290,6 @@ export default async function CampanhasPage({
           caixa é o nosso.
         </p>
       )}
-    </div>
+    </>
   );
 }

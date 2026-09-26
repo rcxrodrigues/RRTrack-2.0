@@ -350,6 +350,53 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   É a mesma armadilha do `toLocaleString` em data, por outra porta, e pior:
   o erro depende de qual navegador abriu a página.
 
+### Navegação entre abas: `loading.tsx` não é enfeite
+
+Toda aba do painel é `force-dynamic`. **Sem um `loading.tsx`, a navegação não
+troca a tela**: ela abre a requisição e espera o servidor terminar todas as
+consultas com a aba ANTIGA ainda desenhada — congelada, sem spinner e sem
+reação. O clique parece não ter funcionado, e a queixa que chega é "o painel
+está lento" quando o banco respondeu no mesmo tempo de sempre.
+
+Medido numa rota de teste com 1500ms de atraso, no build de produção, com o
+Playwright cronometrando o clique:
+
+| | a tela troca em |
+|---|---|
+| sem `loading.tsx` | **1892 ms** |
+| com `loading.tsx` | **126 ms** |
+
+O dado real chega em ~1900ms nos dois. O que muda é o primeiro frame.
+
+Consequências práticas:
+
+- **Aba nova nasce com o `loading.tsx` dela.** É o modo de falha clássico —
+  o mesmo do `prepararCaptura()`: quem escreve a aba nova esquece de copiar a
+  trava, e ninguém percebe porque nada quebra.
+- **O esqueleto tem a MESMA geometria da tela real.** Contagem de cartões,
+  colunas da grade, altura do gráfico. Esqueleto de outro tamanho é pior que
+  nenhum: o conteúdo salta quando chega e o olho perde o lugar. Os blocos
+  estão em `src/components/dash/esqueletos.tsx`, e a foto é que decide se
+  batem — o teste não pega geometria.
+- **A cor do esqueleto é `--foreground` a 10%, não `--muted`.** No escuro o
+  `--muted` (13%) fica a um ou dois pontos do cartão de vidro (~9%) e o
+  esqueleto SOME: a tela carregando lia como tela vazia. Sobre a cor do texto
+  o valor se ajusta sozinho nos dois temas.
+- **O que vai à Meta fica em `Suspense`, sempre.** O gasto da visão geral e
+  a árvore de campanhas saem da API da Meta, que é a coisa mais lenta do
+  painel (fila serial, cache de 15 min). Dentro do `Promise.all` prendiam a
+  tela inteira — as contagens do nosso banco já estavam prontas e ninguém as
+  via. Quando o mesmo dado serve a vários boundaries, `cache()` do React
+  dedupe: sem ele, três cartões seriam três idas à Meta na mesma tela. A
+  memoização é por **identidade** do argumento, então todos recebem o MESMO
+  objeto `intervalo`.
+- **Campo pesado não viaja numa listagem.** `events_log` já seguia isso com
+  `buscarPayload`; a lista de webhooks tinha ficado de fora e mandava os 50
+  `corpo` jsonb — o pedido inteiro de cada gateway, com cliente e endereço —
+  no payload do RSC **com todas as linhas fechadas**. Agora quem abre a
+  linha busca a dela por Server Action. A regra: se o campo só aparece
+  quando alguém expande, ele não entra no `select` da lista.
+
 ### Geo é tabela, não mapa — e é escolha, não preguiça
 
 Um mapa colorido mostra **concentração** e nada mais. Comparar dois tons de

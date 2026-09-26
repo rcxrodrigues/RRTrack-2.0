@@ -7,14 +7,20 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Quando } from '@/components/dash/quando';
-import { reprocessarWebhook } from '../actions';
+import { carregarCorpoDoWebhook, reprocessarWebhook } from '../actions';
+import type { CorpoDoWebhook } from '@/lib/painel/eventos';
 
+/**
+ * A LINHA FECHADA, e só ela.
+ *
+ * `corpo`, `corpo_texto` e `headers` não estão aqui de propósito: são os
+ * campos pesados, e a lista trazia os cinquenta com todas as linhas fechadas.
+ * Quem abre busca o seu pela Server Action `carregarCorpoDoWebhook` — ver o
+ * comentário em `eventos/page.tsx`.
+ */
 export type WebhookRecebido = {
   id: string;
   adaptador: string | null;
-  corpo: unknown;
-  corpo_texto: string | null;
-  headers: Record<string, string> | null;
   transaction_id: string | null;
   /**
    * Por que não virou venda.
@@ -66,20 +72,43 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
   const [aberto, setAberto] = React.useState(false);
   const [rodando, iniciar] = React.useTransition();
 
-  const interessantes = Object.entries(item.headers ?? {}).filter(
+  /*
+   * O corpo, buscado na PRIMEIRA abertura e guardado.
+   *
+   * `undefined` é "nunca pedi", `null` é "pedi e não veio". Os dois se leem
+   * diferente na tela: o primeiro mostra "carregando", o segundo mostra o
+   * erro. Um estado só para os dois diria "vazio" quando a sessão expirou.
+   */
+  const [payload, setPayload] = React.useState<CorpoDoWebhook | null>();
+  const [buscando, setBuscando] = React.useState(false);
+
+  const abrir = (): void => {
+    setAberto((v) => !v);
+    if (aberto || payload !== undefined || buscando) return;
+
+    setBuscando(true);
+    void carregarCorpoDoWebhook(item.id)
+      .then(setPayload)
+      .catch(() => { setPayload(null); })
+      .finally(() => { setBuscando(false); });
+  };
+
+  const interessantes = Object.entries(payload?.headers ?? {}).filter(
     ([nome]) => !RUIDO.has(nome.toLowerCase()),
   );
 
   const corpo =
-    item.corpo === null
-      ? (item.corpo_texto ?? '(vazio)')
-      : JSON.stringify(item.corpo, null, 2);
+    payload == null
+      ? null
+      : payload.corpo === null
+        ? (payload.corpoTexto ?? '(vazio)')
+        : JSON.stringify(payload.corpo, null, 2);
 
   return (
     <div className="border-border/60 border-b last:border-0">
       <button
         type="button"
-        onClick={() => { setAberto((v) => !v); }}
+        onClick={abrir}
         className="hover:bg-muted/40 flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left transition-colors"
         aria-expanded={aberto}
       >
@@ -144,14 +173,20 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
 
           <div className="flex flex-col gap-1">
             <p className="text-muted-foreground text-xs font-semibold">
-              Corpo {item.corpo === null && '(não era JSON válido)'}
+              Corpo{' '}
+              {payload?.corpo === null && '(não era JSON válido)'}
             </p>
             <pre className="bg-muted/40 ring-border max-h-96 overflow-auto rounded-md px-3 py-2 font-mono text-xs ring-1">
-              {corpo}
+              {corpo ??
+                (buscando
+                  ? 'carregando…'
+                  : payload === null
+                    ? 'não consegui ler o payload — a sessão pode ter expirado.'
+                    : '')}
             </pre>
           </div>
 
-          {item.corpo !== null && (
+          {payload != null && payload.corpo !== null && (
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"
