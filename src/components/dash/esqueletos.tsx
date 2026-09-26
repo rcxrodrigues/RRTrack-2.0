@@ -48,13 +48,25 @@ export function EsqueletoCabecalho() {
   );
 }
 
-/** Um cartão de métrica, na altura exata do `MetricCard`. */
-export function EsqueletoMetrica() {
+/**
+ * Um cartão de métrica, na altura exata do `MetricCard`.
+ *
+ * `comCusto` acrescenta o rodapé separado por linha — os três cartões do topo
+ * da visão geral o têm, os três de baixo não, e as duas alturas são
+ * diferentes. Um esqueleto só para os dois faria a grade saltar.
+ */
+export function EsqueletoMetrica({ comCusto = false }: { comCusto?: boolean }) {
   return (
     <Card className="gap-0 p-4 sm:p-5">
       <Skeleton className="h-3 w-20" />
       <Skeleton className="mt-3 h-7 w-24 sm:h-8" />
       <Skeleton className="mt-3 h-3 w-28" />
+      {comCusto && (
+        <div className="border-border/60 mt-auto flex items-baseline justify-between gap-2 border-t pt-2.5">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      )}
     </Card>
   );
 }
@@ -68,10 +80,13 @@ export function EsqueletoMetrica() {
 export function EsqueletoMetricas({
   quantos,
   colunas = 3,
+  custoAte = 0,
 }: {
   quantos: number;
   /** Quantas colunas no desktop — a da tela real (Campanhas usa quatro). */
   colunas?: 3 | 4;
+  /** Quantos dos primeiros cartões têm o rodapé de custo. */
+  custoAte?: number;
 }) {
   return (
     <section
@@ -81,7 +96,7 @@ export function EsqueletoMetricas({
       )}
     >
       {Array.from({ length: quantos }, (_, i) => (
-        <EsqueletoMetrica key={i} />
+        <EsqueletoMetrica key={i} comCusto={i < custoAte} />
       ))}
     </section>
   );

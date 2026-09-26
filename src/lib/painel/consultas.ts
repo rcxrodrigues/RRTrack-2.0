@@ -195,6 +195,51 @@ export async function buscarSerieDiaria(
   });
 }
 
+/**
+ * Uma cidade, com o mesmo formato da região.
+ *
+ * A região responde "de onde vem o dinheiro" no atacado; a CIDADE é o que
+ * decide frete, prazo e onde a fraude se concentra. Num funil brasileiro
+ * "SP" é metade do país — parar na região é parar cedo demais.
+ */
+export type LinhaCidade = {
+  cidade: string;
+  regiao: string | null;
+  pais: string | null;
+  visitantes: number;
+  aprovadas: number;
+  receita: number;
+};
+
+export async function buscarCidades(
+  intervalo: Intervalo,
+): Promise<LinhaCidade[]> {
+  const supabase = await criarClienteServidor();
+
+  const { data, error } = await supabase.rpc('painel_cidades', janela(intervalo));
+
+  if (error) {
+    console.error('[painel] cidades falhou:', error.message);
+    return [];
+  }
+
+  return linhas(data).flatMap((linha) => {
+    const cidade = textoEm(linha, 'cidade');
+    return cidade === undefined
+      ? []
+      : [
+          {
+            cidade,
+            regiao: textoEm(linha, 'regiao') ?? null,
+            pais: textoEm(linha, 'pais') ?? null,
+            visitantes: num(linha, 'visitantes'),
+            aprovadas: num(linha, 'aprovadas'),
+            receita: num(linha, 'receita'),
+          },
+        ];
+  });
+}
+
 export async function buscarGeo(intervalo: Intervalo): Promise<LinhaGeo[]> {
   const supabase = await criarClienteServidor();
 

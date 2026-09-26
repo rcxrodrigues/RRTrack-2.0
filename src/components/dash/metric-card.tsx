@@ -15,6 +15,8 @@ export function MetricCard({
   accent = 'primary',
   delta,
   sentido = 'maior-melhor',
+  custo,
+  custoRotulo,
 }: {
   label: string;
   value: string | null;
@@ -35,6 +37,17 @@ export function MetricCard({
    * um número que piorou — e a cor é o que se lê primeiro num painel.
    */
   sentido?: 'maior-melhor' | 'menor-melhor';
+  /**
+   * O custo por unidade desta métrica — gasto ÷ quantidade.
+   *
+   * É `ReactNode` e não `string` de propósito: o gasto vem da API da Meta e
+   * chega depois do resto da tela, então quem chama passa um `<Suspense>`.
+   * Se fosse string, o cartão inteiro teria de esperar a Meta para desenhar
+   * um número que já está pronto.
+   */
+  custo?: React.ReactNode;
+  /** O que se está custeando: "por visitante", "por compra". */
+  custoRotulo?: string;
 }) {
   const accentClass = {
     primary: 'text-primary-vivid',
@@ -44,7 +57,7 @@ export function MetricCard({
   }[accent];
 
   return (
-    <Card className="gap-0 p-4 sm:p-5">
+    <Card className="gap-0 p-4 pt-4 sm:p-5">
       <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
         {label}
       </span>
@@ -77,6 +90,25 @@ export function MetricCard({
           ) : null}
         </span>
       ) : null}
+
+      {custo === undefined ? null : (
+        /*
+          Rodapé próprio, separado por uma linha, e não mais um item na linha
+          da dica: o custo é a métrica que decide mídia, e nos três cartões do
+          topo ele precisa cair na MESMA altura para o olho comparar de lado.
+          Dividindo a linha com a dica ele dançaria conforme o tamanho dela.
+
+          `mt-auto` para o rodapé colar no fundo: os três cartões têm alturas
+          de dica diferentes, e sem isso o custo ficaria desalinhado
+          justamente entre os cartões que existem para ser comparados.
+        */
+        <span className="border-border/60 mt-auto flex items-baseline justify-between gap-2 border-t pt-2.5 text-xs">
+          <span className="text-muted-foreground">{custoRotulo}</span>
+          <span data-slot="metric" className="tabular font-medium">
+            {custo}
+          </span>
+        </span>
+      )}
     </Card>
   );
 }

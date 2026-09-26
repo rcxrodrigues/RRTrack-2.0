@@ -20,6 +20,18 @@ import { PainelVisitante } from './painel-visitante';
  * Sem `<table>`: no celular a tabela vira barra de rolagem horizontal, e a
  * regra do projeto é cartão empilhado abaixo de `sm`.
  */
+/**
+ * O que a tela diz quando não foi a UTM do próprio evento que respondeu.
+ *
+ * O nível `evento` não ganha qualificador: é o caso preciso, e escrever
+ * "(deste evento)" em quase toda linha só gastaria espaço.
+ */
+const QUALIFICADOR: Record<string, string> = {
+  visitante: '(da 1ª visita)',
+  referrer: '(referrer)',
+  direto: '',
+};
+
 export function TabelaEventos({ linhas }: { linhas: LinhaEvento[] }) {
   const [aberto, setAberto] = React.useState<string | null>(null);
   const [visitante, setVisitante] = React.useState<Visitante | null>(null);
@@ -84,15 +96,6 @@ function LinhaDoEvento({
   ativa: boolean;
   aoAbrir: () => void;
 }) {
-  /*
-   * Campanha › conjunto › anúncio, pela convenção das macros do anúncio:
-   * `{{campaign.name}}` em utm_campaign, `{{adset.name}}` em utm_term,
-   * `{{ad.name}}` em utm_content. A Meta não manda essa hierarquia no
-   * evento — quem a traz é a UTM, e se a macro não estiver no anúncio os
-   * campos vêm vazios. O rótulo diz "pela UTM" para o vazio apontar para o
-   * lugar certo: o anúncio, não o painel.
-   */
-  const trilha = [linha.utmCampaign, linha.utmTerm, linha.utmContent].filter(Boolean);
   const lugar = [linha.cidade, linha.regiao, linha.pais].filter(Boolean).join(' · ');
 
   return (
@@ -123,11 +126,36 @@ function LinhaDoEvento({
       </div>
 
       <div className="text-muted-foreground flex w-full flex-wrap items-baseline gap-x-4 gap-y-0.5 pl-5 text-xs">
-        {trilha.length > 0 ? (
-          <span className="min-w-0 truncate">{trilha.join(' › ')}</span>
-        ) : (
-          <span className="text-muted-foreground/60">sem campanha na UTM</span>
-        )}
+        {/*
+          A origem em cascata — ver `origem.ts`.
+
+          Antes aqui só cabia a UTM DO EVENTO, e como ela é lida da URL de
+          cada evento, só o PageView de entrada costuma tê-la: o AddToCart
+          acontece em `/products/x`, sem query string. A MAIORIA das linhas
+          dizia "sem campanha na UTM", que lia como falha de marcação
+          quando era navegação normal.
+
+          O qualificador entre parênteses não é detalhe: "esta linha
+          carregava a campanha" e "esta é de alguém que um dia chegou pela
+          campanha" são afirmações diferentes, e a segunda é mais fraca.
+          Iguais na tela, prometeriam uma precisão que o dado não tem.
+        */}
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span
+            className={
+              linha.origem.nivel === 'direto'
+                ? 'text-muted-foreground/60 truncate'
+                : 'truncate'
+            }
+          >
+            {linha.origem.rotulo}
+          </span>
+          {linha.origem.nivel !== 'evento' && (
+            <span className="text-muted-foreground/60 shrink-0">
+              {QUALIFICADOR[linha.origem.nivel]}
+            </span>
+          )}
+        </span>
         {lugar && <span className="shrink-0">{lugar}</span>}
         {linha.trckUserId && (
           <span className="shrink-0 font-mono">{linha.trckUserId.slice(0, 8)}…</span>

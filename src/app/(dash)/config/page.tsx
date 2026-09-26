@@ -92,7 +92,16 @@ const SECAO_PIXELS: ConfigSecao = {
   ajudaSegredo:
     'Events Manager → seu pixel → Configurações → Conversions API → Gerar token de acesso.',
   vazio: 'Nenhum pixel cadastrado. Sem pixel, nada é enviado para a Meta.',
-  cor: 'chart-1',
+  /*
+   * VERDE para o pixel, LARANJA para o GA4, AZUL para as contas de anúncio.
+   *
+   * Tokens da marca e não `--chart-*`: a série de gráfico é escolhida para
+   * SEPARAR entre si num gráfico, e os três estavam em matizes vizinhos
+   * demais para identificar de relance qual bloco é qual. `--success`,
+   * `--amber` e `--primary` já passam pela auditoria de contraste do
+   * `globals.test.ts` nos dois temas, como texto e como superfície.
+   */
+  cor: 'success',
 };
 
 const SECAO_GA4: ConfigSecao = {
@@ -107,7 +116,7 @@ const SECAO_GA4: ConfigSecao = {
   ajudaSegredo:
     'GA4 → Admin → Fluxos de dados → seu fluxo → Segredos da API do Measurement Protocol.',
   vazio: 'Nenhuma propriedade cadastrada.',
-  cor: 'chart-2',
+  cor: 'amber',
 };
 
 const SECAO_ADS: ConfigSecao = {
@@ -122,7 +131,11 @@ const SECAO_ADS: ConfigSecao = {
   ajudaSegredo:
     'Precisa da permissão ads_read. Gerado no Business Manager ou no Graph API Explorer.',
   vazio: 'Nenhuma conta cadastrada. Sem ela, não há ROAS.',
-  cor: 'chart-4',
+  cor: 'primary',
+  // A primária tem dois tokens porque os papéis conflitam: 60% funciona
+  // como superfície e reprova como texto; 64% é o inverso. O título usa o
+  // `-vivid`; a faixa e a borda usam o outro.
+  corTexto: 'primary-vivid',
 };
 
 export default async function ConfigPage() {
@@ -140,10 +153,20 @@ export default async function ConfigPage() {
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <h2 className="text-lg font-semibold tracking-tight md:hidden">Configuração</h2>
 
-      <Tabs defaultValue="geral" className="flex flex-col gap-4">
+      {/*
+        INSTALAÇÃO é a primeira aba e a padrão.
+        
+        O script já existia aqui, com campo de copiar e tudo — só estava
+        atrás de "Geral", e a pergunta que chegou foi "onde no painel eu acho
+        o script para colar no tema?". Quem abre Configuração num site NOVO
+        vem buscar exatamente isso, e agora é a primeira coisa na tela. Quem
+        vem mexer em origem e cookie está a um clique, e a lista de
+        requisitos desta aba aponta para lá quando falta algo.
+      */}
+      <Tabs defaultValue="instalacao" className="flex flex-col gap-4">
         <TabsList>
-          <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="instalacao">Instalação</TabsTrigger>
+          <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="meta">
             Meta
             {pixels.length > 0 && (

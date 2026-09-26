@@ -41,6 +41,15 @@ export type ConfigSecao = {
    * Vêm dos `--chart-*` já validados, e não de matizes novos.
    */
   cor: string;
+  /**
+   * O token da cor em TEXTO, quando difere do de superfície.
+   *
+   * A primária é o caso: `--primary` (60%) serve de fundo de botão e reprova
+   * como texto; `--primary-vivid` (64%) é o contrário. São dois tokens
+   * porque as faixas não se cruzam — ver o `globals.test.ts`, que audita os
+   * dois papéis separadamente.
+   */
+  corTexto?: string;
 };
 
 function Mascarado({ last4 }: { last4: string | null }) {
@@ -174,22 +183,45 @@ export function SecaoContas({
   const [criando, setCriando] = React.useState(false);
 
   return (
-    <Card className="overflow-hidden">
+    <Card
+      className="overflow-hidden"
+      style={{ borderColor: `hsl(var(--${config.cor}) / 0.45)` }}
+    >
       {/*
-        A faixa de cor no topo, e não um badge colorido perdido no meio: ela
-        marca a seção inteira, que é o que precisa ser distinguido. Colar um
-        `api_secret` do GA4 no campo do token do pixel não dá mensagem
-        nenhuma — o "Testar conexão" falha com um texto do lado de lá, e o
-        caminho até entender é longo. A cor responde antes de a pessoa colar.
+        ┌───────────────────────────────────────────────────────────────────┐
+        │ A COR MARCA O BLOCO INTEIRO, E É INFORMAÇÃO, NÃO ENFEITE.        │
+        │                                                                  │
+        │ As três seções guardam credenciais de serviços diferentes com    │
+        │ campos que se parecem. Colar o `api_secret` do GA4 no campo do   │
+        │ token do pixel não dá mensagem nenhuma: o "Testar conexão" falha │
+        │ com um texto do lado de lá, e o caminho até entender é longo. A  │
+        │ cor responde antes de a pessoa colar.                            │
+        │                                                                  │
+        │ Faixa grossa + borda + cabeçalho tingido + título colorido. O    │
+        │ tingimento para no CABEÇALHO de propósito: as linhas de conta    │
+        │ ficam neutras porque é nelas que se lê id e token, e fundo       │
+        │ colorido atrás de texto pequeno custa legibilidade sem ganhar    │
+        │ identificação — o cabeçalho já identificou.                      │
+        └───────────────────────────────────────────────────────────────────┘
       */}
       <div
-        className="h-1 w-full"
+        className="h-1.5 w-full"
         style={{ backgroundColor: `hsl(var(--${config.cor}))` }}
         aria-hidden
       />
-      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:px-5">
+      <div
+        className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:px-5"
+        style={{ backgroundColor: `hsl(var(--${config.cor}) / 0.08)` }}
+      >
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h3 className="text-sm font-semibold tracking-tight">{config.titulo}</h3>
+          <h3
+            className="text-sm font-semibold tracking-tight"
+            style={{
+              color: `hsl(var(--${config.corTexto ?? config.cor}))`,
+            }}
+          >
+            {config.titulo}
+          </h3>
           <p className="text-muted-foreground text-sm">{config.descricao}</p>
         </div>
 

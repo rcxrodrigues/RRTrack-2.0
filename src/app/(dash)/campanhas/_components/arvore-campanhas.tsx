@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
-import { inteiro, moeda, percentual, razao } from '@/lib/formato';
+import { inteiro, moeda, multiplo, percentual, razao } from '@/lib/formato';
 import type { NoDaArvore } from '@/lib/painel/arvore';
 
 /**
@@ -91,7 +91,7 @@ function No({ no }: { no: NoDaArvore }) {
             >
               {/* `—` e não `0.00×` quando a venda existiu e a UTM não casou:
                   vermelho ali mandaria cortar a campanha que mais vende. */}
-              {no.roas === null ? '—' : `${no.roas.toFixed(2)}×`}
+              {no.roas === null ? '—' : multiplo(no.roas)}
             </span>
           </div>
 

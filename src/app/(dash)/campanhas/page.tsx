@@ -8,7 +8,7 @@ import {
 import { MetricCard } from '@/components/dash/metric-card';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
-import { inteiro, moeda } from '@/lib/formato';
+import { inteiro, moeda, multiplo } from '@/lib/formato';
 import { buscarInsights } from '@/lib/meta/insights';
 import { buscarReceitaPorUtmCompleta } from '@/lib/painel/consultas';
 import { montarArvore } from '@/lib/painel/arvore';
@@ -194,7 +194,7 @@ async function CorpoCampanhas({
         />
         <MetricCard
           label="ROAS"
-          value={roasGeral === null ? null : `${roasGeral.toFixed(2)}×`}
+          value={roasGeral === null ? null : multiplo(roasGeral)}
           accent="amber"
           hint={nadaCasou ? 'nenhuma venda casou por UTM' : 'receita ÷ gasto'}
         />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { inteiro, moeda, percentual, razao, variacao } from './formato';
+import { inteiro, moeda, multiplo, percentual, razao, variacao } from './formato';
 
 /**
  * A formatação é feita à mão porque `Intl.NumberFormat` depende do ICU, e o
@@ -99,5 +99,37 @@ describe('variacao', () => {
   it('sair do zero não é +1000% — é comparação que não existe', () => {
     expect(variacao(10, 0)).toBeNull();
     expect(variacao(0, 0)).toBeNull();
+  });
+});
+
+describe('multiplo', () => {
+  it('usa VÍRGULA, não ponto', () => {
+    /*
+     * O ROAS saía por `toFixed(2)` direto e virava `3.59×` numa tela onde
+     * tudo ao lado é `R$ 3.475,90`. Em pt-BR o ponto é separador de MILHAR,
+     * então o olho lê "três mil" antes de corrigir — num número que decide
+     * corte de campanha, esse tropeço não paga.
+     */
+    expect(multiplo(3.5891)).toBe('3,59×');
+    expect(multiplo(3.5891)).not.toContain('.');
+  });
+
+  it('agrupa o milhar quando o múltiplo é grande', () => {
+    expect(multiplo(1234.5)).toBe('1.234,50×');
+  });
+
+  it('zero é medida e aparece', () => {
+    // `0,00×` é gastou-e-não-vendeu. Quem não tem medida é `null`, e quem
+    // decide mostrar `—` é o MetricCard — não esta função.
+    expect(multiplo(0)).toBe('0,00×');
+  });
+
+  it('Infinity e NaN viram travessão em vez de ir para a tela', () => {
+    expect(multiplo(Number.POSITIVE_INFINITY)).toBe('—');
+    expect(multiplo(Number.NaN)).toBe('—');
+  });
+
+  it('negativo mantém o sinal', () => {
+    expect(multiplo(-1.5)).toBe('-1,50×');
   });
 });

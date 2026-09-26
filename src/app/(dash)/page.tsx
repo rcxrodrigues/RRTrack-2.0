@@ -8,8 +8,9 @@ import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
 import { SecaoGeo } from '@/components/dash/secao-geo';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
-import { inteiro, moeda, percentual, razao, variacao } from '@/lib/formato';
+import { inteiro, moeda, multiplo, percentual, razao, variacao } from '@/lib/formato';
 import {
+  buscarCidades,
   buscarEventosPorTipo,
   buscarGeo,
   buscarPaginas,
@@ -86,7 +87,7 @@ async function CartaoRoas({
   return (
     <MetricCard
       label="ROAS"
-      value={roas === null ? null : `${roas.toFixed(2)}×`}
+      value={roas === null ? null : multiplo(roas)}
       accent="muted"
       hint={
         gasto.total === null
@@ -95,6 +96,34 @@ async function CartaoRoas({
       }
     />
   );
+}
+
+/**
+ * Gasto ÷ quantidade — o custo por visitante, por checkout, por compra.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ TRÊS CAMINHOS PARA `—`, E NENHUM DELES É ZERO.                           │
+ * │                                                                          │
+ * │ · sem conta de anúncio  → o gasto é DESCONHECIDO, não zero               │
+ * │ · quantidade zero       → dividir por zero não dá número                 │
+ * │                                                                          │
+ * │ Gasto zero COM conta cadastrada é outra coisa: é medida real (a campanha │
+ * │ não rodou), e R$ 0,00 por visitante é verdade. Por isso o teste é        │
+ * │ `total === null`, não `total <= 0` — os dois somem na mesma condição se  │
+ * │ escritos com pressa, e aí a tela passa a esconder um número certo.       │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+async function CustoPor({
+  intervalo,
+  quantidade,
+}: ComIntervalo & { quantidade: number }) {
+  const gasto = await gastoDoPeriodo(intervalo);
+
+  if (gasto.total === null || quantidade <= 0) {
+    return <span className="text-muted-foreground/40">—</span>;
+  }
+
+  return <>{moeda(gasto.total / quantidade)}</>;
 }
 
 async function AvisoDoGasto({ intervalo }: ComIntervalo) {
@@ -132,11 +161,12 @@ export default async function VisaoGeralPage({
    * estavam prontas e ninguém as via. Agora ele entra em `Suspense`, por
    * último, e só os dois cartões que dependem dele esperam.
    */
-  const [resumo, antes, eventos, geo, paginas] = await Promise.all([
+  const [resumo, antes, eventos, geo, cidades, paginas] = await Promise.all([
     buscarResumo(intervalo),
     buscarResumo(intervaloAnterior(intervalo)),
     buscarEventosPorTipo(intervalo),
     buscarGeo(intervalo),
+    buscarCidades(intervalo),
     buscarPaginas(intervalo),
   ]);
 
@@ -167,6 +197,17 @@ export default async function VisaoGeralPage({
           value={inteiro(resumo.visitantes)}
           delta={variacao(resumo.visitantes, antes.visitantes)}
           hint={`${inteiro(resumo.identificados)} identificados`}
+          custoRotulo="por visitante"
+          /*
+            Em `Suspense` próprio: o custo depende do gasto, que vem da API da
+            Meta. Sem isto, o cartão de visitantes — cujo número já está
+            pronto — passaria a esperar a Meta para aparecer.
+          */
+          custo={
+            <Suspense fallback={<span className="text-muted-foreground/40">·</span>}>
+              <CustoPor intervalo={intervalo} quantidade={resumo.visitantes} />
+            </Suspense>
+          }
         />
         <MetricCard
           label="Chegaram no checkout"
@@ -181,6 +222,21 @@ export default async function VisaoGeralPage({
                 ? undefined
                 : `${percentual(checkout.doTopo)} dos visitantes`
           }
+          custoRotulo="por checkout"
+          custo={
+            <Suspense fallback={<span className="text-muted-foreground/40">·</span>}>
+              <CustoPor
+                intervalo={intervalo}
+                /*
+                  Etapa desconhecida conta como ZERO aqui, e o `CustoPor`
+                  devolve `—`. É o certo: sem o evento não se sabe quantos
+                  chegaram ao checkout, e dividir o gasto por um número que
+                  não existe inventaria um custo.
+                */
+                quantidade={checkout?.desconhecido ? 0 : (checkout?.total ?? 0)}
+              />
+            </Suspense>
+          }
         />
         <MetricCard
           label="Compras"
@@ -189,6 +245,12 @@ export default async function VisaoGeralPage({
           delta={variacao(resumo.aprovadas, antes.aprovadas)}
           hint={
             conversao === null ? undefined : `${percentual(conversao, 2)} de conversão`
+          }
+          custoRotulo="por compra"
+          custo={
+            <Suspense fallback={<span className="text-muted-foreground/40">·</span>}>
+              <CustoPor intervalo={intervalo} quantidade={resumo.aprovadas} />
+            </Suspense>
           }
         />
 
@@ -211,7 +273,16 @@ export default async function VisaoGeralPage({
         <AvisoDoGasto intervalo={intervalo} />
       </Suspense>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/*
+        O funil sozinho na linha. O cartão "Eventos por tipo" que dividia o
+        espaço com ele SAIU: as quatro barras dele eram PageView, AddToCart,
+        InitiateCheckout e Purchase — exatamente as quatro etapas do funil ao
+        lado, nos mesmos números. Dois desenhos do mesmo dado, lado a lado,
+        não somam leitura: fazem quem olha conferir um contra o outro.
+        A consulta continua (`buscarEventosPorTipo`) porque é ela que ALIMENTA
+        o funil, e o filtro por tipo da aba de Eventos vive dela.
+      */}
+      <div className="grid gap-4">
         <Card className="gap-4 p-4 sm:p-5">
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-semibold tracking-tight">Funil</h3>
@@ -223,38 +294,6 @@ export default async function VisaoGeralPage({
           <FunilEtapas funil={funil} />
         </Card>
 
-        <Card className="gap-4 p-4 sm:p-5">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-semibold tracking-tight">
-              Eventos por tipo
-            </h3>
-            <p className="text-muted-foreground text-xs">
-              A barra compara com o maior do período, não com o total.
-            </p>
-          </div>
-          {/*
-            UMA COR SÓ, e a tentativa de pintar por tipo foi desfeita.
-
-            Cada barra já tem o nome colado nela: o matiz não identificava
-            nada que o rótulo não identificasse, e cinco barras de largura
-            cheia em cinco matizes viram parede de cor. A cor por tipo fica
-            na TABELA de eventos, onde as linhas vêm misturadas e é ali que
-            varrer com o olho vale — e lá ela é um ponto, não uma barra.
-
-            A rampa sequencial em azul, que seria o certo para uma sequência,
-            também não cabe: o validador da skill `dataviz` mostra que a
-            banda de luminosidade sobre `#070a12` é estreita demais para
-            quatro passos — o primeiro cai abaixo de 3:1 e lê como cinza.
-          */}
-          <ListaRanqueada
-            itens={eventos.map((e) => ({
-              id: e.nome,
-              valor: e.total,
-              nota: `${inteiro(e.visitantes)} ${e.visitantes === 1 ? 'pessoa' : 'pessoas'}`,
-            }))}
-            vazio="Nenhum evento chegou neste período. Confira se o snippet está na página."
-          />
-        </Card>
       </div>
 
       <Card className="gap-4 p-4 sm:p-5">
@@ -297,7 +336,7 @@ export default async function VisaoGeralPage({
         />
       </Card>
 
-      <SecaoGeo linhas={geo} />
+      <SecaoGeo linhas={geo} cidades={cidades} />
 
       {/*
         A saúde da atribuição, e não um detalhe: venda órfã entra na receita e

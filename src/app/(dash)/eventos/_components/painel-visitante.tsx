@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 
 import { Quando } from '@/components/dash/quando';
 import { corDoEvento } from '@/lib/painel/cores-evento';
+import { resolverOrigem } from '@/lib/painel/origem';
 import type {
   EventoDoVisitante,
   PayloadDoEvento,
@@ -116,6 +117,7 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
 
 function Conteudo({ visitante: v }: { visitante: Visitante }) {
   const nome = [v.primeiroNome, v.sobrenome].filter(Boolean).join(' ');
+  const origem = resolverOrigem({ doVisitante: v, referrer: v.referrer });
   const lugar = [v.cidade, v.regiao, v.pais].filter(Boolean).join(' · ');
 
   return (
@@ -147,6 +149,41 @@ function Conteudo({ visitante: v }: { visitante: Visitante }) {
       </Secao>
 
       <Secao titulo="Origem">
+        {/*
+          A RESPOSTA PRIMEIRO, os campos crus depois.
+
+          Sem isto, um visitante sem UTM mostrava cinco linhas vazias e o
+          referrer perdido no meio delas — a pergunta "de onde essa pessoa
+          veio?" ficava sem resposta numa seção que tinha o dado. Agora a
+          primeira linha responde, dizendo por qual caminho respondeu.
+        */}
+        <div className="flex items-baseline gap-2 px-4 py-1.5 text-xs">
+          <span className="text-muted-foreground w-32 shrink-0">Veio de</span>
+          <span className="min-w-0 flex-1 wrap-anywhere">
+            <strong
+              className={
+                origem.nivel === 'direto' ? 'text-muted-foreground' : undefined
+              }
+            >
+              {origem.rotulo}
+            </strong>
+            {origem.fonte !== null && (
+              <span className="text-muted-foreground"> · {origem.fonte}</span>
+            )}
+            {origem.nivel === 'referrer' && (
+              <span className="text-muted-foreground">
+                {' '}— sem UTM, então é o site anterior
+              </span>
+            )}
+            {origem.nivel === 'direto' && (
+              <span className="text-muted-foreground">
+                {' '}— sem UTM e sem referrer: endereço digitado, app, ou o
+                navegador cortou
+              </span>
+            )}
+          </span>
+        </div>
+
         <Campo rotulo="utm_source" valor={v.utmSource} />
         <Campo rotulo="utm_medium" valor={v.utmMedium} />
         <Campo rotulo="utm_campaign" valor={v.utmCampaign} />

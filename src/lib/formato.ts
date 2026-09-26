@@ -64,6 +64,29 @@ export function percentual(fracao: number, casas = 1): string {
 }
 
 /**
+ * Múltiplo. `3.5891` → `3,59×`.
+ *
+ * Existe porque o ROAS estava saindo por `toFixed(2)` direto, e `toFixed`
+ * devolve ponto: `3.59×` numa tela onde tudo ao lado é `R$ 3.475,90`. Pior
+ * que feio — em pt-BR o ponto é separador de MILHAR, então `3.59` pede ao
+ * olho brasileiro uma leitura de "três mil e quinhentos" antes de ele
+ * corrigir. Num número que decide corte de campanha, esse tropeço não paga.
+ *
+ * Foi a captura de tela que pegou: o cálculo estava certo e ninguém tinha
+ * olhado o separador.
+ */
+export function multiplo(valor: number, casas = 2): string {
+  if (!Number.isFinite(valor)) return '—';
+  const negativo = valor < 0;
+  const [inteira = '0', decimal] = Math.abs(valor).toFixed(casas).split('.');
+  const corpo =
+    casas === 0
+      ? comMilhar(inteira)
+      : `${comMilhar(inteira)},${decimal ?? '0'}`;
+  return `${negativo ? '-' : ''}${corpo}×`;
+}
+
+/**
  * A razão entre dois números, ou `null` quando não há razão que fazer.
  *
  * Divisão por zero não é "0%": é "não deu para calcular". Devolver zero

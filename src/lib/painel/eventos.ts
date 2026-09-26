@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { texto as textoEm } from '@/lib/json';
+import { resolverOrigem, type Origem, type Utms } from '@/lib/painel/origem';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import type { Intervalo } from './periodo';
@@ -43,6 +44,15 @@ export type LinhaEvento = {
   /** Quando a retenção já zerou os campos pesados desta linha. */
   purgado: boolean;
   criadoEm: string;
+  /**
+   * De onde a pessoa veio — resolvido em cascata, ver `origem.ts`.
+   *
+   * Não é só decoração da coluna de campanha: a UTM é lida da URL de cada
+   * evento, então só o PageView de entrada costuma tê-la. Sem a cascata, a
+   * MAIORIA das linhas dizia "sem campanha na UTM" — o que lia como falha
+   * de marcação e era navegação normal.
+   */
+  origem: Origem;
 };
 
 export type FiltroEventos = {
@@ -154,7 +164,81 @@ export async function buscarEventos(
     ];
   });
 
-  return { linhas, total: count ?? 0 };
+  /*
+   * O visitante de cada linha, numa consulta só.
+   *
+   * `referrer` e as UTMs da primeira visita vivem em `visitors`, não em
+   * `events_log` — e é o certo: são propriedade da VISITA, não de cada
+   * evento. Gravá-las em toda linha de evento seria repetir o mesmo dado
+   * centenas de vezes por pessoa.
+   *
+   * Uma consulta por página de eventos, com `in` sobre a coluna indexada e
+   * no máximo `POR_PAGINA` ids distintos. Não é N+1: é 1+1.
+   */
+  const ids = [
+    ...new Set(linhas.flatMap((l) => (l.trckUserId === null ? [] : [l.trckUserId]))),
+  ];
+  const visitantes = await utmsDosVisitantes(supabase, ids);
+
+  /*
+   * `Object.assign` e não espalhamento: as linhas acabaram de ser criadas
+   * logo acima e não são vistas por ninguém, então acrescentar o campo nelas
+   * é seguro — e espalhar copiaria cinquenta objetos de quinze campos à toa.
+   * É o que o `no-map-spread` do oxlint aponta.
+   */
+  const comOrigem = linhas.map((l) => {
+    const visitante = l.trckUserId === null ? null : visitantes.get(l.trckUserId);
+    return Object.assign(l, {
+      origem: resolverOrigem({
+        doEvento: l,
+        doVisitante: visitante,
+        referrer: visitante?.referrer ?? null,
+      }),
+    });
+  });
+
+  return { linhas: comOrigem, total: count ?? 0 };
+}
+
+/** As UTMs e o referrer da primeira visita, por `trck_user_id`. */
+type UtmsDoVisitante = Utms & { referrer: string | null };
+
+async function utmsDosVisitantes(
+  supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
+  ids: string[],
+): Promise<Map<string, UtmsDoVisitante>> {
+  const mapa = new Map<string, UtmsDoVisitante>();
+  if (ids.length === 0) return mapa;
+
+  const { data, error } = await supabase
+    .from('visitors')
+    .select(
+      'trck_user_id, referrer, utm_source, utm_medium, utm_campaign, utm_term, utm_content',
+    )
+    .in('trck_user_id', ids);
+
+  if (error) {
+    // Falhar aqui não pode esvaziar a tabela de eventos: sem o visitante a
+    // origem cai para "direto", que é pior do que a verdade mas ainda é uma
+    // tela funcionando. O erro fica no log.
+    console.error('[painel] utms do visitante falharam:', error.message);
+    return mapa;
+  }
+
+  for (const linha of Array.isArray(data) ? data : []) {
+    const id = textoEm(linha, 'trck_user_id');
+    if (id === undefined) continue;
+    mapa.set(id, {
+      referrer: textoEm(linha, 'referrer') ?? null,
+      utmSource: textoEm(linha, 'utm_source') ?? null,
+      utmMedium: textoEm(linha, 'utm_medium') ?? null,
+      utmCampaign: textoEm(linha, 'utm_campaign') ?? null,
+      utmTerm: textoEm(linha, 'utm_term') ?? null,
+      utmContent: textoEm(linha, 'utm_content') ?? null,
+    });
+  }
+
+  return mapa;
 }
 
 export type PayloadDoEvento = {

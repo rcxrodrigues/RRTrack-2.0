@@ -333,6 +333,19 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   **Foi a captura de tela que pegou essa**: o funil mostrava `0,0%` logo acima
   de um aviso dizendo "não porque ninguém passou por lá". O número contradizia
   o texto.
+- **O custo por evento tem TRÊS caminhos para `—`, e nenhum é zero.** Gasto
+  ÷ visitantes, ÷ checkouts, ÷ compras, no rodapé dos três cartões do topo.
+  Sem conta de anúncio o gasto é *desconhecido*; com quantidade zero a
+  divisão não existe; etapa `desconhecido` do funil conta como zero, porque
+  dividir por um número que não existe inventaria um custo. Mas gasto zero
+  **com** conta cadastrada é medida real — R$ 0,00 por visitante é verdade,
+  e o teste é `total === null`, nunca `total <= 0`. Escritos com pressa os
+  dois somem na mesma condição, e aí a tela passa a esconder número certo.
+- **Todo número da tela passa por `formato.ts` — inclusive o ROAS.** Ele
+  saía por `toFixed(2)` direto e virava `3.59×` ao lado de `R$ 3.475,90`.
+  Em pt-BR o ponto é separador de MILHAR, então o olho lê "três mil" antes
+  de corrigir. `multiplo()` resolve, e foi a captura de tela que pegou: o
+  cálculo estava certo e ninguém tinha olhado o separador.
 - **No ROAS a mesma regra custa dinheiro, e o caso tem nome.** `0.00×` é
   *medida* (gastou e não vendeu); "não casou" é *ausência de medida* (vendeu, e
   a `utm_campaign` não bateu). O que separa os dois é o número da própria Meta:
@@ -397,6 +410,61 @@ Consequências práticas:
   linha busca a dela por Server Action. A regra: se o campo só aparece
   quando alguém expande, ele não entra no `select` da lista.
 
+### A origem é uma cascata, porque a UTM do evento é a exceção
+
+As UTMs são lidas da URL de **cada** evento. A pessoa cai em
+`/?utm_campaign=X` e só esse PageView as carrega; no clique seguinte ela
+está em `/products/camiseta`, sem query string, e o AddToCart, o
+InitiateCheckout e o Purchase nascem sem UTM nenhuma.
+
+Ou seja: a MAIORIA das linhas da tabela de Eventos dizia "sem campanha na
+UTM", o que lia como falha de marcação quando era navegação normal. O dado
+existe — está no VISITANTE, gravado no `/api/identify` da primeira visita.
+
+`resolverOrigem()` em `src/lib/painel/origem.ts` responde em quatro níveis:
+
+| nível | o que é |
+|---|---|
+| `evento` | a UTM na URL deste evento — o mais preciso |
+| `visitante` | a UTM da primeira visita desta pessoa |
+| `referrer` | o site anterior, quando não houve UTM nenhuma |
+| `direto` | endereço digitado, app, ou o navegador cortou |
+
+**O nível volta junto e aparece na tela**, porque "esta compra carregava a
+campanha" e "esta compra é de alguém que um dia chegou pela campanha" são
+afirmações diferentes, e a segunda é mais fraca. Iguais na tela,
+prometeriam uma precisão que o dado não tem.
+
+O referrer é reduzido ao **domínio**: o caminho de uma URL de busca leva o
+termo que a pessoa digitou, e isso é dado dela que não tem por que ficar
+numa tabela do painel. Referrer que não parseia volta cru — um "direto" que
+mente é pior que um texto estranho.
+
+O visitante de cada linha vem numa consulta só, com `in` sobre a coluna
+indexada: é 1+1, não N+1.
+
+### A cor dos blocos de Configuração é informação
+
+Verde = pixel da Meta · laranja = GA4 · azul = conta de anúncio. Tokens da
+marca (`--success`, `--amber`, `--primary`), não `--chart-*`: a série de
+gráfico é escolhida para separar **entre si num gráfico**, e os três
+estavam em matizes vizinhos demais para identificar de relance.
+
+Não é enfeite. As três seções guardam credenciais de serviços diferentes
+com campos que se parecem, e colar o `api_secret` do GA4 no campo do token
+do pixel **não dá mensagem nenhuma**: o "Testar conexão" falha com um texto
+do lado de lá e o caminho até entender é longo. A cor responde antes de a
+pessoa colar.
+
+Faixa grossa + borda + cabeçalho tingido + título colorido — e o tingimento
+**para no cabeçalho**: as linhas de conta ficam neutras porque é nelas que
+se lê id e token, e fundo colorido atrás de texto pequeno custa
+legibilidade sem ganhar identificação.
+
+**Instalação é a primeira aba e a padrão.** O script já existia lá, com
+campo de copiar; só estava atrás de "Geral", e a pergunta que chegou foi
+"onde no painel eu acho o script para colar no tema?".
+
 ### Geo é tabela, não mapa — e é escolha, não preguiça
 
 Um mapa colorido mostra **concentração** e nada mais. Comparar dois tons de
@@ -407,6 +475,11 @@ O que decide frete, fraude e corte de campanha é o **número por região** — 
 a **conversão** por região, que num mapa não cabe. A tela põe receita e
 visitantes lado a lado de propósito: região que aparece numa lista e não na
 outra é tráfego que não converte, e isso é a leitura que interessa.
+
+São **três** listas, não duas: a terceira é CIDADE (`painel_cidades`). No
+Brasil "SP" é metade do país, e parar na região é parar cedo demais para
+decidir frete e prazo. Cinco linhas cada, não oito — da sexta em diante a
+cauda é longa e não muda decisão nenhuma.
 
 Se o mapa entrar um dia, entra **ao lado** da tabela, nunca no lugar dela.
 
