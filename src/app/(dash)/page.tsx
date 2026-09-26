@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
@@ -8,12 +10,19 @@ import { inteiro, moeda, percentual, razao, variacao } from '@/lib/formato';
 import {
   buscarEventosPorTipo,
   buscarGeo,
+  buscarPaginas,
   buscarResumo,
 } from '@/lib/painel/consultas';
 import { corDoEvento } from '@/lib/painel/cores-evento';
 import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
 import { etapaDe, montarFunil } from '@/lib/painel/funil';
-import { intervaloAnterior, intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import {
+  comPeriodo,
+  intervaloAnterior,
+  intervaloDe,
+  lerPeriodo,
+} from '@/lib/painel/periodo';
+import { caminhoDaUrl } from '@/lib/painel/url';
 import { carregarConfiguracao } from '@/lib/settings';
 
 export const metadata = { title: 'Visão geral' };
@@ -35,11 +44,12 @@ export default async function VisaoGeralPage({
 
   // Independentes entre si — em série seriam cinco idas esperando uma pela
   // outra sem motivo. O gasto vai junto porque o ROAS precisa dos dois lados.
-  const [resumo, antes, eventos, geo, gasto] = await Promise.all([
+  const [resumo, antes, eventos, geo, paginas, gasto] = await Promise.all([
     buscarResumo(intervalo),
     buscarResumo(intervaloAnterior(intervalo)),
     buscarEventosPorTipo(intervalo),
     buscarGeo(intervalo),
+    buscarPaginas(intervalo),
     buscarGastoDoPeriodo(intervalo),
   ]);
 
@@ -175,6 +185,46 @@ export default async function VisaoGeralPage({
           />
         </Card>
       </div>
+
+      <Card className="gap-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold tracking-tight">
+              Páginas mais visitadas
+            </h3>
+            <p className="text-muted-foreground text-xs">
+              Visitantes únicos, e a conversão de cada uma ao lado.
+            </p>
+          </div>
+          {/*
+            O link leva o período junto: chegar em Páginas vendo outro
+            intervalo faria os números não baterem com os de cima, e a
+            primeira conclusão de quem olha seria que o painel erra.
+          */}
+          <Link
+            href={comPeriodo('/paginas', periodo)}
+            className="text-primary-vivid text-xs hover:underline"
+          >
+            ver todas
+          </Link>
+        </div>
+        <ListaRanqueada
+          limite={5}
+          itens={paginas.map((p) => {
+            const taxa = razao(p.compras, p.visitantes);
+            return {
+              id: p.url,
+              rotulo: caminhoDaUrl(p.url),
+              valor: p.visitantes,
+              // A conversão, não a contagem de compras: a pergunta que a
+              // lista responde é "qual página vale o tráfego que recebe?", e
+              // isso é razão, não volume.
+              nota: taxa === null ? undefined : percentual(taxa, 2),
+            };
+          })}
+          vazio="Nenhuma página com tráfego no período. O snippet precisa estar na página."
+        />
+      </Card>
 
       <SecaoGeo linhas={geo} />
 

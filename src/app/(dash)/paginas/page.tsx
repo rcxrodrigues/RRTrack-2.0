@@ -4,22 +4,11 @@ import { Card } from '@/components/ui/card';
 import { inteiro, moeda, percentual, razao } from '@/lib/formato';
 import { buscarPaginas } from '@/lib/painel/consultas';
 import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import { caminhoDaUrl } from '@/lib/painel/url';
 import { carregarConfiguracao } from '@/lib/settings';
 
 export const metadata = { title: 'Páginas' };
 export const dynamic = 'force-dynamic';
-
-/** O caminho, sem o domínio — é ele que identifica a página para quem edita. */
-function caminho(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.pathname === '/' ? '/' : u.pathname.replace(/\/$/, '');
-  } catch {
-    // URL que não parseia é dado real que chegou torto: mostra como veio, em
-    // vez de sumir da tabela. Página some da lista é pior que página feia.
-    return url;
-  }
-}
 
 export default async function PaginasPage({
   searchParams,
@@ -102,7 +91,7 @@ export default async function PaginasPage({
                 >
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="truncate font-mono text-sm" title={p.url}>
-                      {caminho(p.url)}
+                      {caminhoDaUrl(p.url)}
                     </span>
                     <span
                       data-slot="metric"
