@@ -383,6 +383,20 @@ superfícies REAIS (não as padrão do validador). O `globals.test.ts` cobre ΔE
 contraste; o validador cobre banda de luminosidade, piso de croma e separação
 sob daltonismo, que contraste sozinho não pega.
 
+**Cor por tipo de evento fica na TABELA, não na lista ranqueada.** A
+tentativa de pintar a lista por tipo foi desfeita depois de ver na tela:
+cada barra já tem o nome colado nela, então o matiz não identificava nada
+que o rótulo não identificasse — e cinco barras de largura cheia em cinco
+matizes viram parede de cor. Na tabela de Eventos ela vale, porque ali as
+linhas vêm misturadas e a marca é um ponto de 10px.
+
+**E a rampa sequencial, que seria o certo para uma sequência, não cabe.**
+PageView → AddToCart → InitiateCheckout → Purchase é a mesma pessoa
+avançando, e sequência pede escala de uma cor, não paleta categórica. Mas o
+validador da `dataviz` mostra que a banda de luminosidade sobre `#070a12` é
+estreita demais para quatro passos: espremendo, o primeiro cai abaixo de
+3:1 de contraste e **lê como cinza**. O número decidiu, não o gosto.
+
 **Funil e lista ranqueada usam UMA cor.** As etapas não são identidades
 diferentes — são a mesma quantidade encolhendo, e quem carrega a magnitude é o
 comprimento da barra. Matiz por etapa gastaria três cores para não dizer nada.

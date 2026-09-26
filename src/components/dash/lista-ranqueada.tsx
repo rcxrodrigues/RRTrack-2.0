@@ -7,25 +7,18 @@ export type ItemRanqueado = {
   valor: number;
   /** Texto à direita do valor — contexto, não segunda métrica. */
   nota?: string;
-  /**
-   * Cor da barra, quando os itens são IDENTIDADES e não quantidades.
-   *
-   * A exceção à regra de uma cor só, e ela tem limite claro: vale quando
-   * cada linha é uma coisa diferente (tipo de evento), não quando são a
-   * mesma coisa em tamanhos diferentes (região, etapa do funil). No segundo
-   * caso o matiz não diria nada que o comprimento já não diga.
-   */
-  cor?: string;
 };
 
 /**
  * Lista ordenada com barra proporcional — um gráfico de barras que cabe numa
  * coluna estreita.
  *
- * **Uma cor só, por padrão.** Os itens costumam ser a mesma grandeza em
- * quantidades diferentes, não identidades: o que os separa é o comprimento.
- * Quando forem identidades de verdade — tipo de evento, por exemplo — cada
- * item pode trazer `cor`, e aí o matiz carrega informação em vez de enfeite. Matiz por item gastaria
+ * **Uma cor só.** Os itens são a mesma grandeza em quantidades diferentes, e
+ * o rótulo de cada um está colado na barra: o matiz não identificaria nada
+ * que o texto já não identifique, e cinco barras de largura cheia em cinco
+ * matizes viram parede de cor — foi exatamente o que aconteceu quando a
+ * exceção existiu. Cor por identidade fica na TABELA de eventos, onde as
+ * linhas vêm misturadas e a marca é um ponto, não uma barra. Matiz por item gastaria
  * cinco cores para repetir o que a barra já diz, e acima de sete itens não
  * existe paleta que resolva — por isso o corte é por quantidade de linhas,
  * não por cor.
@@ -72,10 +65,9 @@ export function ListaRanqueada({
           </div>
           <div className="bg-muted/50 h-1.5 w-full overflow-hidden rounded-sm">
             <div
-              className={item.cor ? 'h-full rounded-r-[4px]' : 'bg-chart-1 h-full rounded-r-[4px]'}
+              className="bg-chart-1 h-full rounded-r-[4px]"
               style={{
                 width: `${String(Math.max(1.5, (item.valor / maior) * 100))}%`,
-                ...(item.cor ? { backgroundColor: item.cor } : {}),
               }}
             />
           </div>

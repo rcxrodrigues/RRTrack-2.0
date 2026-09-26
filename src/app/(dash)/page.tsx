@@ -13,7 +13,6 @@ import {
   buscarPaginas,
   buscarResumo,
 } from '@/lib/painel/consultas';
-import { corDoEvento } from '@/lib/painel/cores-evento';
 import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
 import { etapaDe, montarFunil } from '@/lib/painel/funil';
 import {
@@ -172,13 +171,24 @@ export default async function VisaoGeralPage({
               A barra compara com o maior do período, não com o total.
             </p>
           </div>
+          {/*
+            UMA COR SÓ, e a tentativa de pintar por tipo foi desfeita.
+
+            Cada barra já tem o nome colado nela: o matiz não identificava
+            nada que o rótulo não identificasse, e cinco barras de largura
+            cheia em cinco matizes viram parede de cor. A cor por tipo fica
+            na TABELA de eventos, onde as linhas vêm misturadas e é ali que
+            varrer com o olho vale — e lá ela é um ponto, não uma barra.
+
+            A rampa sequencial em azul, que seria o certo para uma sequência,
+            também não cabe: o validador da skill `dataviz` mostra que a
+            banda de luminosidade sobre `#070a12` é estreita demais para
+            quatro passos — o primeiro cai abaixo de 3:1 e lê como cinza.
+          */}
           <ListaRanqueada
-            // A cor vem de `cores-evento.ts`, a mesma que a tabela de eventos
-            // usa — cor só vira atalho se for a MESMA em todo lugar.
             itens={eventos.map((e) => ({
               id: e.nome,
               valor: e.total,
-              cor: corDoEvento(e.nome),
               nota: `${inteiro(e.visitantes)} ${e.visitantes === 1 ? 'pessoa' : 'pessoas'}`,
             }))}
             vazio="Nenhum evento chegou neste período. Confira se o snippet está na página."
