@@ -48,9 +48,9 @@ export async function reprocessarWebhook(id: string): Promise<ResultadoReprocess
 
   const { data, error } = await supabase
     .from('webhooks_recebidos')
-    .select('corpo')
+    .select('corpo, purged_at')
     .eq('id', id)
-    .returns<{ corpo: unknown }[]>()
+    .returns<{ corpo: unknown; purged_at: string | null }[]>()
     .maybeSingle();
 
   if (error) {
@@ -60,6 +60,18 @@ export async function reprocessarWebhook(id: string): Promise<ResultadoReprocess
 
   if (!data) {
     return { ok: false, mensagem: 'Esse webhook não está mais no banco.' };
+  }
+
+  // A retenção vem ANTES do teste de JSON, porque os dois terminam em
+  // `corpo === null` e só um deles é culpa do gateway. Dizer "não era JSON
+  // válido" para uma linha que nós mesmos limpamos manda a pessoa depurar o
+  // checkout quando o que venceu foi prazo nosso.
+  if (data.purged_at !== null) {
+    return {
+      ok: false,
+      mensagem:
+        'O corpo foi removido pela retenção — 90 dias para webhook que ficou pendente. Não há como reprocessar.',
+    };
   }
 
   if (data.corpo === null) {

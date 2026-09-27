@@ -1269,8 +1269,34 @@ passado do faturamento**, e o painel de um mês atrás mudaria sozinho.
 | tabela | prazo | por quê |
 |---|---|---|
 | `events_log` | 14 dias | depurar envio é trabalho da mesma semana |
-| `webhooks_recebidos` | 30 dias | é com ele que se escreve adaptador novo, e isso leva mais que uma semana |
+| `webhooks_recebidos` | **30 ou 90 dias** | 30 se já foi tratado; **90 se ainda pede ação** — ver abaixo |
 | `purchases.raw_webhook` | 90 dias | auditoria de venda contestada; o prazo de chargeback chega a 120. **A linha da venda fica para sempre** |
+
+**O prazo do webhook depende do ESTADO da linha, e por pouco não custou
+venda.** Aos 30 dias o `corpo` era zerado em toda linha — inclusive nas duas
+que o painel pinta pedindo ação: a **amarela** (`adaptador is null`, cujo
+payload é o que se lê para escrever o adaptador novo) e a **vermelha**
+(`motivo is not null`, que vira venda no minuto em que o cadastro entra e
+alguém clica em Reprocessar). O gateway não reenvia para sempre — a Appmax
+desiste depois de quatro tentativas, em definitivo e sem avisar —, então
+zerado o corpo a venda não volta nunca mais, e o painel seguia exibindo a
+linha como se houvesse o que fazer. Agora quem ainda pede ação guarda o
+corpo por **90 dias**, o mesmo teto que `purchases.raw_webhook` já aceita
+para dado pessoal de webhook. Não é isenção: aos 90 sai também, porque três
+meses sem ninguém agir passou o retry de qualquer gateway, passou o
+chargeback e passou a campanha. A asserção 10 trava os quatro casos.
+
+**E `corpo is null` tinha DOIS significados, com a tela escolhendo o
+errado.** "Não era JSON válido" (o texto cru fica em `corpo_texto`) e "a
+retenção zerou" terminam no mesmo `null`, e a tela dizia o primeiro nos dois
+— um payload envelhecido lia como gateway quebrado, e o caminho até
+descobrir o contrário é depurar do lado de lá. `webhooks_recebidos.purged_at`
+é o fato, como `events_log` já tinha; deduzir por "os dois campos estão
+nulos" funcionaria hoje e é o mesmo erro do `platform` como proxy de camada.
+A decisão de qual frase mostrar é pura e mora em
+`src/lib/painel/corpo-do-webhook.ts`, com teste — e os avisos do topo da aba
+contam só o que **ainda dá para resolver**, porque instrução que não pode
+funcionar ("clique em Reprocessar" numa linha sem corpo) é pior que silêncio.
 
 E há um segundo motivo, que não é de espaço: esses campos guardam **dado
 pessoal** — e-mail, telefone, endereço, CPF em alguns gateways. Guardar para
@@ -1283,7 +1309,8 @@ gravar** — o site inteiro perde tracking enquanto a limpeza roda. Com lote e
 marca, cada passagem é curta e a seguinte continua de onde parou.
 
 `pg_cron` não existe num Postgres comum, então o teste local tem substituto,
-como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica.
+como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica;
+a 10, que o prazo maior vale para quem ainda pede ação.
 
 ## Banco — como mexer com segurança
 

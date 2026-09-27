@@ -16,7 +16,7 @@ begin
   if v_faltando is not null then
     raise exception 'FALHA: tabelas sem RLS: %', v_faltando;
   end if;
-  raise notice 'OK 1/9 · RLS ligada em todas as tabelas';
+  raise notice 'OK 1/10 · RLS ligada em todas as tabelas';
 end;
 $$;
 
@@ -31,7 +31,7 @@ begin
   if v_escrita is not null then
     raise exception 'FALHA: existe policy de escrita: %', v_escrita;
   end if;
-  raise notice 'OK 2/9 · Nenhuma policy de escrita — só service_role grava';
+  raise notice 'OK 2/10 · Nenhuma policy de escrita — só service_role grava';
 end;
 $$;
 
@@ -58,7 +58,7 @@ begin
   if array_length(v_vaza, 1) > 0 then
     raise exception 'FALHA: ponteiro de segredo legível pelo painel: %', v_vaza;
   end if;
-  raise notice 'OK 3/9 · Ponteiros para o cofre fora do alcance do painel';
+  raise notice 'OK 3/10 · Ponteiros para o cofre fora do alcance do painel';
 end;
 $$;
 
@@ -151,7 +151,7 @@ begin
   if array_length(v_pode, 1) > 0 then
     raise exception 'FALHA: função sensível executável: %', v_pode;
   end if;
-  raise notice 'OK 4/9 · Funções de segredo só para o service_role';
+  raise notice 'OK 4/10 · Funções de segredo só para o service_role';
 end;
 $$;
 
@@ -205,10 +205,10 @@ begin
     from pg_namespace where nspname = 'vault';
 
   if coalesce(v_substituto, false) then
-    raise notice 'OK 5/9 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/10 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
     raise notice '         (substituto local — a cifra em si é do Vault, testada no Supabase)';
   else
-    raise notice 'OK 5/9 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
+    raise notice 'OK 5/10 · Cofre: guarda, lê, atualiza sem órfão e limpa ao apagar';
   end if;
 end;
 $$;
@@ -235,7 +235,7 @@ begin
   end if;
 
   delete from public.rate_limits where bucket like 'teste:%';
-  raise notice 'OK 6/9 · Rate limit corta no limite e isola por bucket';
+  raise notice 'OK 6/10 · Rate limit corta no limite e isola por bucket';
 end;
 $$;
 
@@ -255,7 +255,7 @@ begin
     when check_violation then null;  -- esperado
   end;
 
-  raise notice 'OK 7/9 · settings trancada em uma linha';
+  raise notice 'OK 7/10 · settings trancada em uma linha';
 end;
 $$;
 
@@ -314,7 +314,7 @@ begin
     raise exception 'FALHA: view sem security_invoker (ignora RLS): %', v_frouxas;
   end if;
 
-  raise notice 'OK 8/9 · Consultas do painel respeitam a RLS de quem chama';
+  raise notice 'OK 8/10 · Consultas do painel respeitam a RLS de quem chama';
 end;
 $$;
 
@@ -377,6 +377,75 @@ begin
 
   delete from public.events_log where event_id in ('retencao-teste', 'retencao-recente');
 
-  raise notice 'OK 9/9 · Retenção zera o payload e preserva a linha';
+  raise notice 'OK 9/10 · Retenção zera o payload e preserva a linha';
+end;
+$$;
+
+-- 10) o prazo do webhook depende do ESTADO, não só da idade -------------------
+-- Amarelo (ninguém reconheceu) e vermelho (reconheceu e não soube ler) são as
+-- duas linhas que ainda podem virar venda com um clique em Reprocessar, e é o
+-- `corpo` delas que o botão lê. Zeradas junto com as verdes, aos 30 dias, a
+-- venda não voltava nunca mais — o gateway já desistiu de reenviar.
+do $$
+declare
+  v_verde    uuid;
+  v_amarelo  uuid;
+  v_vermelho uuid;
+  v_velho    uuid;
+begin
+  -- Quatro linhas de 40 dias, que é depois dos 30 e antes dos 90…
+  insert into public.webhooks_recebidos (adaptador, motivo, corpo, created_at)
+  values ('appmax', null, '{"tratado":true}'::jsonb, now() - interval '40 days')
+  returning id into v_verde;
+
+  insert into public.webhooks_recebidos (adaptador, motivo, corpo, created_at)
+  values (null, null, '{"formato":"novo"}'::jsonb, now() - interval '40 days')
+  returning id into v_amarelo;
+
+  insert into public.webhooks_recebidos (adaptador, motivo, corpo, created_at)
+  values ('yampi', 'alias de status não cadastrado', '{"venda":true}'::jsonb,
+          now() - interval '40 days')
+  returning id into v_vermelho;
+
+  -- …e uma que passou dos 90, para provar que o prazo maior é prazo, não isenção.
+  insert into public.webhooks_recebidos (adaptador, motivo, corpo, created_at)
+  values (null, null, '{"formato":"antigo"}'::jsonb, now() - interval '100 days')
+  returning id into v_velho;
+
+  perform private.aplicar_retencao(100);
+
+  -- Verde aos 40 dias: cumpriu o papel, o corpo sai.
+  if (select corpo from public.webhooks_recebidos where id = v_verde) is not null then
+    raise exception 'FALHA: a retenção não zerou webhook tratado fora do prazo';
+  end if;
+  if (select purged_at from public.webhooks_recebidos where id = v_verde) is null then
+    raise exception 'FALHA: zerou o corpo e não marcou purged_at — a tela não sabe distinguir de JSON inválido';
+  end if;
+
+  -- Amarelo aos 40 dias: é com este payload que se escreve o adaptador.
+  if (select corpo from public.webhooks_recebidos where id = v_amarelo) is null then
+    raise exception 'FALHA: a retenção comeu o payload que ninguém reconheceu — o adaptador se escreve com ele';
+  end if;
+
+  -- Vermelho aos 40 dias: vira venda no clique seguinte ao cadastro.
+  if (select corpo from public.webhooks_recebidos where id = v_vermelho) is null then
+    raise exception 'FALHA: a retenção comeu o payload que o Reprocessar precisa';
+  end if;
+
+  -- Amarelo aos 100 dias: o prazo maior venceu também.
+  if (select corpo from public.webhooks_recebidos where id = v_velho) is not null then
+    raise exception 'FALHA: prazo de 90 dias virou isenção — dado pessoal sem prazo';
+  end if;
+
+  -- Nenhuma linha some, em nenhum dos casos.
+  if (select count(*) from public.webhooks_recebidos
+       where id in (v_verde, v_amarelo, v_vermelho, v_velho)) <> 4 then
+    raise exception 'FALHA: a retenção apagou linha de webhook';
+  end if;
+
+  delete from public.webhooks_recebidos
+   where id in (v_verde, v_amarelo, v_vermelho, v_velho);
+
+  raise notice 'OK 10/10 · Webhook que ainda pede ação guarda o corpo por 90 dias';
 end;
 $$;

@@ -45,7 +45,7 @@ async function carregarWebhooks(): Promise<WebhookRecebido[]> {
 
   const { data } = await supabase
     .from('webhooks_recebidos')
-    .select('id, adaptador, transaction_id, motivo, created_at')
+    .select('id, adaptador, transaction_id, motivo, created_at, purged_at')
     .order('created_at', { ascending: false })
     .limit(50)
     .returns<WebhookRecebido[]>();
@@ -72,8 +72,18 @@ export default async function EventosPage({
     carregarWebhooks(),
   ]);
 
-  const naoReconhecidos = recebidos.filter((r) => r.adaptador === null).length;
-  const naoLidos = recebidos.filter((r) => r.motivo !== null).length;
+  /*
+   * Os avisos contam só o que AINDA DÁ PARA RESOLVER.
+   *
+   * "Depois de cadastrar, clique em Reprocessar" e "me mande o conteúdo" são
+   * instruções, e instrução que não pode funcionar é pior que silêncio: numa
+   * linha cujo corpo a retenção já levou não há botão para clicar nem
+   * conteúdo para mandar. A linha continua na lista com a explicação dela;
+   * o que ela não faz é somar num pedido de ação impossível.
+   */
+  const recuperaveis = recebidos.filter((r) => r.purged_at === null);
+  const naoReconhecidos = recuperaveis.filter((r) => r.adaptador === null).length;
+  const naoLidos = recuperaveis.filter((r) => r.motivo !== null).length;
 
   const ultimaPagina = Math.max(0, Math.ceil(total / POR_PAGINA) - 1);
   const linkDaPagina = (n: number): string => {

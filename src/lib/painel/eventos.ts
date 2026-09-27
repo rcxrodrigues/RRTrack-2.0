@@ -1,10 +1,17 @@
 import 'server-only';
 
 import { numeroTolerante, texto as textoEm } from '@/lib/json';
+import type { CorpoDoWebhook } from '@/lib/painel/corpo-do-webhook';
 import { resolverOrigem, type Origem, type Utms } from '@/lib/painel/origem';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import type { Intervalo } from './periodo';
+
+// Reexportado porque o tipo mora junto das funções puras que o leem, e o
+// componente da linha é CLIENTE — não pode importar deste arquivo, que é
+// `server-only`. Ele pega o tipo e as funções de lá; quem já importava
+// daqui continua funcionando.
+export type { CorpoDoWebhook };
 
 /**
  * A lista de eventos capturados.
@@ -297,11 +304,6 @@ export async function buscarPayload(id: string): Promise<PayloadDoEvento | null>
 }
 
 /** O corpo e os cabeçalhos de um webhook guardado — ver `buscarCorpoDoWebhook`. */
-export type CorpoDoWebhook = {
-  corpo: unknown;
-  corpoTexto: string | null;
-  headers: Record<string, string> | null;
-};
 
 /**
  * O payload de um webhook, sob demanda.
@@ -326,13 +328,14 @@ export async function buscarCorpoDoWebhook(
   // `as` inseguro, e aqui a forma da linha é conhecida pelo `select`.
   const { data, error } = await supabase
     .from('webhooks_recebidos')
-    .select('corpo, corpo_texto, headers')
+    .select('corpo, corpo_texto, headers, purged_at')
     .eq('id', id)
     .returns<
       {
         corpo: unknown;
         corpo_texto: string | null;
         headers: Record<string, string> | null;
+        purged_at: string | null;
       }[]
     >()
     .maybeSingle();
@@ -347,6 +350,7 @@ export async function buscarCorpoDoWebhook(
     corpo: data.corpo ?? null,
     corpoTexto: data.corpo_texto ?? null,
     headers: data.headers ?? null,
+    purgado: data.purged_at !== null,
   };
 }
 

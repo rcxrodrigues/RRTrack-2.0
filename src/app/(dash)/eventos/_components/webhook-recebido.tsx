@@ -8,7 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Quando } from '@/components/dash/quando';
 import { carregarCorpoDoWebhook, reprocessarWebhook } from '../actions';
-import type { CorpoDoWebhook } from '@/lib/painel/eventos';
+import {
+  daParaReprocessar,
+  notaDoCorpo,
+  textoDoCorpo,
+  type CorpoDoWebhook,
+} from '@/lib/painel/corpo-do-webhook';
 
 /**
  * A LINHA FECHADA, e só ela.
@@ -31,6 +36,15 @@ export type WebhookRecebido = {
    */
   motivo: string | null;
   created_at: string;
+  /**
+   * Quando a retenção zerou o corpo. `null` = nunca zerada.
+   *
+   * Um timestamp, não um campo pesado: vem na lista fechada porque é ele que
+   * decide se o aviso do topo pode pedir "clique em Reprocessar". Numa linha
+   * já limpa esse conselho não funciona, e mandar alguém tentar uma coisa
+   * que não pode dar certo é pior que não avisar nada.
+   */
+  purged_at: string | null;
 };
 
 /**
@@ -97,12 +111,16 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
     ([nome]) => !RUIDO.has(nome.toLowerCase()),
   );
 
-  const corpo =
-    payload == null
-      ? null
-      : payload.corpo === null
-        ? (payload.corpoTexto ?? '(vazio)')
-        : JSON.stringify(payload.corpo, null, 2);
+  /*
+   * As três frases possíveis vêm de `corpo-do-webhook.ts`, com teste.
+   *
+   * `corpo === null` tem TRÊS causas e a tela tratava duas como uma: a
+   * linha que a RETENÇÃO limpou lia como "não era JSON válido", e quem
+   * visse isso iria procurar defeito no checkout. A ordem da decisão é o
+   * conserto, e é ela que o teste trava.
+   */
+  const corpo = payload == null ? null : textoDoCorpo(payload);
+  const nota = payload == null ? null : notaDoCorpo(payload);
 
   return (
     <div className="border-border/60 border-b last:border-0">
@@ -155,6 +173,23 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
               {item.adaptador}: <ComCampos texto={item.motivo} />
             </p>
           )}
+
+          {/*
+            A linha que passou do prazo AINDA PEDINDO AÇÃO.
+
+            Amarelo e vermelho guardam o corpo por 90 dias, não 30 — é dele
+            que sai a venda reprocessada. Vencidos os 90, não há mais o que
+            reprocessar, e a tela tem de dizer isso: sem esta frase a linha
+            continua vermelha pedindo uma ação que não pode mais dar certo,
+            e o aviso do topo mandava clicar num botão que não está lá.
+          */}
+          {item.purged_at !== null && (item.motivo !== null || item.adaptador === null) && (
+            <p className="text-muted-foreground text-sm">
+              Esta linha ficou pendente por mais de 90 dias e o corpo já saiu
+              pela retenção. Não há como reprocessar — se a venda existiu, ela
+              está no painel do checkout.
+            </p>
+          )}
           {interessantes.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="text-muted-foreground text-xs font-semibold">
@@ -173,8 +208,7 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
 
           <div className="flex flex-col gap-1">
             <p className="text-muted-foreground text-xs font-semibold">
-              Corpo{' '}
-              {payload?.corpo === null && '(não era JSON válido)'}
+              Corpo {nota}
             </p>
             <pre className="bg-muted/40 ring-border max-h-96 overflow-auto rounded-md px-3 py-2 font-mono text-xs ring-1">
               {corpo ??
@@ -186,7 +220,7 @@ export function WebhookRecebidoItem({ item }: { item: WebhookRecebido }) {
             </pre>
           </div>
 
-          {payload != null && payload.corpo !== null && (
+          {payload != null && daParaReprocessar(payload) && (
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"

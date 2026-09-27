@@ -36,12 +36,15 @@ todos vivem no Vault.
 
 ### RLS e privilégios, tabela a tabela
 
-`supabase/tests/01_seguranca.sql`, **nove asserções**, rodando no CI a cada
+`supabase/tests/01_seguranca.sql`, **dez asserções**, rodando no CI a cada
 push. Cobrem: RLS ligada em todas as tabelas, zero policies de escrita,
 ponteiros do cofre fora do alcance do painel, `anon` sem privilégio em nada,
 funções do cofre só para `service_role`, o ciclo do Vault, a janela do rate
 limit, `settings` trancada em uma linha, as consultas do painel respeitando a
-RLS de quem chama, e a retenção zerando payload sem apagar linha.
+RLS de quem chama, a retenção zerando payload sem apagar linha, e o prazo
+maior para o webhook que ainda pede ação — o corpo de uma linha amarela ou
+vermelha é o que o Reprocessar lê, e zerado aos 30 dias junto com as verdes a
+venda não voltava nunca mais.
 
 ### Cadastro público desligado
 
@@ -88,7 +91,8 @@ Isso punha o token:
 
 1. numa coluna `jsonb` que qualquer `authenticated` lê pelo PostgREST;
 2. **impresso na tela** do painel, na gaveta de cabeçalhos;
-3. em todo backup do banco, por 30 dias, até a retenção zerar a coluna.
+3. em todo backup do banco, por 30 a 90 dias (o prazo depende do estado da
+   linha), até a retenção zerar a coluna.
 
 É a mesma armadilha que o `payload_meta` já desvia — *"um token ali seria
 segredo vazado em repouso"* — por outra porta. E é exatamente o que a escolha
