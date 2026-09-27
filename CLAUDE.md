@@ -1268,6 +1268,14 @@ como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica.
   vez de "não instalado". A checagem do compacto é por nome de objeto, não
   por linha — ele tem um comando por linha e comparar linha inteira nunca
   casaria.
+- **Banco que JÁ ESTÁ NO AR recebe um `ATUALIZAR`, não o instalador
+  inteiro.** Fica em `supabase/atualizacoes/`, é a concatenação das
+  migrations que entraram desde a última vez, e passa pelo MESMO compactador
+  — porque duas migrations já dão 180 linhas e cairiam no corte de 100 do
+  editor, com o mesmo erro enganoso. `gerar-compacto.py` aceita
+  `<origem> <destino>` para isso. Antes de mandar, aplique num banco montado
+  no estado do outro (todas as migrations menos as novas) e rode **duas
+  vezes**: é assim que ele chega lá.
 - **O SQL Editor do Supabase envia só as 100 primeiras linhas.** Script mais
   longo chega cortado ao banco, e o erro que aparece é o sintoma (um bloco
   `$$` "não terminado", porque o fechamento ficou fora do corte), não a causa.

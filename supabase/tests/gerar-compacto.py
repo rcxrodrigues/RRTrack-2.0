@@ -166,15 +166,30 @@ def compactar(stmt: str) -> str:
 
 
 def main() -> None:
+    """
+    Sem argumentos, compacta o INSTALAR.sql — o caso de sempre.
+
+    Com dois, compacta o arquivo que vier: um ATUALIZAR de duas migrations
+    também passa de 100 linhas e cairia na MESMA armadilha do editor, com o
+    mesmo erro enganoso (bloco `$$` "não terminado", porque o fechamento
+    ficou fora do corte). Um compactador só, para os dois casos.
+    """
     raiz = pathlib.Path(__file__).resolve().parents[2]
-    origem = raiz / 'supabase' / 'INSTALAR.sql'
-    destino = raiz / 'supabase' / 'INSTALAR-COMPACTO.sql'
+
+    if len(sys.argv) == 3:
+        origem = pathlib.Path(sys.argv[1])
+        destino = pathlib.Path(sys.argv[2])
+        cabecalho = f'-- RRTrack 2.0 - {destino.stem} (versao compacta)'
+    else:
+        origem = raiz / 'supabase' / 'INSTALAR.sql'
+        destino = raiz / 'supabase' / 'INSTALAR-COMPACTO.sql'
+        cabecalho = '-- RRTrack 2.0 - INSTALACAO DO BANCO (versao compacta)'
 
     sql = origem.read_text()
     linhas = [
-        '-- RRTrack 2.0 - INSTALACAO DO BANCO (versao compacta)',
+        cabecalho,
         '-- O SQL Editor do Supabase corta o script na linha 100; esta versao cabe.',
-        '-- Mesmo conteudo de INSTALAR.sql, sem as quebras de linha. Cole tudo e rode.',
+        f'-- Mesmo conteudo de {origem.name}, sem as quebras de linha. Cole tudo e rode.',
         '',
     ]
 
@@ -208,7 +223,7 @@ def main() -> None:
     destino.write_text('\n'.join(linhas) + '\n')
 
     total = len(linhas) + 1
-    print(f'gerado: supabase/INSTALAR-COMPACTO.sql')
+    print(f'gerado: {destino.relative_to(raiz) if destino.is_relative_to(raiz) else destino}')
     print(f'  {origem.name}: {sql.count(chr(10)) + 1} linhas')
     print(f'  compacto:      {total} linhas')
 
