@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { numero as numeroEm, texto as textoEm } from '@/lib/json';
+import { numeroTolerante, texto as textoEm } from '@/lib/json';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import type { ReceitaPorUtm } from './roas';
@@ -78,13 +78,7 @@ const RESUMO_VAZIO: Resumo = {
  * classe de bug deste projeto: some no cálculo e aparece no relatório.
  */
 function num(linha: unknown, campo: string): number {
-  const direto = numeroEm(linha, campo);
-  if (direto !== undefined) return direto;
-
-  const comoTexto = textoEm(linha, campo);
-  if (comoTexto === undefined) return 0;
-  const convertido = Number(comoTexto);
-  return Number.isFinite(convertido) ? convertido : 0;
+  return numeroTolerante(linha, campo) ?? 0;
 }
 
 /**

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { texto as textoEm } from '@/lib/json';
+import { numeroTolerante, texto as textoEm } from '@/lib/json';
 import { resolverOrigem, type Origem, type Utms } from '@/lib/painel/origem';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -346,6 +346,34 @@ export type EventoDoVisitante = {
   criadoEm: string;
 };
 
+/**
+ * A compra desta pessoa, do jeito que a gaveta precisa.
+ *
+ * NÃO é um evento, e por isso não entra na linha do tempo como se fosse:
+ * ela tem valor, status, e as duas perguntas que só ela responde — casou
+ * com quem? já foi para a Meta? Espremida entre PageViews, tudo isso
+ * sumiria.
+ */
+export type CompraDoVisitante = {
+  transactionId: string;
+  valor: number | null;
+  moeda: string;
+  status: string;
+  /**
+   * Como a venda foi ligada a esta pessoa, e por quê.
+   *
+   * É o campo que diz se a atribuição funcionou. `trck_user_id` é a ponte
+   * que se quer; `email`/`phone` é o plano B; `nenhum` é venda órfã, que
+   * conta na receita e SOME do ROAS por campanha.
+   */
+  comoCasou: string | null;
+  motivoDoCasamento: string | null;
+  /** `null` = ainda não foi para a Meta, e o painel precisa dizer isso. */
+  enviadoEm: string | null;
+  revertidoEm: string | null;
+  criadoEm: string;
+};
+
 export type Visitante = {
   trckUserId: string;
   email: string | null;
@@ -368,6 +396,14 @@ export type Visitante = {
   cidade: string | null;
   criadoEm: string;
   eventos: EventoDoVisitante[];
+  /**
+   * As compras desta pessoa.
+   *
+   * O histórico terminava no `InitiateCheckout` — e como `purchases` é
+   * outra tabela, o que interessa (a venda) ficava de fora justamente na
+   * tela que existe para investigar quem comprou.
+   */
+  compras: CompraDoVisitante[];
 };
 
 /**
@@ -394,7 +430,7 @@ export async function carregarVisitante(
 ): Promise<Visitante | null> {
   const supabase = await criarClienteServidor();
 
-  const [{ data: v }, { data: eventos }] = await Promise.all([
+  const [{ data: v }, { data: eventos }, { data: vendas }] = await Promise.all([
     supabase
       .from('visitors')
       .select(
@@ -414,7 +450,52 @@ export async function carregarVisitante(
       .eq('trck_user_id', trckUserId)
       .order('created_at', { ascending: false })
       .limit(EVENTOS_DO_VISITANTE),
+    /*
+     * As compras, pelo índice `purchases_trck_user_idx`.
+     *
+     * Sem `raw_webhook` nem os hashes: o primeiro é o payload inteiro do
+     * gateway com o cliente dentro (a mesma regra da lista de webhooks), e
+     * os segundos não dizem nada a quem olha — o e-mail em claro está ao
+     * lado e é ele que serve para conferir.
+     */
+    supabase
+      .from('purchases')
+      .select(
+        'transaction_id, value, currency, status, match_method, ' +
+          'match_reason, sent_at, reverted_at, created_at',
+      )
+      .eq('trck_user_id', trckUserId)
+      .order('created_at', { ascending: false })
+      .limit(20),
   ]);
+
+  const compras: CompraDoVisitante[] = (Array.isArray(vendas) ? vendas : [])
+    .flatMap((linha) => {
+      const transactionId = textoEm(linha, 'transaction_id');
+      const status = textoEm(linha, 'status');
+      const criadoEm = textoEm(linha, 'created_at');
+      if (
+        transactionId === undefined ||
+        status === undefined ||
+        criadoEm === undefined
+      ) {
+        return [];
+      }
+      const valor = numeroTolerante(linha, 'value');
+      return [
+        {
+          transactionId,
+          valor: valor ?? null,
+          moeda: textoEm(linha, 'currency') ?? 'BRL',
+          status,
+          comoCasou: textoEm(linha, 'match_method') ?? null,
+          motivoDoCasamento: textoEm(linha, 'match_reason') ?? null,
+          enviadoEm: textoEm(linha, 'sent_at') ?? null,
+          revertidoEm: textoEm(linha, 'reverted_at') ?? null,
+          criadoEm,
+        },
+      ];
+    });
 
   /*
    * Visitante ausente com eventos presentes NÃO é erro: o `/api/event` grava
@@ -442,7 +523,7 @@ export async function carregarVisitante(
       ];
     });
 
-  if (!v && historico.length === 0) return null;
+  if (!v && historico.length === 0 && compras.length === 0) return null;
 
   return {
     trckUserId,
@@ -466,5 +547,6 @@ export async function carregarVisitante(
     cidade: textoEm(v, 'geo_city') ?? null,
     criadoEm: textoEm(v, 'created_at') ?? (historico.at(-1)?.criadoEm ?? ''),
     eventos: historico,
+    compras,
   };
 }

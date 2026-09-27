@@ -25,6 +25,35 @@ export function numero(valor: unknown, chave: string): number | undefined {
   return typeof campo === 'number' && Number.isFinite(campo) ? campo : undefined;
 }
 
+/**
+ * O número em `chave`, aceitando também número que veio como TEXTO.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ O PostgREST devolve `numeric` como STRING, para não perder precisão.     │
+ * │                                                                          │
+ * │ `value numeric(14,2)` chega como `"259.90"`, não `259.9`. Lido pelo      │
+ * │ `numero()` estrito ele vira `undefined`, e a receita some do cálculo     │
+ * │ **sem erro nenhum** — a classe de bug mais cara deste projeto: some na   │
+ * │ conta e aparece no relatório semanas depois.                             │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Devolve `undefined` quando não há número nem texto numérico. Quem quer
+ * zero como padrão decide isso no ponto de uso — aqui, ausência é ausência.
+ */
+export function numeroTolerante(
+  valor: unknown,
+  chave: string,
+): number | undefined {
+  const direto = numero(valor, chave);
+  if (direto !== undefined) return direto;
+
+  const comoTexto = texto(valor, chave);
+  if (comoTexto === undefined || comoTexto.trim() === '') return undefined;
+
+  const convertido = Number(comoTexto);
+  return Number.isFinite(convertido) ? convertido : undefined;
+}
+
 /** O objeto aninhado em `chave`, ou `undefined`. */
 export function objeto(valor: unknown, chave: string): Record<string, unknown> | undefined {
   if (!ehObjeto(valor)) return undefined;

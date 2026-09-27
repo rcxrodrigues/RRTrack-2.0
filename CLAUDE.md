@@ -592,6 +592,22 @@ de copiar.
   para pendurá-lo nos links de checkout e de WhatsApp. Não é descuido.
 - **O cache de `settings` guarda também a falha**, por 5 segundos. Sem isso,
   numa queda do Supabase cada pageview do site esperava o timeout da conexão.
+- **O NOME que vai para a gtag é o do GA4, não o da Meta.** O funil de
+  comércio eletrônico do GA4 tem nomes próprios (`view_item`, `add_to_cart`,
+  `begin_checkout`, `purchase`), e mandar `AddToCart` para lá cria um evento
+  **customizado**: ele aparece na lista de eventos e não alimenta relatório
+  nenhum de comércio eletrônico — que é justamente onde a pessoa vai olhar.
+  Não quebra, não avisa, e o relatório fica vazio. `NOME_GA4` no snippet
+  traduz; o nome da Meta continua indo para o `fbq` e para o `events_log`.
+  Evento sem par (`rrtrack.track('Lead')`) vai com o nome que veio.
+- **`ViewContent` dispara em página de produto, e só nela.** É o degrau entre
+  ver e pôr no carrinho, e a Meta otimiza com ele. Detectar demais é pior que
+  de menos: um `ViewContent` em toda página ensinaria a Meta que a home é
+  produto, e o público de remarketing viraria "todo mundo". O teste é no
+  CAMINHO (`/products/<handle>`, inclusive dentro de `/collections/`), nunca
+  no href — e sem regex, pela armadilha da barra escapada. Sai **mesmo sem**
+  o tema expor `ShopifyAnalytics`: evento sem `content_ids` ainda ensina a
+  Meta quem olhou, e um evento a menos não ensina nada.
 - **O `PageView` passa pelo `api.track`, nunca por um `fbq` solto.** Um
   `fbq('track','PageView')` sem `eventID` vai só pelo navegador: sem
   deduplicação, e sem NADA quando um bloqueador mata o pixel — que é o
@@ -614,6 +630,12 @@ de copiar.
 - **`/t.js` não tem allowlist** — tag de script não manda `Origin`, e o arquivo
   só contém ids de GA4 e de pixel, que qualquer visitante já enxerga. Token
   nenhum passa por ali.
+
+> **Teste de snippet espera a fila de microtasks.** O PageView e o
+> ViewContent saem no `.then()` do `/api/identify` — a trava que impede o
+> evento de nascer órfão. Ler os eventos logo depois do `vm.runInContext`
+> pega o array VAZIO, e o teste reprova dizendo que o evento não dispara
+> quando ele dispara um tique depois. `montar()` é `async` por isso.
 
 ### Hash para a CAPI: siga o `normalize.py`, não a prosa
 
@@ -1015,6 +1037,28 @@ Conversions API, onde ele só atrapalha o match.
 
 O `ip` da compra é o do comprador **quando o gateway manda** (só a Adoorei e
 a Pagou mandam); o geo vem do visitante, copiado no casamento.
+
+### Testar a venda ANTES de ter checkout
+
+`docs/TESTAR-VENDA.md` tem um `curl` por gateway, com o `trck_user_id` no
+campo certo de cada um. Existe porque a metade de baixo do sistema — webhook
+→ grava → casa → manda para a Meta — só roda quando há checkout ligado, e
+descobrir um problema ali durante a primeira venda de verdade é a pior hora
+possível.
+
+**Os cinco payloads são testados a cada `npm run check`**
+(`exemplos-do-doc.test.ts`): o adaptador certo reconhece, o `trck_user_id`
+atravessa, e o status entra como `pendente`. Documento com exemplo quebrado é
+pior que documento nenhum — quem cola um curl e leva 202 conclui que o
+SISTEMA está errado e vai depurar o lugar errado. Escrever esse teste pegou
+quatro erros no doc na primeira rodada: alias da Yampi em português (é
+configuração da loja, não padrão), `orderId` da Zedy como número (é texto),
+`status` da Zedy fora do mapa, e os campos da Adoorei com nome inventado.
+
+O Passo 1 do doc usa status **pendente** de propósito: só `aprovada` dispara
+conversão, então ele exercita tudo **sem encostar no pixel**. O Passo 2, que
+dispara de verdade, pede o `test_event_code` antes — porque a Conversions API
+não tem como desfazer uma conversão já contada.
 
 ### Nada que chega se perde
 

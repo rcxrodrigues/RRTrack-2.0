@@ -7,10 +7,12 @@ import { Quando } from '@/components/dash/quando';
 import { corDoEvento } from '@/lib/painel/cores-evento';
 import { resolverOrigem } from '@/lib/painel/origem';
 import type {
+  CompraDoVisitante,
   EventoDoVisitante,
   PayloadDoEvento,
   Visitante,
 } from '@/lib/painel/eventos';
+import { moeda } from '@/lib/formato';
 
 import { carregarPayloadDoEvento } from '../actions';
 
@@ -115,6 +117,102 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
   );
 }
 
+/** O tom do selo por status. Verde só para o que virou dinheiro. */
+const TOM_STATUS: Record<string, string> = {
+  aprovada: 'text-success',
+  pendente: 'text-muted-foreground',
+  recusada: 'text-muted-foreground',
+  estornada: 'text-warning',
+  chargeback: 'text-destructive-vivid',
+};
+
+/**
+ * O que cada `match_method` significa, em português e sem rodeio.
+ *
+ * `nenhum` é o caso que custa dinheiro: a venda existe, entra na receita e
+ * SOME do ROAS por campanha. A tela precisa dizer isso, não mostrar a
+ * palavra crua do banco.
+ */
+const COMO_CASOU: Record<string, string> = {
+  trck_user_id: 'pelo identificador — a ponte funcionou',
+  email: 'pelo e-mail (plano B)',
+  phone: 'pelo telefone (plano B)',
+  nenhum: 'NÃO casou — fora do ROAS por campanha',
+};
+
+/**
+ * A compra desta pessoa.
+ *
+ * Seção própria, e não mais uma linha no histórico: a venda tem valor,
+ * status, e as duas perguntas que só ela responde — casou com quem, e já
+ * foi para a Meta. Espremida entre PageViews, tudo isso sumiria, e era
+ * exatamente o que faltava: o histórico terminava no `InitiateCheckout`,
+ * logo antes do que interessa.
+ */
+function Compra({ compra: c }: { compra: CompraDoVisitante }) {
+  const orfa = c.comoCasou === 'nenhum' || c.comoCasou === null;
+
+  return (
+    <div className="border-border/60 flex flex-col gap-0.5 border-b py-2 last:border-b-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <span
+          className={`text-sm font-medium ${TOM_STATUS[c.status] ?? 'text-foreground'}`}
+        >
+          {c.valor === null ? '—' : moeda(c.valor)}
+        </span>
+        <span className="text-muted-foreground text-xs">{c.status}</span>
+      </div>
+
+      <span className="text-muted-foreground font-mono text-[11px] wrap-anywhere">
+        {c.transactionId}
+      </span>
+
+      <Campo
+        rotulo="Casou"
+        valor={
+          <span className={orfa ? 'text-warning' : undefined}>
+            {COMO_CASOU[c.comoCasou ?? ''] ?? c.comoCasou ?? 'sem registro'}
+          </span>
+        }
+      />
+      {/* O motivo só quando ele acrescenta ao que a linha acima já disse. */}
+      {c.motivoDoCasamento !== null && (
+        <Campo rotulo="Motivo" valor={c.motivoDoCasamento} />
+      )}
+
+      {/*
+        "Já foi para a Meta?" é a pergunta que fecha o sistema, e a resposta
+        não pode ser um campo em branco. `sent_at` vazio numa venda aprovada
+        é conversão que não chegou — o oposto de silêncio.
+      */}
+      <Campo
+        rotulo="Foi para a Meta"
+        valor={
+          c.enviadoEm !== null ? (
+            <Quando iso={c.enviadoEm} />
+          ) : c.status === 'aprovada' ? (
+            <span className="text-destructive-vivid">
+              ainda não — veja o log do evento
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              não (só `aprovada` dispara)
+            </span>
+          )
+        }
+      />
+
+      {c.revertidoEm !== null && (
+        <Campo
+          rotulo="Estorno desfeito em"
+          valor={<Quando iso={c.revertidoEm} />}
+        />
+      )}
+      <Campo rotulo="Chegou em" valor={<Quando iso={c.criadoEm} />} />
+    </div>
+  );
+}
+
 function Conteudo({ visitante: v }: { visitante: Visitante }) {
   const nome = [v.primeiroNome, v.sobrenome].filter(Boolean).join(' ');
   const origem = resolverOrigem({ doVisitante: v, referrer: v.referrer });
@@ -193,6 +291,16 @@ function Conteudo({ visitante: v }: { visitante: Visitante }) {
         <Campo rotulo="Entrou por" valor={v.landingUrl} />
         <Campo rotulo="Região" valor={lugar} />
       </Secao>
+
+      {v.compras.length > 0 && (
+        <Secao
+          titulo={v.compras.length === 1 ? 'Compra' : `Compras (${String(v.compras.length)})`}
+        >
+          {v.compras.map((c) => (
+            <Compra key={c.transactionId} compra={c} />
+          ))}
+        </Secao>
+      )}
 
       <section className="flex flex-col px-4 py-3">
         <h4 className="text-muted-foreground mb-1 text-xs font-semibold tracking-wide uppercase">

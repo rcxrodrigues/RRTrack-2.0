@@ -241,6 +241,17 @@ export function montarSnippet(base: string, config: Configuracao): string {
     return 'e' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
   }
 
+  /* O funil de comércio eletrônico do GA4 tem nomes próprios, e são outros
+     que os da Meta. Evento fora desta lista vai com o nome que veio — é o
+     caso do rrtrack.track('Lead'), que não tem par no GA4. */
+  var NOME_GA4 = {
+    PageView: 'page_view',
+    ViewContent: 'view_item',
+    AddToCart: 'add_to_cart',
+    InitiateCheckout: 'begin_checkout',
+    Purchase: 'purchase'
+  };
+
   /* rrtrack.track('Lead', { value: 97, currency: 'BRL' }) */
   api.track = seguro(function (nome, dados, opcoes) {
     var eventId = novoEventId();
@@ -253,9 +264,15 @@ export function montarSnippet(base: string, config: Configuracao): string {
     /* "ga4: false" existe para um caso só: o PageView. A gtag já manda
        page_view sozinha no config, e um evento a mais chamado "PageView"
        seria um segundo evento no relatório, com outro nome, medindo a mesma
-       coisa. */
+       coisa.
+
+       E o NOME É OUTRO do lado do GA4. Mandar 'AddToCart' para a gtag cria
+       um evento CUSTOMIZADO: ele aparece na lista de eventos e não alimenta
+       nenhum relatório de comércio eletrônico — que é justamente para onde
+       a pessoa vai olhar. O nome da Meta continua indo para o fbq e para o
+       events_log; só a gtag recebe o dela. */
     if (w.gtag && CFG.ga4.length && !(opcoes && opcoes.ga4 === false)) {
-      w.gtag('event', nome, custom);
+      w.gtag('event', NOME_GA4[nome] || nome, custom);
     }
 
     var corpo = {
@@ -343,6 +360,47 @@ export function montarSnippet(base: string, config: Configuracao): string {
     }
     if (typeof o.total_price === 'number') total = o.total_price;
     return { value: total / 100, content_ids: ids };
+  }
+
+  /* Pagina de produto da Shopify: /products/<handle>, e tambem dentro de
+     /collections/<colecao>/products/<handle>. Testado no CAMINHO, nunca no
+     href: um indexOf no href casaria com
+     https://golpe.com/?volta=/products/x e dispararia a partir do link de
+     terceiro. Sem regex, pela armadilha da barra escapada no template
+     literal que gera este arquivo. */
+  function ehProduto(caminho) {
+    var i = caminho.indexOf('/products/');
+    return i >= 0 && caminho.length > i + '/products/'.length;
+  }
+
+  /* O produto que o tema da Shopify expoe.
+     Nem todo tema expoe, e o ViewContent sai mesmo sem ele: um evento sem
+     content_ids ainda ensina a Meta QUEM olhou, e um evento a menos nao
+     ensina nada. O preco vem em CENTAVOS, como no resto da Shopify. */
+  function produtoDaPagina() {
+    var a = w.ShopifyAnalytics;
+    var p = a && a.meta && a.meta.product;
+    if (!p) return null;
+
+    var d = {};
+    if (p.id) { d.content_ids = [String(p.id)]; }
+    var vs = p.variants;
+    var v = (vs && vs.length) ? vs[0] : null;
+    if (v && typeof v.price === 'number') { d.value = v.price / 100; }
+    return d;
+  }
+
+  function dispararProduto() {
+    if (!ehProduto(caminhoDe(w.location.href))) return;
+    if (!umaVezSo('ViewContent')) return;
+
+    var d = { currency: CFG.moeda || 'BRL' };
+    var p = seguro(produtoDaPagina)();
+    if (p) {
+      if (p.content_ids) { d.content_ids = p.content_ids; d.content_type = 'product'; }
+      if (p.value) { d.value = p.value; }
+    }
+    api.track('ViewContent', d);
   }
 
   function dispararCarrinho(dados) {
@@ -471,6 +529,10 @@ export function montarSnippet(base: string, config: Configuracao): string {
   --------------------------------------------------------------------- */
   function dispararPageView() {
     api.track('PageView', {}, { ga4: false });
+    /* ViewContent logo atras, e pela MESMA razao de esperar o identify:
+       numa visita nova o _trck ainda nao existe, e o evento nasceria orfao.
+       Ele sai so em pagina de produto — ehProduto() decide. */
+    dispararProduto();
   }
 
   var identificacao = seguro(identificar)();
