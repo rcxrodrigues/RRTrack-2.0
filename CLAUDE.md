@@ -60,7 +60,11 @@ o funil: │ Yampi · Pagou · Adoorei · Zedy   │ → │ AppMax · MillionsP
 > Com as duas apontando para cá, a mesma venda entra duas vezes com ids
 > diferentes e vira **duas conversões na Meta**. A Appmax confirma que o
 > risco é real: ela **suprime** o webhook dela quando o pedido veio da
-> Yampi, de propósito. `acharDuplicataDeOutraCamada` em
+> Yampi, de propósito.
+>
+> **E a Pagou é as DUAS camadas**, o que torna o cuidado mais fino: ali as
+> duas pontas são da mesma empresa, e configurar "uma só" quer dizer uma
+> configuração dentro do painel dela, não uma por fornecedor. `acharDuplicataDeOutraCamada` em
 > `src/lib/compras.ts` é a rede de segurança para quando a configuração
 > escapar.
 
@@ -965,10 +969,25 @@ Checkout e gateway podem os dois mandar webhook do mesmo pedido, com
 id, então a Meta **não** deduplica: contam duas.
 
 `acharDuplicataDeOutraCamada` exige que **quatro** coisas batam: mesmo
-e-mail, mesmo valor, plataforma diferente e dentro de meia hora. Exigir as
-quatro é deliberado — duas compras iguais, do mesmo e-mail, pelo mesmo
-valor, em camadas diferentes e em trinta minutos é configuração duplicada,
-não cliente entusiasmado.
+e-mail, mesmo valor, **outra linha** (`transaction_id` diferente) e dentro
+de meia hora.
+
+> **Era "plataforma diferente", e o proxy quebrou.** A ideia — "camadas
+> diferentes do funil" — estava certa; usar `platform` para representá-la,
+> não. **A Pagou é checkout E gateway ao mesmo tempo**, então as duas
+> linhas nasciam `platform = 'pagou'`, o `neq` as excluía, a duplicata não
+> era achada e a venda ia DUAS VEZES para a Meta — calada, e é justamente
+> isso que esta função existe para impedir.
+>
+> O que sempre importou é "outra LINHA da mesma venda", e a identidade da
+> linha é o `transaction_id`. Quando as duas camadas reportam o mesmo id, o
+> upsert já as funde e nada disto roda.
+>
+> O preço da troca: quem compra o mesmo valor duas vezes em trinta minutos,
+> no mesmo checkout, tem a segunda conversão suprimida. A venda continua
+> gravada e continua na receita — perde-se um sinal para a Meta. É o erro
+> barato: contar conversão que não houve ensina o otimizador errado **e**
+> infla o faturamento.
 
 Faltando e-mail ou valor, **envia**: errar para o lado de não enviar custa
 aprendizado; enviar duas vezes custa aprendizado ERRADO e ainda infla o

@@ -151,11 +151,11 @@ async function acharDuplicataDeOutraCamada(
    * total subtrairia R$ 200 de uma devolução de R$ 20.
    */
   const valor = compra.reverted_value ?? compra.value;
-  const plataforma = texto(compra, 'platform');
+  const id = texto(compra, 'transaction_id');
 
   // Sem e-mail ou sem valor não há como comparar com segurança, e chutar
   // aqui significaria descartar venda boa.
-  if (!emailHash || typeof valor !== 'number' || !plataforma) return null;
+  if (!emailHash || typeof valor !== 'number' || !id) return null;
 
   const meiaHoraAtras = new Date(Date.now() - 30 * 60_000).toISOString();
 
@@ -164,8 +164,33 @@ async function acharDuplicataDeOutraCamada(
     .select('transaction_id')
     .eq('email_hash', emailHash)
     .eq('value', valor)
-    .eq('status', 'aprovada')
-    .neq('platform', plataforma)
+    /*
+     * ┌─────────────────────────────────────────────────────────────────────┐
+     * │ OUTRO `transaction_id`, NÃO outra PLATAFORMA.                      │
+     * │                                                                    │
+     * │ Aqui era `.neq('platform', …)`, e a ideia era boa: "camadas        │
+     * │ diferentes do funil". O problema é que plataforma era um PROXY     │
+     * │ para camada, e o proxy quebra no caso em que uma empresa é as      │
+     * │ DUAS — a Pagou é checkout e gateway ao mesmo tempo.                │
+     * │                                                                    │
+     * │ Com o proxy, as duas linhas nasciam `platform = 'pagou'`, o        │
+     * │ `neq` as excluía, a duplicata NÃO era encontrada e a venda ia      │
+     * │ DUAS VEZES para a Meta — exatamente o que esta função existe para  │
+     * │ impedir, e calada.                                                 │
+     * │                                                                    │
+     * │ O que sempre importou é "outra LINHA da mesma venda", e a          │
+     * │ identidade da linha é o `transaction_id`. Quando as duas camadas   │
+     * │ reportam o mesmo id, o upsert já as funde numa linha só e nada     │
+     * │ disto roda.                                                        │
+     * │                                                                    │
+     * │ O preço: alguém que compra o MESMO valor duas vezes em trinta      │
+     * │ minutos, no mesmo checkout, tem a segunda conversão suprimida. A   │
+     * │ venda continua gravada e continua na receita — o que se perde é um │
+     * │ sinal para a Meta. É o erro barato: contar conversão que não       │
+     * │ houve ensina o otimizador errado E infla o faturamento.            │
+     * └─────────────────────────────────────────────────────────────────────┘
+     */
+    .neq('transaction_id', id)
     .not('sent_at', 'is', null)
     .gte('created_at', meiaHoraAtras)
     .limit(1)

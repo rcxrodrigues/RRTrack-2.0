@@ -14,6 +14,9 @@ const segredoDoGa4 = vi.fn();
 const maybeSingle = vi.fn();
 const update = vi.fn();
 const duplicata = vi.fn();
+
+/** Os `neq` aplicados na busca de duplicata, para o teste afirmar sobre eles. */
+const filtrosNeq: [string, unknown][] = [];
 const ga4Enviado = vi.fn();
 
 vi.mock('@/lib/settings', () => ({ carregarConfiguracao: () => carregarConfiguracao() }));
@@ -51,10 +54,22 @@ vi.mock('@/lib/supabase/admin', () => {
     // `Object.assign` numa promessa devolve o tipo combinado sem afirmação:
     // o compilador infere, em vez de acreditar num `as`.
     const encadeaveis = Object.fromEntries(
-      ['eq', 'neq', 'not', 'gte', 'limit', 'order', 'returns', 'select'].map(
+      ['eq', 'not', 'gte', 'limit', 'order', 'returns', 'select'].map(
         (metodo) => [metodo, () => consulta()],
       ),
     );
+    /*
+     * `neq` é o único que o teste precisa INSPECIONAR: é nele que mora a
+     * diferença entre procurar "outra plataforma" e "outra linha", e a
+     * primeira tem um furo que a segunda não tem. Registrar o resto seria
+     * ruído.
+     */
+    Object.assign(encadeaveis, {
+      neq: (coluna: string, valor: unknown) => {
+        filtrosNeq.push([coluna, valor]);
+        return consulta();
+      },
+    });
     return Object.assign(Promise.resolve(duplicata()), encadeaveis, {
       maybeSingle: () => maybeSingle(),
     });
@@ -130,6 +145,7 @@ beforeEach(() => {
   segredoDoGa4.mockResolvedValue('segredo-ga4');
   maybeSingle.mockResolvedValue({ data: APROVADA });
   duplicata.mockReturnValue({ data: [] });
+  filtrosNeq.length = 0;
 });
 
 describe('quando dispara', () => {
@@ -387,6 +403,39 @@ describe('a mesma venda pelas DUAS camadas do funil', () => {
     );
     // Marcado para o reenvio do gateway não tentar de novo a cada vez.
     expect(texto(gravado, 'sent_at')).toBeTruthy();
+  });
+
+  it('procura a duplicata por OUTRA LINHA, não por outra plataforma', async () => {
+    /*
+     * ┌───────────────────────────────────────────────────────────────────┐
+     * │ A PAGOU É CHECKOUT **E** GATEWAY.                                 │
+     * │                                                                   │
+     * │ A busca filtrava por `platform` diferente — um proxy para "outra  │
+     * │ camada do funil". O proxy quebra quando uma empresa é as duas:    │
+     * │ as duas linhas nascem `platform = 'pagou'`, o filtro as exclui, a │
+     * │ duplicata não é achada e a venda vai DUAS VEZES para a Meta.      │
+     * │                                                                   │
+     * │ Este teste falharia com o código anterior.                        │
+     * └───────────────────────────────────────────────────────────────────┘
+     */
+    duplicata.mockReturnValue({ data: [] });
+    await dispararCompra('pagou:9001');
+
+    const colunas = filtrosNeq.map(([coluna]) => coluna);
+    expect(colunas).toContain('transaction_id');
+    expect(colunas).not.toContain('platform');
+  });
+
+  it('acha a duplicata da MESMA plataforma — o caso Pagou', async () => {
+    // Checkout e gateway da mesma empresa, ids diferentes: é duplicata, e
+    // antes passava batido.
+    duplicata.mockReturnValue({ data: [{ transaction_id: 'pagou:9002' }] });
+    await dispararCompra('pagou:9001');
+
+    const gravado = update.mock.calls.at(-1)?.[0];
+    expect(texto(objeto(gravado, 'response_meta'), 'duplicata_de')).toBe(
+      'pagou:9002',
+    );
   });
 
   it('envia normalmente quando não há duplicata', async () => {
