@@ -40,10 +40,17 @@ export function EsqueletoCabecalho() {
       <Skeleton className="h-6 w-28 md:hidden" />
       {/*
         O seletor de período: cinco botões (Hoje · Ontem · 7 dias · 30 dias ·
-        Este mês) numa faixa de altura fixa. No celular ele ocupa a largura
-        toda; no desktop encolhe e vai para a direita, como o de verdade.
+        Este mês) numa faixa de altura fixa.
+
+        SEM `ms-auto`, e isso foi erro meu. O contêiner real é
+        `sm:justify-between` com o título `md:hidden` — então a partir de
+        768px o seletor é o ÚNICO filho e assenta à ESQUERDA. Com `ms-auto`
+        o esqueleto aparecia à direita e o conteúdo real saltava a largura
+        da tela inteira para a esquerda, no componente que existe justamente
+        para não deixar nada saltar. Aqui o título placeholder tem o mesmo
+        `md:hidden`, então o comportamento acompanha sozinho.
       */}
-      <Skeleton className="h-11 w-full sm:ms-auto sm:w-80" />
+      <Skeleton className="h-11 w-full sm:w-80" />
     </div>
   );
 }

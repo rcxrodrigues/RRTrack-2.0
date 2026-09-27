@@ -101,6 +101,36 @@ describe('resolverOrigem', () => {
     expect(o.rotulo).toBe('newsletter');
   });
 
+  it('a fonte NÃO repete o rótulo quando não há campanha', () => {
+    /*
+     * `?utm_source=facebook&utm_medium=cpc` sem campanha é o caso comum: é
+     * o que a marcação automática da Meta gera, e quase todo link de
+     * newsletter. Sem campanha a trilha cai para origem/meio — a MESMA
+     * string que a fonte devolve — e a tela, que imprime os dois em
+     * sequência, mostrava "facebook · cpc · facebook · cpc".
+     */
+    const o = resolverOrigem({
+      doEvento: { utmSource: 'facebook', utmMedium: 'cpc' },
+    });
+    expect(o.rotulo).toBe('facebook · cpc');
+    expect(o.fonte).toBeNull();
+  });
+
+  it('com UMA utm_source só, também não duplica', () => {
+    const o = resolverOrigem({ doEvento: { utmSource: 'newsletter' } });
+    expect(o.rotulo).toBe('newsletter');
+    expect(o.fonte).toBeNull();
+  });
+
+  it('a fonte FICA quando acrescenta — campanha de um lado, origem do outro', () => {
+    // Aqui os dois dizem coisas diferentes, e a tela quer os dois.
+    const o = resolverOrigem({
+      doEvento: { utmSource: 'facebook', utmMedium: 'cpc', utmCampaign: 'BLACK' },
+    });
+    expect(o.rotulo).toBe('BLACK');
+    expect(o.fonte).toBe('facebook · cpc');
+  });
+
   it('a hierarquia usa › e a fonte usa ·', () => {
     // Separadores diferentes porque as coisas são diferentes: campanha ›
     // conjunto › anúncio é UM caminho; origem · meio são dois campos.

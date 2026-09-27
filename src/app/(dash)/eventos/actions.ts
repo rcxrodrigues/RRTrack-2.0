@@ -173,7 +173,18 @@ export async function carregarPayloadDoEvento(
 export async function carregarVisitanteDoEvento(
   trckUserId: string,
 ): Promise<Visitante | null> {
-  await usuarioAtual();
+  /*
+   * A guarda com `if`, como nas irmãs deste arquivo.
+   *
+   * `usuarioAtual()` devolve `null` quando não há sessão — não lança, não
+   * redireciona. `await` sem checagem era decoração: a action seguia em
+   * frente do mesmo jeito. Hoje o estrago é contido porque `revoke all …
+   * from anon` faz a consulta falhar pelo banco, mas isso é um GRANT
+   * segurando a porta, e esta action passou a devolver também as compras —
+   * valor, status e por que casou — além de e-mail, telefone e nome.
+   */
+  if (!(await usuarioAtual())) return null;
+
   return carregarVisitante(trckUserId);
 }
 

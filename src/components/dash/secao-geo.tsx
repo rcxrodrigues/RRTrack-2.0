@@ -17,8 +17,19 @@ import type { LinhaCidade, LinhaGeo } from '@/lib/painel/consultas';
  * demais — "SP" é metade do país, e é a cidade que decide frete e prazo.
  *
  * CINCO linhas por lista, não oito. O bloco inteiro tinha o dobro da altura e
- * empurrava o resto da tela para baixo; da sexta em diante a cauda é longa e
- * não muda decisão nenhuma. É um número só, aqui, se um dia precisar crescer.
+ * empurrava o resto da tela para baixo. É um número só, aqui, se um dia
+ * precisar crescer.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ O CORTE É DA `ListaRanqueada`, NÃO UM `slice` ANTES DELA.                │
+ * │                                                                          │
+ * │ Cortar aqui entregava uma lista já curta, e o "+ N outros, somando X"    │
+ * │ do componente NUNCA aparecia — ele existe justamente para a lista não    │
+ * │ esconder linhas em silêncio. Nas cidades isso é a maior parte do dado:   │
+ * │ uma loja brasileira tem centenas delas, o cartão mostrava cinco, e nada  │
+ * │ dizia que havia mais nem quanto somavam. Passando `limite`, quem decide  │
+ * │ o que mostrar e o que dobrar é o componente.                             │
+ * └───────────────────────────────────────────────────────────────────────────┘
  */
 const QUANTAS = 5;
 
@@ -65,10 +76,10 @@ export function SecaoGeo({
           </p>
         </div>
         <ListaRanqueada
+          limite={QUANTAS}
           formatar={(v) => moeda(v)}
           itens={linhas
             .toSorted((a, b) => b.receita - a.receita)
-            .slice(0, QUANTAS)
             .map((l) => ({
               id: `r-${l.pais}-${l.regiao ?? ''}`,
               rotulo: nome(l),
@@ -90,9 +101,9 @@ export function SecaoGeo({
           </p>
         </div>
         <ListaRanqueada
+          limite={QUANTAS}
           itens={linhas
             .toSorted((a, b) => b.visitantes - a.visitantes)
-            .slice(0, QUANTAS)
             .map((l) => {
               const taxa = razao(l.aprovadas, l.visitantes);
               return {
@@ -113,9 +124,9 @@ export function SecaoGeo({
           </p>
         </div>
         <ListaRanqueada
+          limite={QUANTAS}
           itens={cidades
             .toSorted((a, b) => b.visitantes - a.visitantes)
-            .slice(0, QUANTAS)
             .map((l) => {
               const taxa = razao(l.aprovadas, l.visitantes);
               return {

@@ -12,7 +12,7 @@ import type {
   PayloadDoEvento,
   Visitante,
 } from '@/lib/painel/eventos';
-import { moeda } from '@/lib/formato';
+import { moeda, simbolo } from '@/lib/formato';
 
 import { carregarPayloadDoEvento } from '../actions';
 
@@ -158,7 +158,9 @@ function Compra({ compra: c }: { compra: CompraDoVisitante }) {
         <span
           className={`text-sm font-medium ${TOM_STATUS[c.status] ?? 'text-foreground'}`}
         >
-          {c.valor === null ? '—' : moeda(c.valor)}
+          {/* A moeda da VENDA, não `R$` cravado: a Pagou opera em MXN, e o
+              faturamento já mostrava `MX$` na mesma linha. */}
+          {c.valor === null ? '—' : moeda(c.valor, simbolo(c.moeda))}
         </span>
         <span className="text-muted-foreground text-xs">{c.status}</span>
       </div>

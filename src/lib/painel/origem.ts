@@ -79,9 +79,22 @@ function trilha(u: Utms): string {
   return solto.join(' · ');
 }
 
-function fonteDe(u: Utms): string | null {
+/**
+ * `origem · meio`, quando acrescenta ao rótulo.
+ *
+ * `null` quando REPETE o rótulo — e repete no caso comum: sem
+ * `utm_campaign`, a `trilha()` cai para origem/meio, que é exatamente o
+ * que esta função devolve. A tela imprime os dois em sequência, então
+ * `?utm_source=facebook&utm_medium=cpc` (a marcação automática da Meta, e
+ * quase todo link de newsletter) saía como
+ * "facebook · cpc · facebook · cpc".
+ */
+function fonteDe(u: Utms, rotulo: string): string | null {
   const partes = [u.utmSource, u.utmMedium].filter((v) => !vazio(v));
-  return partes.length > 0 ? partes.join(' · ') : null;
+  if (partes.length === 0) return null;
+
+  const fonte = partes.join(' · ');
+  return fonte === rotulo ? null : fonte;
 }
 
 /**
@@ -114,15 +127,13 @@ export function resolverOrigem({
   referrer?: string | null;
 }): Origem {
   if (doEvento && temUtm(doEvento)) {
-    return { nivel: 'evento', rotulo: trilha(doEvento), fonte: fonteDe(doEvento) };
+    const rotulo = trilha(doEvento);
+    return { nivel: 'evento', rotulo, fonte: fonteDe(doEvento, rotulo) };
   }
 
   if (doVisitante && temUtm(doVisitante)) {
-    return {
-      nivel: 'visitante',
-      rotulo: trilha(doVisitante),
-      fonte: fonteDe(doVisitante),
-    };
+    const rotulo = trilha(doVisitante);
+    return { nivel: 'visitante', rotulo, fonte: fonteDe(doVisitante, rotulo) };
   }
 
   if (!vazio(referrer)) {

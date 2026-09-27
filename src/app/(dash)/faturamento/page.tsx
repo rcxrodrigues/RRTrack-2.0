@@ -6,7 +6,7 @@ import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { SerieTemporal } from '@/components/dash/serie-temporal';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { inteiro, moeda, razao, variacao } from '@/lib/formato';
+import { inteiro, moeda, razao, simbolo, variacao } from '@/lib/formato';
 import {
   buscarCompras,
   COMPRAS_POR_PAGINA,
@@ -291,7 +291,4 @@ export default async function FaturamentoPage({
   );
 }
 
-/** A moeda é do gateway, não nossa: a Pagou opera em MXN também. */
-function simbolo(moedaIso: string): string {
-  return { BRL: 'R$', USD: 'US$', EUR: '€', MXN: 'MX$' }[moedaIso] ?? moedaIso;
-}
+

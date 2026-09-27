@@ -42,6 +42,11 @@ type Enviado = {
   custom_data: Record<string, unknown> | undefined;
 };
 
+/** O que o snippet pendura em `window.rrtrack`. */
+type ApiDoSnippet = {
+  track: (nome: string, dados: Record<string, unknown>) => void;
+};
+
 /** Uma chamada à gtag: o nome que ELA recebeu, não o que a Meta recebeu. */
 type ChamadaGtag = { nome: string; dados: Record<string, unknown> };
 
@@ -50,12 +55,15 @@ type Ambiente = {
   gtag: ChamadaGtag[];
   /** Os caminhos chamados, na ordem — é o que prova a sequência. */
   caminhos: string[];
+  /** Dispara um evento pela API pública, como o tema do lojista faria. */
+  track: (nome: string, dados: Record<string, unknown>) => void;
 };
 
 /** O `ShopifyAnalytics.meta.product` que o tema expõe. Nem todo tema expõe. */
 type ProdutoDoTema = {
   id: number;
   variants?: { id: number; price: number }[];
+  selectedVariantId?: number;
 };
 
 /*
@@ -82,7 +90,12 @@ async function montar(href: string, produto?: ProdutoDoTema): Promise<Ambiente> 
   };
 
   const janela = {
-    location: { href, search: '', origin: 'https://minhaloja.com' },
+    location: {
+      href,
+      // A query da própria href: o snippet lê `?variant=` daqui.
+      search: href.includes('?') ? href.slice(href.indexOf('?')) : '',
+      origin: 'https://minhaloja.com',
+    },
     document: documento,
     setTimeout: () => 0,
     /*
@@ -94,6 +107,8 @@ async function montar(href: string, produto?: ProdutoDoTema): Promise<Ambiente> 
       if (tipo === 'event') gtag.push({ nome, dados: dados || {} });
     },
     ShopifyAnalytics: produto ? { meta: { product: produto } } : undefined,
+    /* O snippet pendura a API aqui; o teste a usa para disparar eventos. */
+    rrtrack: undefined as ApiDoSnippet | undefined,
     fetch: (url: string, opcoes?: { body?: string }) => {
       if (url.includes('/api/')) {
         caminhos.push(url.includes('/api/identify') ? '/api/identify' : '/api/event');
@@ -129,7 +144,12 @@ async function montar(href: string, produto?: ProdutoDoTema): Promise<Ambiente> 
   // ViewContent entram, atrás da promessa do identify.
   await new Promise((r) => { setTimeout(r, 0); });
 
-  return { enviados, gtag, caminhos };
+  // Pela API pública de verdade, que é como o tema do lojista chama.
+  const track = (nome: string, dados: Record<string, unknown>): void => {
+    janela.rrtrack?.track(nome, dados);
+  };
+
+  return { enviados, gtag, caminhos, track };
 }
 
 function nomes(a: Ambiente): string[] {
@@ -205,6 +225,56 @@ describe('ViewContent — o que ele leva', () => {
     expect(evento?.custom_data?.content_type).toBe('product');
   });
 
+  it('usa a variante DA PÁGINA, não a primeira da lista', async () => {
+    /*
+     * ┌───────────────────────────────────────────────────────────────────┐
+     * │ variants[0] MANDA SEMPRE O MAIS BARATO.                           │
+     * │                                                                   │
+     * │ Numa camiseta P/M/G por 89,90 / 109,90 / 129,90, quem abre a GG   │
+     * │ gerava um ViewContent de R$ 89,90. A otimização por valor da Meta │
+     * │ aprende com esse número, e a coluna de valor do Events Manager    │
+     * │ passa a não bater com a página — sem erro nenhum aparecer.        │
+     * └───────────────────────────────────────────────────────────────────┘
+     */
+    const a = await montar(
+      'https://minhaloja.com/products/camiseta?variant=333',
+      {
+        id: 777,
+        variants: [
+          { id: 111, price: 8990 },
+          { id: 222, price: 10990 },
+          { id: 333, price: 12990 },
+        ],
+      },
+    );
+    const evento = a.enviados.find((e) => e.event_name === 'ViewContent');
+    expect(evento?.custom_data?.value).toBe(129.9);
+  });
+
+  it('sem ?variant=, a primeira é a resposta certa e não um palpite', async () => {
+    // É a que a Shopify mostra quando a URL não escolhe.
+    const a = await montar('https://minhaloja.com/products/camiseta', {
+      id: 777,
+      variants: [
+        { id: 111, price: 8990 },
+        { id: 222, price: 10990 },
+      ],
+    });
+    const evento = a.enviados.find((e) => e.event_name === 'ViewContent');
+    expect(evento?.custom_data?.value).toBe(89.9);
+  });
+
+  it('preço ZERO vai como 0, não some', async () => {
+    // Brinde e amostra grátis valem R$ 0,00. O teste falsy jogava o campo
+    // fora — a mesma armadilha do zero que o painel evita nos custos.
+    const a = await montar('https://minhaloja.com/products/brinde', {
+      id: 900,
+      variants: [{ id: 1, price: 0 }],
+    });
+    const evento = a.enviados.find((e) => e.event_name === 'ViewContent');
+    expect(evento?.custom_data?.value).toBe(0);
+  });
+
   it('SAI MESMO SEM o tema expor o produto', async () => {
     /*
      * Nem todo tema tem ShopifyAnalytics. Um evento sem content_ids ainda
@@ -229,6 +299,46 @@ describe('o nome que vai para a gtag é o do GA4, não o da Meta', () => {
     expect(chamados).not.toContain('ViewContent');
   });
 
+  it('o CORPO vira items[], não content_ids', async () => {
+    /*
+     * ┌───────────────────────────────────────────────────────────────────┐
+     * │ O NOME CERTO COM O CORPO ERRADO É CONSERTO NENHUM.                │
+     * │                                                                   │
+     * │ Os relatórios de comércio eletrônico do GA4 se alimentam de       │
+     * │ `items[]`. `content_ids` e `content_type` são vocabulário da      │
+     * │ Meta, e o GA4 descarta. Mandar `view_item` com content_ids deixa  │
+     * │ o evento na lista e a tela de Monetização EM BRANCO — a mesma     │
+     * │ falha silenciosa que trocar o nome existia para resolver.         │
+     * └───────────────────────────────────────────────────────────────────┘
+     */
+    const a = await montar('https://minhaloja.com/products/tapete', {
+      id: 777,
+      variants: [{ id: 1, price: 8990 }],
+    });
+    const viewItem = a.gtag.find((c) => c.nome === 'view_item');
+
+    expect(viewItem?.dados.items).toEqual([
+      { item_id: '777', price: 89.9, quantity: 1 },
+    ]);
+    expect(viewItem?.dados.content_ids).toBeUndefined();
+    expect(viewItem?.dados.content_type).toBeUndefined();
+    // A moeda e o valor continuam: esses o GA4 entende.
+    expect(viewItem?.dados.currency).toBe('BRL');
+    expect(viewItem?.dados.value).toBe(89.9);
+  });
+
+  it('a Meta continua recebendo content_ids, intacto', async () => {
+    // A tradução é SÓ do lado do GA4. O events_log e o fbq recebem o
+    // vocabulário da Meta — trocar os dois quebraria o outro destino.
+    const a = await montar('https://minhaloja.com/products/tapete', {
+      id: 777,
+      variants: [{ id: 1, price: 8990 }],
+    });
+    const evento = a.enviados.find((e) => e.event_name === 'ViewContent');
+    expect(evento?.custom_data?.content_ids).toEqual(['777']);
+    expect(evento?.custom_data?.items).toBeUndefined();
+  });
+
   it('o PageView continua fora do GA4', async () => {
     // A gtag já manda page_view sozinha no config. Um segundo evento
     // mediria a mesma coisa duas vezes.
@@ -237,9 +347,32 @@ describe('o nome que vai para a gtag é o do GA4, não o da Meta', () => {
   });
 
   it('o evento sem par no GA4 vai com o nome que veio', async () => {
-    // rrtrack.track('Lead') não tem equivalente no funil do GA4. Traduzir
-    // para algo seria inventar; deixar passar é o certo.
+    /*
+     * Este teste era VAZIO: ele só olhava as chamadas da própria página, e
+     * a única delas (view_item) está no mapa — então passava mesmo se o
+     * `|| nome` fosse apagado, que é exatamente o caso que ele dizia cobrir.
+     * Agora ele dispara um evento fora do mapa de verdade.
+     */
     const a = await montar('https://minhaloja.com/products/tapete');
-    expect(a.gtag.every((c) => c.nome.length > 0)).toBe(true);
+    a.track('Lead', { value: 97 });
+    await new Promise((r) => { setTimeout(r, 0); });
+
+    expect(a.gtag.map((c) => c.nome)).toContain('Lead');
+  });
+
+  it('nome que colide com o prototipo NÃO vira função', async () => {
+    /*
+     * `rrtrack.track` recebe o nome de quem chama, na página do lojista.
+     * Com `NOME_GA4[nome] || nome`, `track('constructor')` acharia a função
+     * herdada de Object.prototype — verdadeira — e ela iria como NOME do
+     * evento para a gtag. `hasOwnProperty` fecha isso.
+     */
+    const a = await montar('https://minhaloja.com/products/tapete');
+    a.track('constructor', {});
+    await new Promise((r) => { setTimeout(r, 0); });
+
+    const oConstructor = a.gtag.find((c) => c.nome === 'constructor');
+    expect(oConstructor).toBeDefined();
+    expect(a.gtag.every((c) => typeof c.nome === 'string')).toBe(true);
   });
 });

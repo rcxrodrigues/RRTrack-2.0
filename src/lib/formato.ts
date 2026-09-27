@@ -42,12 +42,12 @@ export function inteiro(valor: number): string {
  * Duas casas sempre: um preço com uma casa parece truncado, e a coluna de
  * valores fica desalinhada mesmo com numeral tabular.
  */
-export function moeda(valor: number, simbolo = 'R$'): string {
+export function moeda(valor: number, sigla = 'R$'): string {
   if (!Number.isFinite(valor)) return '—';
   const negativo = valor < 0;
   // `toFixed` arredonda meio-para-cima e não depende de locale nenhum.
   const [inteira = '0', decimal = '00'] = Math.abs(valor).toFixed(2).split('.');
-  return `${negativo ? '-' : ''}${simbolo} ${comMilhar(inteira)},${decimal}`;
+  return `${negativo ? '-' : ''}${sigla} ${comMilhar(inteira)},${decimal}`;
 }
 
 /**
@@ -61,6 +61,22 @@ export function percentual(fracao: number, casas = 1): string {
   if (!Number.isFinite(fracao)) return '—';
   const [inteira = '0', decimal] = (fracao * 100).toFixed(casas).split('.');
   return casas === 0 ? `${inteira}%` : `${inteira},${decimal ?? '0'}%`;
+}
+
+/**
+ * O símbolo da moeda ISO. `MXN` → `MX$`.
+ *
+ * A moeda é do GATEWAY, não nossa: a Pagou opera em MXN também, e
+ * `purchases.currency` guarda o que veio. Desconhecida volta o próprio
+ * código, que é honesto — melhor `PLN 40,00` que um `R$` inventado.
+ *
+ * Mora aqui e não dentro de uma tela porque duas telas mostram a mesma
+ * venda: o faturamento e a gaveta do visitante. A gaveta nasceu formatando
+ * tudo como `R$` e uma venda em MXN aparecia com valores diferentes nas
+ * duas — duas telas discordando sobre o mesmo dinheiro.
+ */
+export function simbolo(moedaIso: string): string {
+  return { BRL: 'R$', USD: 'US$', EUR: '€', MXN: 'MX$' }[moedaIso] ?? moedaIso;
 }
 
 /**

@@ -20,29 +20,32 @@ export const POR_PAGINA = 50;
 /** Teto da paginação — ver a nota em `lerFiltro`. */
 const TETO_DE_PAGINA = 1_000_000;
 
+/**
+ * Uma linha da tabela de eventos — E SÓ O QUE A TELA DESENHA.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ AS UTMs NÃO ESTÃO AQUI, E ISSO É DELIBERADO.                             │
+ * │                                                                          │
+ * │ Elas são lidas do banco e usadas no SERVIDOR, para `resolverOrigem`      │
+ * │ montar a cascata. Depois disso ninguém mais olha para elas: a tabela     │
+ * │ desenha `origem`, que é o resultado.                                     │
+ * │                                                                          │
+ * │ Enquanto estiveram neste tipo, as quatro viajavam no payload do RSC      │
+ * │ para as cinquenta linhas da página, em toda abertura da aba, sem nada    │
+ * │ renderizá-las. É a MESMA regra que a lista de webhooks já segue: campo   │
+ * │ que a tela não desenha não entra no que vai para o cliente.              │
+ * │                                                                          │
+ * │ `eventId`, `url` e `purgado` saíram pelo mesmo motivo — `LinhaEvento`    │
+ * │ tem um consumidor só (`TabelaEventos`) e nenhum dos três aparece lá.     │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
 export type LinhaEvento = {
   id: string;
-  eventId: string;
   nome: string;
   trckUserId: string | null;
-  utmSource: string | null;
-  utmCampaign: string | null;
-  /**
-   * Conjunto e anúncio, quando a macro do anúncio os escreveu.
-   *
-   * A Meta não manda adset nem ad no evento — quem os traz é a UTM, pela
-   * convenção `{{adset.name}}` em `utm_term` e `{{ad.name}}` em
-   * `utm_content`. Por isso a tela rotula como "pela UTM": se a macro não
-   * estiver no anúncio, estes campos vêm vazios e o problema é lá, não aqui.
-   */
-  utmTerm: string | null;
-  utmContent: string | null;
-  url: string | null;
   pais: string | null;
   regiao: string | null;
   cidade: string | null;
-  /** Quando a retenção já zerou os campos pesados desta linha. */
-  purgado: boolean;
   criadoEm: string;
   /**
    * De onde a pessoa veio — resolvido em cascata, ver `origem.ts`.
@@ -64,10 +67,15 @@ export type FiltroEventos = {
   pagina: number;
 };
 
+/*
+ * As UTMs ficam no `select` porque `resolverOrigem` precisa delas no
+ * servidor — só não atravessam para o cliente (ver `LinhaEvento`).
+ * `event_id`, `event_source_url` e `purged_at` saíram: a tabela não desenha
+ * nenhum dos três, e a gaveta busca o que precisa por conta própria.
+ */
 const COLUNAS =
-  'id, event_id, event_name, trck_user_id, utm_source, utm_campaign, ' +
-  'utm_term, utm_content, event_source_url, geo_country, geo_region, ' +
-  'geo_city, purged_at, created_at';
+  'id, event_name, trck_user_id, utm_source, utm_campaign, ' +
+  'utm_term, utm_content, geo_country, geo_region, geo_city, created_at';
 
 /** O primeiro valor: o parâmetro repetido na URL chega como lista. */
 function um(valor: string | string[] | undefined): string {
@@ -136,7 +144,12 @@ export async function buscarEventos(
     return { linhas: [], total: 0 };
   }
 
-  const linhas = (Array.isArray(data) ? data : []).flatMap((linha) => {
+  /*
+   * A forma INTERMEDIÁRIA: as UTMs entram aqui porque `resolverOrigem`
+   * precisa delas, e param aqui — o que sai para o cliente é montado
+   * abaixo, sem elas.
+   */
+  const crus = (Array.isArray(data) ? data : []).flatMap((linha) => {
     const id = textoEm(linha, 'id');
     const nome = textoEm(linha, 'event_name');
     const criadoEm = textoEm(linha, 'created_at');
@@ -147,18 +160,15 @@ export async function buscarEventos(
     return [
       {
         id,
-        eventId: textoEm(linha, 'event_id') ?? '',
         nome,
         trckUserId: textoEm(linha, 'trck_user_id') ?? null,
         utmSource: textoEm(linha, 'utm_source') ?? null,
         utmCampaign: textoEm(linha, 'utm_campaign') ?? null,
         utmTerm: textoEm(linha, 'utm_term') ?? null,
         utmContent: textoEm(linha, 'utm_content') ?? null,
-        url: textoEm(linha, 'event_source_url') ?? null,
         pais: textoEm(linha, 'geo_country') ?? null,
         regiao: textoEm(linha, 'geo_region') ?? null,
         cidade: textoEm(linha, 'geo_city') ?? null,
-        purgado: textoEm(linha, 'purged_at') !== undefined,
         criadoEm,
       },
     ];
@@ -176,28 +186,34 @@ export async function buscarEventos(
    * no máximo `POR_PAGINA` ids distintos. Não é N+1: é 1+1.
    */
   const ids = [
-    ...new Set(linhas.flatMap((l) => (l.trckUserId === null ? [] : [l.trckUserId]))),
+    ...new Set(crus.flatMap((l) => (l.trckUserId === null ? [] : [l.trckUserId]))),
   ];
   const visitantes = await utmsDosVisitantes(supabase, ids);
 
   /*
-   * `Object.assign` e não espalhamento: as linhas acabaram de ser criadas
-   * logo acima e não são vistas por ninguém, então acrescentar o campo nelas
-   * é seguro — e espalhar copiaria cinquenta objetos de quinze campos à toa.
-   * É o que o `no-map-spread` do oxlint aponta.
+   * Aqui a linha do cliente é MONTADA, campo a campo — e as UTMs ficam para
+   * trás de propósito. Espalhar `...l` carregaria as quatro junto, que é
+   * exatamente o que este trecho existe para não fazer.
    */
-  const comOrigem = linhas.map((l) => {
+  const linhas: LinhaEvento[] = crus.map((l) => {
     const visitante = l.trckUserId === null ? null : visitantes.get(l.trckUserId);
-    return Object.assign(l, {
+    return {
+      id: l.id,
+      nome: l.nome,
+      trckUserId: l.trckUserId,
+      pais: l.pais,
+      regiao: l.regiao,
+      cidade: l.cidade,
+      criadoEm: l.criadoEm,
       origem: resolverOrigem({
         doEvento: l,
         doVisitante: visitante,
         referrer: visitante?.referrer ?? null,
       }),
-    });
+    };
   });
 
-  return { linhas: comOrigem, total: count ?? 0 };
+  return { linhas, total: count ?? 0 };
 }
 
 /** As UTMs e o referrer da primeira visita, por `trck_user_id`. */

@@ -383,9 +383,13 @@ O dado real chega em ~1900ms nos dois. O que muda é o primeiro frame.
 
 Consequências práticas:
 
-- **Aba nova nasce com o `loading.tsx` dela.** É o modo de falha clássico —
-  o mesmo do `prepararCaptura()`: quem escreve a aba nova esquece de copiar a
-  trava, e ninguém percebe porque nada quebra.
+- **Aba nova nasce com o `loading.tsx` dela**, e agora há teste
+  (`(dash)/loading.test.ts`). É o modo de falha clássico — o mesmo do
+  `prepararCaptura()`: quem escreve a aba nova esquece de copiar a trava, e
+  ninguém percebe porque nada quebra. Pior que "sem esqueleto": a rota
+  **herda** o do `(dash)`, então `/estilo` mostrava seis métricas, funil e
+  geo antes de virar uma página de paleta. Regra escrita e não verificada é
+  regra que já foi quebrada — esta estava, por `/estilo`.
 - **O esqueleto tem a MESMA geometria da tela real.** Contagem de cartões,
   colunas da grade, altura do gráfico. Esqueleto de outro tamanho é pior que
   nenhum: o conteúdo salta quando chega e o olho perde o lugar. Os blocos
@@ -403,6 +407,10 @@ Consequências práticas:
   dedupe: sem ele, três cartões seriam três idas à Meta na mesma tela. A
   memoização é por **identidade** do argumento, então todos recebem o MESMO
   objeto `intervalo`.
+- **Lista longa passa `limite` à `ListaRanqueada`, nunca `slice` antes
+  dela.** Cortar antes entrega uma lista já curta e o "+ N outros, somando
+  X" do componente nunca aparece — e ele existe para a lista não esconder
+  linhas em silêncio. Nas cidades isso era a maior parte do dado.
 - **Campo pesado não viaja numa listagem.** `events_log` já seguia isso com
   `buscarPayload`; a lista de webhooks tinha ficado de fora e mandava os 50
   `corpo` jsonb — o pedido inteiro de cada gateway, com cliente e endereço —
@@ -592,14 +600,26 @@ de copiar.
   para pendurá-lo nos links de checkout e de WhatsApp. Não é descuido.
 - **O cache de `settings` guarda também a falha**, por 5 segundos. Sem isso,
   numa queda do Supabase cada pageview do site esperava o timeout da conexão.
-- **O NOME que vai para a gtag é o do GA4, não o da Meta.** O funil de
-  comércio eletrônico do GA4 tem nomes próprios (`view_item`, `add_to_cart`,
-  `begin_checkout`, `purchase`), e mandar `AddToCart` para lá cria um evento
-  **customizado**: ele aparece na lista de eventos e não alimenta relatório
-  nenhum de comércio eletrônico — que é justamente onde a pessoa vai olhar.
-  Não quebra, não avisa, e o relatório fica vazio. `NOME_GA4` no snippet
-  traduz; o nome da Meta continua indo para o `fbq` e para o `events_log`.
-  Evento sem par (`rrtrack.track('Lead')`) vai com o nome que veio.
+- **Para a gtag mudam o NOME e o FORMATO — trocar só o nome é conserto
+  nenhum.** O funil de comércio eletrônico do GA4 tem nomes próprios
+  (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`) **e** se
+  alimenta de `items[]`. Mandar `AddToCart` com `content_ids` erra os dois;
+  mandar `add_to_cart` com `content_ids` erra um e falha igualzinho — o
+  evento entra na lista e a tela de Monetização fica em branco, porque
+  `content_ids` é vocabulário da Meta e o GA4 descarta. `NOME_GA4` traduz o
+  nome e `corpoGa4()` traduz o corpo; o vocabulário da Meta segue intacto
+  para o `fbq` e o `events_log`. O servidor já fazia certo (ver `items` em
+  `compras.ts`) — era o navegador que estava fora do padrão.
+  A busca no mapa é `hasOwnProperty`, nunca `NOME_GA4[nome] ||`: o nome vem
+  de quem chama `rrtrack.track()`, e `track('constructor')` acharia a função
+  herdada do protótipo e a mandaria como nome do evento.
+- **`ViewContent` usa a variante DA PÁGINA, não `variants[0]`.** Numa
+  camiseta P/M/G por 89,90 / 109,90 / 129,90, a primeira da lista manda
+  sempre o mais barato: a otimização por valor da Meta aprende com esse
+  número e a coluna de valor do Events Manager deixa de bater com a página.
+  A escolhida vem de `?variant=` ou de `selectedVariantId`. E o preço passa
+  por `typeof === 'number'`, não por `if (p.value)` — brinde vale R$ 0,00, e
+  o teste falsy jogava o campo fora em vez de mandar zero.
 - **`ViewContent` dispara em página de produto, e só nela.** É o degrau entre
   ver e pôr no carrinho, e a Meta otimiza com ele. Detectar demais é pior que
   de menos: um `ViewContent` em toda página ensinaria a Meta que a home é
@@ -1046,9 +1066,12 @@ campo certo de cada um. Existe porque a metade de baixo do sistema — webhook
 descobrir um problema ali durante a primeira venda de verdade é a pior hora
 possível.
 
-**Os cinco payloads são testados a cada `npm run check`**
-(`exemplos-do-doc.test.ts`): o adaptador certo reconhece, o `trck_user_id`
-atravessa, e o status entra como `pendente`. Documento com exemplo quebrado é
+**Os cinco payloads são LIDOS DO DOCUMENTO e testados a cada `npm run
+check`** (`exemplos-do-doc.test.ts`): o adaptador certo reconhece, o
+`trck_user_id` atravessa, e o status entra como `pendente`. Lidos, não
+copiados — a primeira versão trazia cópias escritas à mão e prometia
+"prende o doc ao código" sem prender nada: editar o curl do documento
+deixava a suíte verde e o comando publicado passava a devolver 202. Documento com exemplo quebrado é
 pior que documento nenhum — quem cola um curl e leva 202 conclui que o
 SISTEMA está errado e vai depurar o lugar errado. Escrever esse teste pegou
 quatro erros no doc na primeira rodada: alias da Yampi em português (é
@@ -1236,6 +1259,15 @@ como o Vault já tinha. A asserção 9 prova que o payload some e a linha fica.
 
 ## Banco — como mexer com segurança
 
+- **Os DOIS instaladores são verificados, não só o legível.**
+  `02_instalador_atualizado.sh` olhava apenas o `INSTALAR.sql`, e o
+  COMPACTO — que é o arquivo que a pessoa realmente cola — ficou defasado
+  sem nada avisar quando `painel_cidades` entrou. O estrago é pior no
+  compacto: quem instala por ele não recebe a função, a consulta falha em
+  silêncio e o cartão de Cidades aparece VAZIO, lendo como "sem dado" em
+  vez de "não instalado". A checagem do compacto é por nome de objeto, não
+  por linha — ele tem um comando por linha e comparar linha inteira nunca
+  casaria.
 - **O SQL Editor do Supabase envia só as 100 primeiras linhas.** Script mais
   longo chega cortado ao banco, e o erro que aparece é o sintoma (um bloco
   `$$` "não terminado", porque o fechamento ficou fora do corte), não a causa.

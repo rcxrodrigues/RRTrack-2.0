@@ -31,3 +31,40 @@ if (( ${#faltando[@]} > 0 )); then
 fi
 
 echo "  ok · INSTALAR.sql reflete as migrations"
+
+# ---------------------------------------------------------------------------
+# E o COMPACTO, que é o arquivo que a pessoa realmente cola.
+# ---------------------------------------------------------------------------
+# O bloco acima só olhava o INSTALAR.sql legível. O compacto é gerado à parte,
+# por outro script — e ficou defasado sem nada avisar quando a migration de
+# `painel_cidades` entrou. O estrago é pior que no legível: quem instala do
+# compacto não recebe a função, a consulta falha em silêncio e o cartão de
+# Cidades aparece VAZIO. Lê como "sem dado", não como "não instalado", e
+# ninguém vai procurar no lugar certo.
+#
+# A checagem é por NOME DE OBJETO e não por linha: o compacto tem um comando
+# por linha, então comparar linha inteira nunca casaria.
+COMPACTO="$RAIZ/supabase/INSTALAR-COMPACTO.sql"
+ausentes=()
+
+for f in "$RAIZ"/supabase/migrations/*.sql; do
+  while IFS= read -r objeto; do
+    if ! grep -Fq "$objeto" "$COMPACTO"; then
+      ausentes+=("$objeto  ($(basename "$f" .sql))")
+    fi
+  done < <(
+    grep -ioE '(create table (if not exists )?|create or replace function |create index (if not exists )?)[a-z0-9_.]+' "$f" \
+      | sed -E 's/^.*(create table (if not exists )?|create or replace function |create index (if not exists )?)//I' \
+      | sort -u
+  )
+done
+
+if (( ${#ausentes[@]} > 0 )); then
+  echo "INSTALAR-COMPACTO.sql está defasado — objetos que faltam:" >&2
+  printf '  - %s\n' "${ausentes[@]}" >&2
+  echo "" >&2
+  echo "Regere com: python3 supabase/tests/gerar-compacto.py" >&2
+  exit 1
+fi
+
+echo "  ok · INSTALAR-COMPACTO.sql tem todos os objetos"

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { lerWebhook } from './index';
@@ -27,88 +29,74 @@ import { lerWebhook } from './index';
 
 const ID = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
 
-/** Cada exemplo do doc, com `SEU_TRCK_USER_ID` já substituído. */
-const EXEMPLOS: { gateway: string; corpo: unknown }[] = [
-  {
-    gateway: 'appmax',
-    corpo: {
-      event: 'order_authorized',
-      event_type: 'order',
-      client_key: ID,
-      data: {
-        order_id: 999001,
-        status: 'aguardando_pagamento',
-        total: 25990,
-        customer: { email: 'teste@exemplo.com', firstname: 'Teste' },
-        products: [
-          { sku: 'TESTE-1', name: 'Produto de teste', price: 25990, quantity: 1 },
-        ],
-        client_key: ID,
-      },
-    },
-  },
-  {
-    gateway: 'yampi',
-    corpo: {
-      event: 'order.created',
-      time: '2026-09-27T10:00:00Z',
-      merchant: { alias: 'minha-loja' },
-      resource: {
-        id: 999002,
-        value_total: 199.9,
-        status: { data: { alias: 'waiting_payment' } },
-        customer: { data: { email: 'teste@exemplo.com', name: 'Teste' } },
-        metadata: { data: [{ key: 'trck_user_id', value: ID }] },
-      },
-    },
-  },
-  {
-    gateway: 'zedy',
-    corpo: {
-      eventType: 'ORDER_CREATED',
-      orderId: 'Z-999003',
-      status: 'waiting_payment',
-      customer: { name: 'Teste', email: 'teste@exemplo.com', country: 'BR' },
-      products: [
-        { id: 1, name: 'Produto de teste', quantity: 1, priceInCents: 9700 },
-      ],
-      commission: { totalPriceInCents: 9700 },
-      trackingParameters: { src: ID, utm_source: 'teste' },
-      isTest: false,
-    },
-  },
-  {
-    gateway: 'adoorei',
-    corpo: {
-      event: 'order.created',
-      time: '2026-09-27T10:00:00Z',
-      merchant: { id: 1 },
-      resource: {
-        number: 999004,
-        status: 'pending',
-        value_total: 110.0,
-        source_reference: ID,
-        customer: { email: 'teste@exemplo.com', nome: 'Teste' },
-      },
-    },
-  },
-  {
-    gateway: 'pagou',
-    corpo: {
-      id: 'evt-teste',
-      event: 'transaction',
-      data: {
-        id: '999005',
-        status: 'pending',
-        amount: 25990,
-        payer: { email: 'teste@exemplo.com', name: 'Teste' },
-        informations: [{ key: 'trck_user_id', value: ID }],
-      },
-    },
-  },
-];
+const DOC = path.join(process.cwd(), 'docs/TESTAR-VENDA.md');
+
+/**
+ * Os payloads lidos DO DOCUMENTO, não copiados dele.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ CÓPIA NÃO PRENDE NADA.                                                   │
+ * │                                                                          │
+ * │ A primeira versão deste arquivo trazia os cinco payloads escritos à mão  │
+ * │ aqui dentro, e o cabeçalho prometia "prende o doc ao código". Não        │
+ * │ prendia: mexer no curl do documento deixava a suíte VERDE e o comando    │
+ * │ publicado passava a devolver 202. Exatamente a falha que o documento     │
+ * │ existe para evitar — quem cola e leva 202 conclui que o sistema está     │
+ * │ errado e vai depurar o lugar errado.                                     │
+ * │                                                                          │
+ * │ Agora o documento É a fixture: o teste extrai o corpo de cada `-d` dos   │
+ * │ blocos de curl. Mexeu no doc e o exemplo parou de valer → quebra aqui.   │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+function exemplosDoDoc(): { gateway: string; corpo: unknown }[] {
+  const markdown = fs.readFileSync(DOC, 'utf8');
+
+  /*
+   * Só o Passo 1. O Passo 2 fala em trocar o evento para o de aprovação, e
+   * aprovada DISPARA conversão — a asserção de `pendente` abaixo é a trava
+   * que prova que o passo seguro é seguro.
+   */
+  const passo1 = markdown.slice(
+    markdown.indexOf('## Passo 1'),
+    markdown.indexOf('## O que conferir'),
+  );
+
+  const achados: { gateway: string; corpo: unknown }[] = [];
+  // Cada `### Gateway` seguido de um bloco ```bash com um `-d '...'`.
+  const blocos = passo1.split(/^### /m).slice(1);
+
+  for (const bloco of blocos) {
+    const gateway = (bloco.split('\n')[0] ?? '').trim().toLowerCase();
+    const corpoCru = /-d '([\s\S]*?)'\s*$/m.exec(bloco)?.[1];
+    if (corpoCru === undefined) continue;
+
+    achados.push({
+      gateway,
+      corpo: JSON.parse(corpoCru.replaceAll('SEU_TRCK_USER_ID', ID)),
+    });
+  }
+
+  return achados;
+}
+
+const EXEMPLOS = exemplosDoDoc();
 
 describe('os exemplos de docs/TESTAR-VENDA.md', () => {
+  it('achou os cinco no documento', () => {
+    /*
+     * Sem esta contagem, um `it.each` sobre lista vazia passa sem rodar
+     * nada — e a suíte ficaria verde justamente quando a extração quebrasse,
+     * que é o contrário do que este arquivo existe para fazer.
+     */
+    expect(EXEMPLOS.map((e) => e.gateway)).toEqual([
+      'appmax',
+      'yampi',
+      'zedy',
+      'adoorei',
+      'pagou',
+    ]);
+  });
+
   it.each(EXEMPLOS)('$gateway: o adaptador certo reconhece', ({ gateway, corpo }) => {
     const lido = lerWebhook(corpo, { statusPorAlias: {} });
     // 'desconhecido' aqui significaria 202 na rota e curl "falhando" à toa.

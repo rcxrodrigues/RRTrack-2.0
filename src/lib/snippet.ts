@@ -252,6 +252,47 @@ export function montarSnippet(base: string, config: Configuracao): string {
     Purchase: 'purchase'
   };
 
+  /* ---------------------------------------------------------------------
+     E O NOME SOZINHO NÃO BASTA — o FORMATO também é outro.
+
+     Trocar AddToCart por add_to_cart e mandar o corpo da Meta
+     (content_ids, content_type) deixa o evento com o nome certo e os
+     relatorios de comercio eletronico do GA4 ainda VAZIOS: eles se
+     alimentam de items[], e content_ids o GA4 simplesmente descarta.
+
+     Ou seja, metade do conserto e conserto nenhum, e falha do mesmo jeito
+     silencioso: o evento aparece na lista, e a tela de Monetizacao fica em
+     branco. O lado do servidor ja fazia certo (ver items em compras.ts);
+     era o navegador que estava fora do padrao.
+  --------------------------------------------------------------------- */
+  function corpoGa4(custom) {
+    var d = {};
+    for (var k in custom) {
+      if (!Object.prototype.hasOwnProperty.call(custom, k)) continue;
+      /* content_ids e content_type sao vocabulario da Meta; o GA4 os
+         ignora, e deixa-los so engorda o payload. */
+      if (k === 'content_ids' || k === 'content_type') continue;
+      d[k] = custom[k];
+    }
+
+    var ids = custom && custom.content_ids;
+    if (ids && ids.length) {
+      var itens = [];
+      for (var i = 0; i < ids.length; i++) {
+        var item = { item_id: String(ids[i]) };
+        /* O preco unitario so e conhecido quando ha UM item: com varios, o
+           value e o total do carrinho, e dividi-lo inventaria numero. */
+        if (ids.length === 1 && typeof custom.value === 'number') {
+          item.price = custom.value;
+        }
+        item.quantity = 1;
+        itens.push(item);
+      }
+      d.items = itens;
+    }
+    return d;
+  }
+
   /* rrtrack.track('Lead', { value: 97, currency: 'BRL' }) */
   api.track = seguro(function (nome, dados, opcoes) {
     var eventId = novoEventId();
@@ -272,7 +313,13 @@ export function montarSnippet(base: string, config: Configuracao): string {
        a pessoa vai olhar. O nome da Meta continua indo para o fbq e para o
        events_log; só a gtag recebe o dela. */
     if (w.gtag && CFG.ga4.length && !(opcoes && opcoes.ga4 === false)) {
-      w.gtag('event', NOME_GA4[nome] || nome, custom);
+      /* hasOwnProperty e nao "NOME_GA4[nome] ||": o nome vem de quem chama
+         rrtrack.track(), e track('constructor') acharia a funcao herdada do
+         prototipo — verdadeira, e mandada como nome do evento. */
+      var nomeGa4 = Object.prototype.hasOwnProperty.call(NOME_GA4, nome)
+        ? NOME_GA4[nome]
+        : nome;
+      w.gtag('event', nomeGa4, corpoGa4(custom));
     }
 
     var corpo = {
@@ -376,7 +423,29 @@ export function montarSnippet(base: string, config: Configuracao): string {
   /* O produto que o tema da Shopify expoe.
      Nem todo tema expoe, e o ViewContent sai mesmo sem ele: um evento sem
      content_ids ainda ensina a Meta QUEM olhou, e um evento a menos nao
-     ensina nada. O preco vem em CENTAVOS, como no resto da Shopify. */
+     ensina nada. O preco vem em CENTAVOS, como no resto da Shopify.
+
+     A VARIANTE E A QUE A PAGINA MOSTRA, nao a primeira da lista. Numa
+     camiseta de P a GG por 89,90 / 109,90 / 129,90, pegar variants[0]
+     mandaria SEMPRE o preco mais barato: a otimizacao por valor da Meta
+     aprenderia errado e a coluna de valor do Events Manager nao bateria com
+     a pagina. A variante selecionada vem de ?variant= na URL, e o tema
+     tambem publica selectedVariantId. */
+  function varianteDaPagina(p) {
+    var vs = p.variants;
+    if (!vs || !vs.length) return null;
+
+    var alvo = param('variant') || p.selectedVariantId;
+    if (alvo) {
+      for (var i = 0; i < vs.length; i++) {
+        if (vs[i] && String(vs[i].id) === String(alvo)) return vs[i];
+      }
+    }
+    /* Sem ?variant= a Shopify mostra a primeira disponivel, entao ela e a
+       resposta certa — nao um palpite. */
+    return vs[0];
+  }
+
   function produtoDaPagina() {
     var a = w.ShopifyAnalytics;
     var p = a && a.meta && a.meta.product;
@@ -384,8 +453,7 @@ export function montarSnippet(base: string, config: Configuracao): string {
 
     var d = {};
     if (p.id) { d.content_ids = [String(p.id)]; }
-    var vs = p.variants;
-    var v = (vs && vs.length) ? vs[0] : null;
+    var v = varianteDaPagina(p);
     if (v && typeof v.price === 'number') { d.value = v.price / 100; }
     return d;
   }
@@ -398,7 +466,11 @@ export function montarSnippet(base: string, config: Configuracao): string {
     var p = seguro(produtoDaPagina)();
     if (p) {
       if (p.content_ids) { d.content_ids = p.content_ids; d.content_type = 'product'; }
-      if (p.value) { d.value = p.value; }
+      /* typeof, e nao "if (p.value)": zero e um preco. Brinde e amostra
+         gratis valem R$ 0,00, e o teste falsy jogava o campo fora em vez de
+         mandar 0 — a mesma armadilha do zero que o painel evita nos
+         cartoes de custo. */
+      if (typeof p.value === 'number') { d.value = p.value; }
     }
     api.track('ViewContent', d);
   }
