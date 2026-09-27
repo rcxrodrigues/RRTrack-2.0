@@ -32,12 +32,21 @@ transforlar.com           loja Shopify (externa)
                           roda <script src="https://track.transforlar.com/t.js">
 track.transforlar.com     ESTE app: painel + APIs de captura + webhook
 
-         ┌─ CHECKOUT ──────────────┐   ┌─ GATEWAY ────────────────────┐
-o funil: │ Yampi · Adoorei · Zedy  │ → │ AppMax · Pagou · MillionsPay │
-         └─────────────────────────┘   └──────────────────────────────┘
-           dono da página de pagamento   processa o dinheiro
+         ┌─ CHECKOUT ───────────────────────┐   ┌─ GATEWAY ───────────┐
+o funil: │ Yampi · Pagou · Adoorei · Zedy   │ → │ AppMax · MillionsPay │
+         └──────────────────────────────────┘   └──────────────────────┘
+           dono da página de pagamento            processa o dinheiro
 ```
 
+> **A Pagou está do lado do CHECKOUT, e já esteve do lado errado aqui.**
+> O diagrama a listava como gateway, e isso importa: a classificação decide
+> em qual camada o webhook é configurado. Duas coisas do código concordam
+> com a correção — ela tem `informations[]`, que é saco de atribuição e é
+> coisa de quem é dono da página, e o adaptador lê `correlation_id`. Uma
+> discorda: o webhook publicado dela é MÍNIMO, sem comprador, sem valor e
+> sem produtos, que é cara de processador. O adaptador já trata os dois
+> casos, então a dúvida não muda código — muda para onde apontar o webhook.
+>
 > **São DUAS camadas, e as duas mandam webhook.** É a distinção que mais
 > importa aqui. O checkout é dono da página onde a pessoa digita o cartão; o
 > gateway processa. O payload da Adoorei confirma, trazendo

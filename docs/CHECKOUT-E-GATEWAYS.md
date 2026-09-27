@@ -6,9 +6,18 @@
 
 ## O contexto
 
-A primeira loja (transforlar.com) é **Shopify com checkout de terceiro**, e os
-gateways cogitados são **AppMax**, **Pagou.ai** e **MillionsPay**. O checkout
-fica numa plataforma separada, que usa o gateway só como processador.
+A primeira loja (transforlar.com) é **Shopify com checkout de terceiro**. O
+checkout fica numa plataforma separada, que usa o gateway só como processador.
+
+| camada | quem | tem adaptador? |
+|---|---|---|
+| **checkout** — dono da página de pagamento | Yampi · **Pagou.ai** · Adoorei · Zedy | os quatro, sim |
+| **gateway** — processa o dinheiro | AppMax · MillionsPay | só a AppMax |
+
+> A Pagou.ai já esteve listada aqui como GATEWAY, e estava errado. A
+> distinção não é acadêmica: **é ela que decide em qual camada o webhook é
+> configurado**, e apontar para as duas faz a mesma venda entrar duas vezes
+> e virar duas conversões na Meta.
 
 ## A pergunta que decide tudo
 
