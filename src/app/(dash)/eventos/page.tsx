@@ -40,17 +40,39 @@ export const dynamic = 'force-dynamic';
  * │ com `buscarPayload`; esta lista tinha ficado de fora.                  │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
-async function carregarWebhooks(): Promise<WebhookRecebido[]> {
+async function carregarWebhooks(): Promise<{
+  linhas: WebhookRecebido[];
+  erro: string | null;
+}> {
   const supabase = await criarClienteServidor();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('webhooks_recebidos')
     .select('id, adaptador, transaction_id, motivo, created_at, purged_at')
     .order('created_at', { ascending: false })
     .limit(50)
     .returns<WebhookRecebido[]>();
 
-  return data ?? [];
+  /*
+   * O ERRO SOBE À TELA, e antes ele era descartado.
+   *
+   * `const { data } = …` sem olhar o `error` fazia a consulta falhada virar
+   * lista vazia, e a tela dizia "Nenhum webhook ainda" — que é a frase de
+   * "está tudo bem, só não chegou nada". Quem apontasse um checkout para cá
+   * e lesse isso iria depurar o CHECKOUT.
+   *
+   * O caso concreto que torna isto urgente: uma coluna nova (`purged_at`)
+   * some da consulta se a migration não foi aplicada, e o PostgREST recusa
+   * o `select` inteiro. O banco tem os webhooks; a tela jurava que não.
+   * É a mesma armadilha do `grant select` em coluna nova que o CLAUDE.md
+   * descreve, e ela pede a mesma coisa: aparecer.
+   */
+  if (error) {
+    console.error('[eventos] lista de webhooks falhou:', error.message);
+    return { linhas: [], erro: error.message };
+  }
+
+  return { linhas: data ?? [], erro: null };
 }
 
 export default async function EventosPage({
@@ -66,7 +88,7 @@ export default async function EventosPage({
   const { settings } = await carregarConfiguracao();
   const intervalo = intervaloDe(periodo, settings.timezone);
 
-  const [{ linhas, total }, tipos, recebidos] = await Promise.all([
+  const [{ linhas, total }, tipos, webhooks] = await Promise.all([
     buscarEventos(intervalo, filtro),
     buscarEventosPorTipo(intervalo),
     carregarWebhooks(),
@@ -81,6 +103,7 @@ export default async function EventosPage({
    * conteúdo para mandar. A linha continua na lista com a explicação dela;
    * o que ela não faz é somar num pedido de ação impossível.
    */
+  const recebidos = webhooks.linhas;
   const recuperaveis = recebidos.filter((r) => r.purged_at === null);
   const naoReconhecidos = recuperaveis.filter((r) => r.adaptador === null).length;
   const naoLidos = recuperaveis.filter((r) => r.motivo !== null).length;
@@ -223,7 +246,26 @@ export default async function EventosPage({
           )}
         </div>
 
-        {recebidos.length === 0 ? (
+        {webhooks.erro !== null ? (
+          /*
+            Falhou a leitura — e isso NÃO é "nenhum webhook".
+            A mensagem do PostgREST fica: ela nomeia a coluna que falta, que
+            é o que resolve. Sem ela, a única pista seria o log da Vercel.
+          */
+          <div className="border-border/60 flex flex-col gap-1 border-t px-4 py-6 sm:px-5">
+            <p className="text-destructive-vivid text-sm font-medium">
+              Não consegui ler a lista de webhooks.
+            </p>
+            <p className="text-muted-foreground text-sm">
+              Isto não quer dizer que nada chegou — os payloads estão no banco.
+              Costuma ser migration que faltou aplicar: rode o último arquivo
+              de <code>supabase/atualizacoes/</code> no SQL Editor.
+            </p>
+            <p className="text-muted-foreground font-mono text-xs wrap-anywhere">
+              {webhooks.erro}
+            </p>
+          </div>
+        ) : recebidos.length === 0 ? (
           <p className="text-muted-foreground border-border/60 border-t px-4 py-8 text-center text-sm sm:px-5">
             Nenhum webhook ainda. Cadastre a URL no painel do checkout e faça
             uma venda de teste.
