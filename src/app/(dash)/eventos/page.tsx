@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { inteiro } from '@/lib/formato';
 import { buscarEventosPorTipo } from '@/lib/painel/consultas';
 import { buscarEventos, lerFiltro, POR_PAGINA } from '@/lib/painel/eventos';
-import { intervaloDe, lerEscolha, paramsDaEscolha } from '@/lib/painel/periodo';
+import { hojeEm, intervaloDe, lerEscolha, paramsDaEscolha } from '@/lib/painel/periodo';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -121,7 +121,7 @@ export default async function EventosPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Eventos</h2>
-        <SeletorPeriodo atual={escolha} />
+        <SeletorPeriodo atual={escolha} hoje={hojeEm(settings.timezone)} />
       </div>
 
       <Card>

@@ -30,7 +30,14 @@ import { cn } from '@/lib/utils';
  * │ texto exigiria adivinhar se "03/04" é março ou abril.                    │
  * └───────────────────────────────────────────────────────────────────────────┘
  */
-export function SeletorPeriodo({ atual }: { atual: Escolha }) {
+export function SeletorPeriodo({
+  atual,
+  hoje,
+}: {
+  atual: Escolha;
+  /** `YYYY-MM-DD` no fuso do painel — ver `hojeEm`. */
+  hoje: string;
+}) {
   const faixa = ehFaixa(atual) ? atual : null;
 
   return (
@@ -81,10 +88,15 @@ export function SeletorPeriodo({ atual }: { atual: Escolha }) {
           faixa && 'ring-primary ring-1',
         )}
       >
+        {/*
+          Nasce com HOJE, não vazio. Campo vazio não diz qual período está na
+          tela, e o filtro ficava com duas metades afirmando coisas
+          diferentes: "Hoje" aceso em cima e `dd/mm/aaaa` embaixo.
+        */}
         <input
           type="date"
           name="de"
-          defaultValue={faixa?.de ?? ''}
+          defaultValue={faixa?.de ?? hoje}
           required
           aria-label="Data inicial"
           className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"
@@ -93,7 +105,7 @@ export function SeletorPeriodo({ atual }: { atual: Escolha }) {
         <input
           type="date"
           name="ate"
-          defaultValue={faixa?.ate ?? ''}
+          defaultValue={faixa?.ate ?? hoje}
           required
           aria-label="Data final"
           className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"

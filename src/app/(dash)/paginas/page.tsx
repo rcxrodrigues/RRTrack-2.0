@@ -3,7 +3,7 @@ import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
 import { inteiro, moeda, percentual, razao } from '@/lib/formato';
 import { buscarPaginas } from '@/lib/painel/consultas';
-import { intervaloDe, lerEscolha } from '@/lib/painel/periodo';
+import { hojeEm, intervaloDe, lerEscolha } from '@/lib/painel/periodo';
 import { caminhoDaUrl } from '@/lib/painel/url';
 import { carregarConfiguracao } from '@/lib/settings';
 
@@ -29,7 +29,7 @@ export default async function PaginasPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Páginas</h2>
-        <SeletorPeriodo atual={escolha} />
+        <SeletorPeriodo atual={escolha} hoje={hojeEm(settings.timezone)} />
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">

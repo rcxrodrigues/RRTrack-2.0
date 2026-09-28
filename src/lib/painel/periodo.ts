@@ -301,6 +301,25 @@ function meiaNoiteLocal(
 }
 
 /**
+ * A data de hoje no fuso do painel, como `YYYY-MM-DD`.
+ *
+ * Serve para o formulário de faixa nascer preenchido com hoje em vez de
+ * `dd/mm/aaaa` vazio. Campo vazio não diz qual é o período que está na tela,
+ * e o filtro passa a ter dois estados ("Hoje" aceso em cima, nada embaixo)
+ * dizendo coisas diferentes.
+ *
+ * Texto e não `Date` pelo mesmo motivo da `Faixa`: é o que o
+ * `<input type="date">` entende, e passar por `Date` reintroduziria o fuso
+ * onde ele não pertence.
+ */
+export function hojeEm(fuso: string, agora: Date = new Date()): string {
+  const [ano, mes, dia] = dataLocal(agora, fuso);
+  return `${String(ano)}-${doisDigitos(mes)}-${doisDigitos(dia)}`;
+}
+
+const doisDigitos = (n: number): string => String(n).padStart(2, '0');
+
+/**
  * Traduz o período em dois instantes.
  *
  * `agora` é parâmetro, e não `new Date()` lá dentro, porque isto tem de ser

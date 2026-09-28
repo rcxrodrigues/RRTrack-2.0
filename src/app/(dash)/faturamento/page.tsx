@@ -14,6 +14,7 @@ import {
 } from '@/lib/painel/compras-lista';
 import { buscarResumo, buscarSerieDiaria } from '@/lib/painel/consultas';
 import {
+  hojeEm,
   intervaloAnterior,
   intervaloDe,
   lerEscolha,
@@ -90,7 +91,7 @@ export default async function FaturamentoPage({
         <h2 className="text-lg font-semibold tracking-tight md:hidden">
           Faturamento
         </h2>
-        <SeletorPeriodo atual={escolha} />
+        <SeletorPeriodo atual={escolha} hoje={hojeEm(settings.timezone)} />
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">

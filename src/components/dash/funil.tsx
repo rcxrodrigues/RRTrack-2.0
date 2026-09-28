@@ -1,7 +1,7 @@
 import { CornerDownRight } from 'lucide-react';
 
 import { inteiro, percentual } from '@/lib/formato';
-import { largurasDoFunil, PISO, type Funil } from '@/lib/painel/funil';
+import { faixasDoFunil, type Funil } from '@/lib/painel/funil';
 
 /**
  * O funil, com forma de funil.
@@ -43,7 +43,7 @@ export function FunilEtapas({ funil }: { funil: Funil }) {
    * total ZERO, e "Comprou 0" virava uma barra sólida — compra fantasma
    * desenhada numa conta que não vendeu nada.
    */
-  const efetiva = largurasDoFunil(funil.etapas);
+  const faixas = faixasDoFunil(funil.etapas);
 
   const alturaDaFaixa = 100 / n;
 
@@ -63,8 +63,7 @@ export function FunilEtapas({ funil }: { funil: Funil }) {
           aria-label="Funil de conversão"
         >
           {funil.etapas.map((etapa, i) => {
-            const cima = efetiva[i] ?? PISO;
-            const baixo = efetiva[i + 1] ?? cima;
+            const { topo: cima, baixo } = faixas[i] ?? { topo: 0, baixo: 0 };
 
             /*
              * Nada a desenhar. Acontece na etapa que mediu ZERO: a forma

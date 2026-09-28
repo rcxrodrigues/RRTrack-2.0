@@ -411,6 +411,17 @@ export type Visitante = {
   utmContent: string | null;
   referrer: string | null;
   landingUrl: string | null;
+  /**
+   * O navegador que se apresentou.
+   *
+   * Está aqui porque é o campo que responde "quem é este visitante" quando o
+   * geo surpreende. Três visitantes de The Dalles, Oregon num funil
+   * brasileiro não são gente de lá: The Dalles é datacenter do Google, e o
+   * user agent diz na hora se foi o Lighthouse do relatório de velocidade da
+   * Shopify, um robô de busca ou um navegador de verdade. Sem ele, a única
+   * saída é adivinhar.
+   */
+  userAgent: string | null;
   pais: string | null;
   regiao: string | null;
   cidade: string | null;
@@ -457,7 +468,7 @@ export async function carregarVisitante(
         'trck_user_id, email, phone, first_name, last_name, fbp, fbc, ' +
           'ga_client_id, utm_source, utm_medium, utm_campaign, utm_term, ' +
           'utm_content, referrer, landing_url, geo_country, geo_region, ' +
-          'geo_city, created_at',
+          'geo_city, user_agent, created_at',
       )
       .eq('trck_user_id', trckUserId)
       .maybeSingle(),
@@ -562,6 +573,7 @@ export async function carregarVisitante(
     utmContent: textoEm(v, 'utm_content') ?? null,
     referrer: textoEm(v, 'referrer') ?? null,
     landingUrl: textoEm(v, 'landing_url') ?? null,
+    userAgent: textoEm(v, 'user_agent') ?? null,
     pais: textoEm(v, 'geo_country') ?? null,
     regiao: textoEm(v, 'geo_region') ?? null,
     cidade: textoEm(v, 'geo_city') ?? null,

@@ -4,6 +4,7 @@ import {
   comPeriodo,
   ehFaixa,
   escolhaDaQuery,
+  hojeEm,
   intervaloAnterior,
   intervaloDe,
   lerEscolha,
@@ -354,5 +355,29 @@ describe('o rótulo da faixa', () => {
 
   it('atalho continua com o rótulo de sempre', () => {
     expect(rotuloDaEscolha('7d')).toBe('7 dias');
+  });
+});
+
+describe('hojeEm', () => {
+  it('é a data no fuso do painel, não em UTC', () => {
+    // 22/09 às 23:30 em São Paulo já é 23/09 em UTC. O campo de data tem de
+    // dizer 22 — é o mesmo dia que o atalho "Hoje" está mostrando ao lado.
+    expect(hojeEm(SP, NOITE_EM_SP)).toBe('2026-09-22');
+    expect(hojeEm('UTC', NOITE_EM_SP)).toBe('2026-09-23');
+  });
+
+  it('preenche mês e dia com zero à esquerda', () => {
+    expect(hojeEm(SP, new Date('2026-01-05T15:00:00Z'))).toBe('2026-01-05');
+  });
+
+  it('bate com o começo do intervalo de "hoje"', () => {
+    // Se os dois divergirem, o campo mostra um dia e a tela conta outro.
+    const i = intervaloDe('hoje', SP, NOITE_EM_SP);
+    const faixa = intervaloDe(
+      { de: hojeEm(SP, NOITE_EM_SP), ate: hojeEm(SP, NOITE_EM_SP) },
+      SP,
+    );
+    expect(faixa.de.toISOString()).toBe(i.de.toISOString());
+    expect(faixa.ate.toISOString()).toBe(i.ate.toISOString());
   });
 });

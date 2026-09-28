@@ -328,6 +328,14 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   do servidor e outro do cliente — não `setState` num efeito, que dispara
   render em cascata e o lint recusa. Ver `Quando` em
   `src/app/(dash)/eventos/_components/webhook-recebido.tsx`.
+- **O corpo do funil cobre os QUATRO degraus, e a largura de cada etapa vale
+  no MEIO da faixa dela.** Cada faixa ia da largura da sua etapa até a da
+  seguinte, e com a última em zero a forma fechava num ponto no TOPO da
+  última faixa: o corpo ocupava três quartos da altura ao lado de quatro
+  rótulos, e lia como "o funil só tem três etapas" — foi essa a queixa.
+  Agora as bordas são a média com a vizinha (`faixasDoFunil`), a forma cobre
+  a altura inteira, e com a última etapa em zero ela fecha num ponto NO FIM,
+  que é o desenho de "ninguém passou" em vez de um desenho que some.
 - **No desenho do funil, ZERO não ganha corpo.** O piso de largura existe
   para uma etapa PEQUENA não sumir, e estava sendo aplicado ao zero também:
   numa conta com 6 visitantes e nenhuma compra, "Comprou 0" ganhava 9% de
@@ -411,6 +419,11 @@ troca de aba.
 - **Teto de 366 dias.** A Meta recusa `time_range` além de 37 meses, e o "vs
   período anterior" de uma faixa de cinco anos compara com anos que talvez
   não existam. Fora disso cai no padrão, como qualquer lixo de query string.
+- **Os campos de data nascem com HOJE, não vazios.** Campo vazio não diz
+  qual período está na tela, e o filtro ficava com duas metades afirmando
+  coisas diferentes: "Hoje" aceso em cima e `dd/mm/aaaa` embaixo. `hojeEm`
+  calcula no fuso do painel — em UTC, às 21h em São Paulo o campo mostraria
+  o dia seguinte ao que o atalho ao lado está contando.
 - **A grade no celular veio da foto.** Os dois campos e o botão numa linha
   só, a 390px, cortavam o ano: `09/01/2(`. Um seletor de data que não deixa
   ler a data escolhida é pior que não ter seletor.

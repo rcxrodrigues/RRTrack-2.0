@@ -4,6 +4,7 @@ import type { EventoPorTipo } from './consultas';
 
 import {
   etapaDe,
+  faixasDoFunil,
   largurasDoFunil,
   montarFunil,
   PISO,
@@ -217,5 +218,71 @@ describe('largurasDoFunil', () => {
     const larguras = largurasDoFunil([etapa({ total: 0 }), etapa({ total: 0 })]);
     expect(larguras.every((l) => l === 100 || l === 0)).toBe(true);
     expect(larguras[0]).toBe(100);
+  });
+});
+
+/**
+ * A FORMA TEM DE COBRIR OS QUATRO RÓTULOS.
+ *
+ * Tirar o corpo da etapa zerada consertou a compra fantasma e criou outra
+ * leitura errada: a forma passou a terminar no topo da última faixa, três
+ * quartos da altura ao lado de quatro rótulos, e lia como funil de TRÊS
+ * etapas. A queixa foi literalmente essa.
+ */
+describe('faixasDoFunil', () => {
+  it('tem uma faixa por etapa', () => {
+    const faixas = faixasDoFunil([
+      etapa({ total: 100 }),
+      etapa({ total: 50 }),
+      etapa({ total: 10 }),
+      etapa({ total: 2 }),
+    ]);
+    expect(faixas).toHaveLength(4);
+  });
+
+  it('as faixas se encostam — a forma é contínua, sem degrau', () => {
+    const faixas = faixasDoFunil([
+      etapa({ total: 100 }),
+      etapa({ total: 50 }),
+      etapa({ total: 10 }),
+    ]);
+    for (let i = 0; i < faixas.length - 1; i++) {
+      expect(faixas[i]?.baixo).toBe(faixas[i + 1]?.topo);
+    }
+  });
+
+  it('começa na largura do topo e termina na da última etapa', () => {
+    const faixas = faixasDoFunil([etapa({ total: 100 }), etapa({ total: 40 })]);
+    expect(faixas[0]?.topo).toBe(100);
+    expect(faixas[1]?.baixo).toBe(40);
+  });
+
+  it('com a última etapa em ZERO, fecha num ponto NO FIM — não antes', () => {
+    const faixas = faixasDoFunil([
+      etapa({ total: 6 }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 0 }),
+    ]);
+
+    // A última faixa fecha em zero…
+    expect(faixas[3]?.baixo).toBe(0);
+    // …e AINDA TEM CORPO no topo dela: é isso que faz o desenho chegar até o
+    // rótulo "Comprou" em vez de sumir um quarto antes.
+    expect(faixas[3]?.topo).toBeGreaterThan(0);
+    // Nenhuma faixa nasce e morre em zero — nenhuma linha fica sem desenho.
+    expect(faixas.some((f) => f.topo === 0 && f.baixo === 0)).toBe(false);
+  });
+
+  it('zero continua sem ganhar corpo: a ponta chega a zero', () => {
+    // A compra fantasma era uma barra de largura constante. Aqui a última
+    // faixa é um triângulo que termina em nada — some como quantidade, fica
+    // como forma.
+    const faixas = faixasDoFunil([etapa({ total: 10 }), etapa({ total: 0 })]);
+    // As larguras são PORCENTAGEM do topo, não contagem: o topo é sempre 100.
+    expect(faixas[0]?.topo).toBe(100);
+    expect(faixas[1]?.baixo).toBe(0);
+    expect(faixas[1]?.topo).toBeLessThan(100);
+    expect(faixas[1]?.topo).toBeGreaterThan(0);
   });
 });

@@ -20,6 +20,7 @@ import { etapaDe, montarFunil } from '@/lib/painel/funil';
 import { montarArvoreGeo } from '@/lib/painel/geo-arvore';
 import {
   comPeriodo,
+  hojeEm,
   intervaloAnterior,
   intervaloDe,
   lerEscolha,
@@ -183,7 +184,7 @@ export default async function VisaoGeralPage({
         <h2 className="text-lg font-semibold tracking-tight md:hidden">
           Visão geral
         </h2>
-        <SeletorPeriodo atual={escolha} />
+        <SeletorPeriodo atual={escolha} hoje={hojeEm(settings.timezone)} />
       </div>
 
       {/*

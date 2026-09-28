@@ -196,3 +196,42 @@ export function largurasDoFunil(etapas: readonly Etapa[]): number[] {
     return larguraA + ((larguraB - larguraA) * (i - inicio)) / (b - inicio);
   });
 }
+
+/**
+ * As faixas do desenho: a largura no TOPO e na BASE de cada etapa.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ POR QUE ISTO NÃO É `largurasDoFunil` DIRETO — e o que a foto pegou.      │
+ * │                                                                          │
+ * │ Antes cada faixa ia da largura da SUA etapa até a largura da SEGUINTE.   │
+ * │ Com a última etapa em ZERO, a forma fechava num ponto no TOPO da última  │
+ * │ faixa e a faixa em si não desenhava nada: o corpo ocupava três quartos   │
+ * │ da altura, ao lado de quatro rótulos. Lia como "o funil só tem três      │
+ * │ etapas", e foi exatamente essa a queixa.                                 │
+ * │                                                                          │
+ * │ Agora a largura de cada etapa vale no MEIO da faixa dela, e as bordas    │
+ * │ são a média com a vizinha. A borda de cima da primeira e a de baixo da   │
+ * │ última são as larguras próprias. Resultado: o corpo cobre a altura       │
+ * │ inteira, um a um com os rótulos, e quando a última etapa é zero ele      │
+ * │ fecha num ponto NO FIM — que é o desenho de "ninguém passou", em vez de  │
+ * │ um desenho que some.                                                     │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * O zero continua sem ganhar corpo: a ponta chega a zero de largura. O que
+ * mudou é ONDE ela chega.
+ */
+export function faixasDoFunil(
+  etapas: readonly Etapa[],
+): { topo: number; baixo: number }[] {
+  const larguras = largurasDoFunil(etapas);
+  const n = larguras.length;
+
+  /** A largura na fronteira entre a etapa i-1 e a i. */
+  const borda = (i: number): number => {
+    if (i <= 0) return larguras[0] ?? 0;
+    if (i >= n) return larguras[n - 1] ?? 0;
+    return ((larguras[i - 1] ?? 0) + (larguras[i] ?? 0)) / 2;
+  };
+
+  return larguras.map((_, i) => ({ topo: borda(i), baixo: borda(i + 1) }));
+}

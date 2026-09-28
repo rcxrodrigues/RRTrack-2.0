@@ -13,6 +13,7 @@ import { buscarInsights } from '@/lib/meta/insights';
 import { buscarReceitaPorUtmCompleta } from '@/lib/painel/consultas';
 import { montarArvore } from '@/lib/painel/arvore';
 import {
+  hojeEm,
   intervaloDe,
   lerEscolha,
   paramsDaEscolha,
@@ -87,7 +88,7 @@ export default async function CampanhasPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Campanhas</h2>
-        <SeletorPeriodo atual={escolha} />
+        <SeletorPeriodo atual={escolha} hoje={hojeEm(settings.timezone)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

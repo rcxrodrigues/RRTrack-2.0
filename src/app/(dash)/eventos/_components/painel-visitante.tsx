@@ -291,6 +291,19 @@ function Conteudo({ visitante: v }: { visitante: Visitante }) {
         <Campo rotulo="utm_content (anúncio)" valor={v.utmContent} />
         <Campo rotulo="Referrer" valor={v.referrer} />
         <Campo rotulo="Entrou por" valor={v.landingUrl} />
+        {/*
+          O user agent fecha a identificação quando o geo surpreende: um
+          "HeadlessChrome" ou "Chrome-Lighthouse" explica na hora um
+          visitante que aparece num datacenter, e não numa cidade.
+        */}
+        <Campo
+          rotulo="Navegador"
+          valor={
+            v.userAgent ? (
+              <span className="wrap-anywhere font-mono text-xs">{v.userAgent}</span>
+            ) : null
+          }
+        />
         <Campo rotulo="Região" valor={lugar} />
       </Secao>
 
