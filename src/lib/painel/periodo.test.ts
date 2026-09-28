@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   comPeriodo,
+  ehFaixa,
+  escolhaDaQuery,
   intervaloAnterior,
   intervaloDe,
-  lerPeriodo,
+  lerEscolha,
+  MAXIMO_DE_DIAS,
+  paramsDaEscolha,
   PERIODO_PADRAO,
+  rotuloDaEscolha,
 } from './periodo';
 
 /**
@@ -26,18 +31,18 @@ function iso(d: Date): string {
   return d.toISOString();
 }
 
-describe('lerPeriodo', () => {
+describe('lerEscolha', () => {
   it('aceita os períodos conhecidos', () => {
-    expect(lerPeriodo('hoje')).toBe('hoje');
-    expect(lerPeriodo('30d')).toBe('30d');
+    expect(lerEscolha({ periodo: 'hoje' })).toBe('hoje');
+    expect(lerEscolha({ periodo: '30d' })).toBe('30d');
   });
 
   it('query string é sugestão: o desconhecido cai no padrão', () => {
-    expect(lerPeriodo('ontem-ou-sei-la')).toBe(PERIODO_PADRAO);
-    expect(lerPeriodo(undefined)).toBe(PERIODO_PADRAO);
-    expect(lerPeriodo('')).toBe(PERIODO_PADRAO);
+    expect(lerEscolha({ periodo: 'ontem-ou-sei-la' })).toBe(PERIODO_PADRAO);
+    expect(lerEscolha({})).toBe(PERIODO_PADRAO);
+    expect(lerEscolha({ periodo: '' })).toBe(PERIODO_PADRAO);
     // Um array chega quando alguém repete o parâmetro na URL.
-    expect(lerPeriodo(['30d', 'hoje'])).toBe('30d');
+    expect(lerEscolha({ periodo: ['30d', 'hoje'] })).toBe('30d');
   });
 });
 
@@ -176,14 +181,178 @@ describe('comPeriodo', () => {
     expect(comPeriodo('/eventos', PERIODO_PADRAO)).toBe('/eventos');
   });
 
-  it('ignora lixo na query em vez de propagá-lo', () => {
-    expect(comPeriodo('/eventos', 'ontem; drop table')).toBe('/eventos');
-    expect(comPeriodo('/eventos', null)).toBe('/eventos');
-    expect(comPeriodo('/eventos', undefined)).toBe('/eventos');
+  it('a FAIXA também atravessa a troca de aba', () => {
+    // O modo de falha que `comPeriodo` existe para evitar, agora pela porta
+    // nova: escolher 1 a 15 de setembro no faturamento e chegar à visão
+    // geral vendo hoje, sem nada dizendo que o intervalo mudou.
+    expect(
+      comPeriodo('/faturamento', { de: '2026-09-01', ate: '2026-09-15' }),
+    ).toBe('/faturamento?de=2026-09-01&ate=2026-09-15');
+  });
+
+  it('lixo na query cai no padrão em vez de ser propagado', () => {
+    expect(comPeriodo('/eventos', lerEscolha({ periodo: 'drop table' }))).toBe(
+      '/eventos',
+    );
+    expect(comPeriodo('/eventos', lerEscolha({}))).toBe('/eventos');
   });
 
   it('o padrão ao abrir é HOJE, não sete dias', () => {
     expect(PERIODO_PADRAO).toBe('hoje');
-    expect(lerPeriodo(undefined)).toBe('hoje');
+    expect(lerEscolha({})).toBe('hoje');
+  });
+});
+
+/**
+ * A faixa escolhida à mão.
+ *
+ * Duas armadilhas moram aqui, e as duas erram calado:
+ *
+ *   1. O FUSO. "1º de setembro" é um dia do calendário, não um instante.
+ *      Tratado como UTC, a faixa de quem está em São Paulo começa às 21h do
+ *      dia 31 de agosto — e três horas de venda do dia errado entram na conta.
+ *   2. O INCLUSIVO. Quem escolhe "1 a 15" quer o dia 15 inteiro. Sem o `+1`,
+ *      o dia 15 fica de fora e o painel mostra 14 dias chamando de 15.
+ */
+describe('faixa de datas', () => {
+  it('lê `de` e `ate` da query', () => {
+    const e = lerEscolha({ de: '2026-09-01', ate: '2026-09-15' });
+    expect(ehFaixa(e)).toBe(true);
+    expect(e).toEqual({ de: '2026-09-01', ate: '2026-09-15' });
+  });
+
+  it('o dia final entra INTEIRO — a faixa é inclusiva', () => {
+    const i = intervaloDe({ de: '2026-09-01', ate: '2026-09-15' }, SP);
+    // 1º de setembro, 00:00 em SP = 03:00 UTC.
+    expect(iso(i.de)).toBe('2026-09-01T03:00:00.000Z');
+    // O fim é a meia-noite do dia 16: o dia 15 inteiro está dentro.
+    expect(iso(i.ate)).toBe('2026-09-16T03:00:00.000Z');
+    expect(i.dias).toBe(15);
+  });
+
+  it('um dia só é um dia, não zero', () => {
+    const i = intervaloDe({ de: '2026-09-22', ate: '2026-09-22' }, SP);
+    expect(i.dias).toBe(1);
+    expect(i.ate.getTime() - i.de.getTime()).toBe(86_400_000);
+  });
+
+  it('começa no fuso do painel, não em UTC', () => {
+    const i = intervaloDe({ de: '2026-09-01', ate: '2026-09-01' }, SP);
+    // Em UTC a meia-noite de SP é 03:00 — não 00:00. Tratada como UTC, a
+    // faixa pegaria as três primeiras horas do dia 1º em UTC, que em SP
+    // ainda são 31 de agosto.
+    expect(iso(i.de)).toBe('2026-09-01T03:00:00.000Z');
+    expect(iso(i.de)).not.toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  it('a faixa não olha o relógio: o "agora" não muda nada', () => {
+    const a = intervaloDe({ de: '2026-01-05', ate: '2026-01-09' }, SP, NOITE_EM_SP);
+    const b = intervaloDe(
+      { de: '2026-01-05', ate: '2026-01-09' },
+      SP,
+      new Date('2030-06-01T12:00:00Z'),
+    );
+    expect(iso(a.de)).toBe(iso(b.de));
+    expect(iso(a.ate)).toBe(iso(b.ate));
+  });
+
+  it('o "período anterior" de uma faixa tem a mesma duração e encosta', () => {
+    const atual = intervaloDe({ de: '2026-09-11', ate: '2026-09-20' }, SP);
+    const antes = intervaloAnterior(atual);
+    expect(iso(antes.ate)).toBe(iso(atual.de));
+    expect(antes.ate.getTime() - antes.de.getTime()).toBe(
+      atual.ate.getTime() - atual.de.getTime(),
+    );
+  });
+});
+
+describe('a faixa que não vale cai no padrão', () => {
+  const invalidas: [string, Record<string, string>][] = [
+    ['dia que não existe no calendário', { de: '2026-02-31', ate: '2026-03-05' }],
+    ['formato errado', { de: '01/09/2026', ate: '15/09/2026' }],
+    ['de depois de ate', { de: '2026-09-15', ate: '2026-09-01' }],
+    ['só uma das pontas', { de: '2026-09-01' }],
+    ['texto no lugar de data', { de: 'ontem', ate: 'hoje' }],
+    ['mês zero', { de: '2026-00-10', ate: '2026-01-10' }],
+  ];
+
+  for (const [caso, params] of invalidas) {
+    it(`recusa: ${caso}`, () => {
+      expect(lerEscolha(params)).toBe(PERIODO_PADRAO);
+    });
+  }
+
+  it(`recusa faixa maior que ${String(MAXIMO_DE_DIAS)} dias`, () => {
+    // A Meta recusa `time_range` além de 37 meses, e o "vs período anterior"
+    // de uma faixa de cinco anos compara com anos que talvez não existam.
+    expect(lerEscolha({ de: '2020-01-01', ate: '2026-01-01' })).toBe(
+      PERIODO_PADRAO,
+    );
+  });
+
+  it('aceita exatamente o teto', () => {
+    // 2026 não é bissexto: 01/01/2026 a 01/01/2027 dá 366 dias contando as
+    // duas pontas. O limite é `<=`, então este passa e um dia a mais não.
+    expect(lerEscolha({ de: '2026-01-01', ate: '2027-01-01' })).toEqual({
+      de: '2026-01-01',
+      ate: '2027-01-01',
+    });
+    expect(lerEscolha({ de: '2026-01-01', ate: '2027-01-02' })).toBe(
+      PERIODO_PADRAO,
+    );
+  });
+
+  it('a faixa ganha do atalho quando os dois vêm na URL', () => {
+    // É o que o formulário manda: os campos de data mais o `periodo` que
+    // estava na tela. Ignorar a faixa ali faria o botão não fazer nada.
+    expect(
+      lerEscolha({ periodo: '30d', de: '2026-09-01', ate: '2026-09-15' }),
+    ).toEqual({ de: '2026-09-01', ate: '2026-09-15' });
+  });
+
+  it('faixa quebrada não derruba o atalho que veio junto', () => {
+    expect(lerEscolha({ periodo: '30d', de: 'lixo', ate: '2026-09-15' })).toBe(
+      '30d',
+    );
+  });
+});
+
+describe('a escolha vira URL e volta', () => {
+  it('ida e volta pelos parâmetros', () => {
+    for (const escolha of [
+      'hoje',
+      '30d',
+      { de: '2026-09-01', ate: '2026-09-15' },
+    ] as const) {
+      expect(lerEscolha(paramsDaEscolha(escolha))).toEqual(escolha);
+    }
+  });
+
+  it('escolhaDaQuery lê o mesmo que lerEscolha', () => {
+    const query = new URLSearchParams({ de: '2026-09-01', ate: '2026-09-15' });
+    expect(escolhaDaQuery(query)).toEqual({
+      de: '2026-09-01',
+      ate: '2026-09-15',
+    });
+    expect(escolhaDaQuery(new URLSearchParams({ periodo: '7d' }))).toBe('7d');
+    expect(escolhaDaQuery(new URLSearchParams())).toBe(PERIODO_PADRAO);
+  });
+});
+
+describe('o rótulo da faixa', () => {
+  it('mostra dia e mês quando é o mesmo ano', () => {
+    expect(rotuloDaEscolha({ de: '2026-09-01', ate: '2026-09-15' })).toBe(
+      '01/09 – 15/09',
+    );
+  });
+
+  it('acrescenta o ano quando a faixa atravessa dezembro', () => {
+    expect(rotuloDaEscolha({ de: '2025-12-20', ate: '2026-01-05' })).toBe(
+      '20/12/25 – 05/01/26',
+    );
+  });
+
+  it('atalho continua com o rótulo de sempre', () => {
+    expect(rotuloDaEscolha('7d')).toBe('7 dias');
   });
 });

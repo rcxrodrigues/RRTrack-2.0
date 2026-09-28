@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { EventoPorTipo } from './consultas';
 
-import { etapaDe, montarFunil } from './funil';
+import {
+  etapaDe,
+  largurasDoFunil,
+  montarFunil,
+  PISO,
+  type Etapa,
+} from './funil';
 
 /**
  * O funil erra de um jeito específico: ele engorda no meio.
@@ -119,5 +125,97 @@ describe('montarFunil', () => {
   it('sem visitante no topo, nada tem base — e não divide por zero', () => {
     const funil = montarFunil(0, [CARRINHO, CHECKOUT], 0);
     expect(etapaDe(funil, 'carrinho')?.doTopo).toBeNull();
+  });
+});
+
+/**
+ * A GEOMETRIA — e o fantasma que ela desenhava.
+ *
+ * A captura de tela mostrou 6 visitantes, carrinho e checkout sem medida, e
+ * ZERO compras — com uma barra azul sólida embaixo do funil. A etapa que não
+ * aconteceu tinha corpo no desenho.
+ *
+ * É a regra do projeto quebrada por outra porta: "métrica sem dado mostra —,
+ * nunca 0" cuidava do número, e o desenho continuava afirmando quantidade.
+ */
+const etapa = (p: Partial<Etapa> & { total: number }): Etapa => ({
+  id: 'visitou',
+  rotulo: 'x',
+  doTopo: null,
+  daAnterior: null,
+  desconhecido: false,
+  ...p,
+});
+
+describe('largurasDoFunil', () => {
+  it('ZERO não ganha corpo — é a compra fantasma que a foto pegou', () => {
+    const larguras = largurasDoFunil([
+      etapa({ total: 6 }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 0 }),
+    ]);
+
+    expect(larguras[0]).toBe(100);
+    expect(larguras[3]).toBe(0);
+  });
+
+  it('mas uma etapa PEQUENA ganha o piso, senão some da tela', () => {
+    const larguras = largurasDoFunil([
+      etapa({ total: 1000 }),
+      etapa({ total: 1 }),
+    ]);
+
+    // 0,1% desenhado como 0,1% é um fio invisível — justamente a etapa que
+    // mais interessa. O número exato fica na calha ao lado.
+    expect(larguras[1]).toBe(PISO);
+  });
+
+  it('o piso vale para o um, não para o zero — a diferença é o defeito', () => {
+    const com = largurasDoFunil([etapa({ total: 1000 }), etapa({ total: 1 })]);
+    const sem = largurasDoFunil([etapa({ total: 1000 }), etapa({ total: 0 })]);
+    expect(com[1]).toBe(PISO);
+    expect(sem[1]).toBe(0);
+    expect(com[1]).not.toBe(sem[1]);
+  });
+
+  it('largura é proporcional quando há gente de sobra', () => {
+    const larguras = largurasDoFunil([
+      etapa({ total: 200 }),
+      etapa({ total: 100 }),
+      etapa({ total: 50 }),
+    ]);
+    expect(larguras).toEqual([100, 50, 25]);
+  });
+
+  it('duas etapas sem medida seguidas AFUNILAM, não viram bloco reto', () => {
+    // Com a média dos extremos as duas ficavam iguais e o meio do funil
+    // virava um retângulo. A interpolação linear faz o trecho estreitar.
+    const larguras = largurasDoFunil([
+      etapa({ total: 100 }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 0, desconhecido: true }),
+      etapa({ total: 25 }),
+    ]);
+    expect(larguras[0]).toBe(100);
+    expect(larguras[1]).toBe(75);
+    expect(larguras[2]).toBe(50);
+    expect(larguras[3]).toBe(25);
+    expect(larguras[1]).not.toBe(larguras[2]);
+  });
+
+  it('sem nada conhecido depois, o trecho segue reto', () => {
+    // Inventar um estreitamento afirmaria uma queda que ninguém mediu.
+    const larguras = largurasDoFunil([
+      etapa({ total: 40 }),
+      etapa({ total: 0, desconhecido: true }),
+    ]);
+    expect(larguras[1]).toBe(100);
+  });
+
+  it('topo zerado não desenha nada — não há proporção sem denominador', () => {
+    const larguras = largurasDoFunil([etapa({ total: 0 }), etapa({ total: 0 })]);
+    expect(larguras.every((l) => l === 100 || l === 0)).toBe(true);
+    expect(larguras[0]).toBe(100);
   });
 });

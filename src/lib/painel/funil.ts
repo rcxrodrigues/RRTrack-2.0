@@ -129,3 +129,70 @@ export function montarFunil(
 export function etapaDe(funil: Funil, id: IdEtapa): Etapa | undefined {
   return funil.etapas.find((e) => e.id === id);
 }
+
+/**
+ * Piso visível: abaixo disto a faixa some e "quase ninguém" vira "ninguém".
+ *
+ * Vale para etapa com gente de verdade, e SÓ para ela — ver `largurasDoFunil`.
+ */
+export const PISO = 9;
+
+/**
+ * A largura de cada etapa no desenho, em porcentagem do topo.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ TRÊS ESTADOS, E O PISO VALE PARA UM SÓ.                                  │
+ * │                                                                          │
+ * │   total > 0       largura proporcional, com PISO para não sumir          │
+ * │   total === 0     largura ZERO: o funil fecha num ponto                  │
+ * │   desconhecido    sem medida: interpola entre os vizinhos, e o tracejado │
+ * │                   é que diz que ali não se sabe                          │
+ * │                                                                          │
+ * │ O defeito que isto conserta: o piso era aplicado ao zero também. Numa    │
+ * │ conta com 6 visitantes e NENHUMA compra, a etapa "Comprou" ganhava 9% de │
+ * │ largura e virava uma barra sólida embaixo do funil — uma compra          │
+ * │ fantasma, desenhada. Foi a captura de tela que pegou, e é a regra do     │
+ * │ projeto quebrada no desenho: zero é medida, e a medida do zero é NADA.   │
+ * │                                                                          │
+ * │ Um piso no zero também mente sobre a proporção, que é o que a forma      │
+ * │ existe para mostrar: 0 de 6 desenhado igual a 1 de 6.                    │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * A interpolação do desconhecido é LINEAR ao longo do trecho, não a média dos
+ * dois extremos: com duas etapas sem medida seguidas — que é o caso comum,
+ * carrinho e checkout juntos —, a média daria a mesma largura para as duas e
+ * o trecho viraria um bloco reto no meio de um funil.
+ */
+export function largurasDoFunil(etapas: readonly Etapa[]): number[] {
+  const topo = etapas[0]?.total ?? 0;
+
+  /** A largura medida, ou `null` quando não há medida. */
+  const medidas = etapas.map((e): number | null => {
+    if (e.desconhecido || topo <= 0) return null;
+    if (e.total === 0) return 0;
+    return Math.max(PISO, Math.min(100, (e.total / topo) * 100));
+  });
+
+  return medidas.map((largura, i) => {
+    if (largura !== null) return largura;
+
+    // O último conhecido antes, e o primeiro conhecido depois.
+    let a = -1;
+    for (let k = i - 1; k >= 0; k--) {
+      if (medidas[k] !== null) { a = k; break; }
+    }
+    let b = -1;
+    for (let k = i + 1; k < medidas.length; k++) {
+      if (medidas[k] !== null) { b = k; break; }
+    }
+
+    const larguraA = a === -1 ? 100 : (medidas[a] ?? 100);
+    // Sem nada conhecido depois, o trecho segue reto: inventar um
+    // estreitamento seria afirmar uma queda que ninguém mediu.
+    if (b === -1) return larguraA;
+
+    const larguraB = medidas[b] ?? 0;
+    const inicio = a === -1 ? 0 : a;
+    return larguraA + ((larguraB - larguraA) * (i - inicio)) / (b - inicio);
+  });
+}

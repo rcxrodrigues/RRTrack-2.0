@@ -22,7 +22,7 @@ import {
   comPeriodo,
   intervaloAnterior,
   intervaloDe,
-  lerPeriodo,
+  lerEscolha,
   type Intervalo,
 } from '@/lib/painel/periodo';
 import { caminhoDaUrl } from '@/lib/painel/url';
@@ -144,11 +144,11 @@ export default async function VisaoGeralPage({
   // No Next 16 `searchParams` é uma Promise — ver node_modules/next/dist/docs.
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { periodo: bruto } = await searchParams;
-  const periodo = lerPeriodo(bruto);
+  const params = await searchParams;
+  const escolha = lerEscolha(params);
 
   const { settings } = await carregarConfiguracao();
-  const intervalo = intervaloDe(periodo, settings.timezone);
+  const intervalo = intervaloDe(escolha, settings.timezone);
 
   /*
    * Independentes entre si — em série seriam cinco idas esperando uma pela
@@ -183,7 +183,7 @@ export default async function VisaoGeralPage({
         <h2 className="text-lg font-semibold tracking-tight md:hidden">
           Visão geral
         </h2>
-        <SeletorPeriodo atual={periodo} />
+        <SeletorPeriodo atual={escolha} />
       </div>
 
       {/*
@@ -312,7 +312,7 @@ export default async function VisaoGeralPage({
             primeira conclusão de quem olha seria que o painel erra.
           */}
           <Link
-            href={comPeriodo('/paginas', periodo)}
+            href={comPeriodo('/paginas', escolha)}
             className="text-primary-vivid text-xs hover:underline"
           >
             ver todas

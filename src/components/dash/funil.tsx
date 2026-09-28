@@ -1,7 +1,7 @@
 import { CornerDownRight } from 'lucide-react';
 
 import { inteiro, percentual } from '@/lib/formato';
-import type { Etapa, Funil } from '@/lib/painel/funil';
+import { largurasDoFunil, PISO, type Funil } from '@/lib/painel/funil';
 
 /**
  * O funil, com forma de funil.
@@ -34,32 +34,16 @@ import type { Etapa, Funil } from '@/lib/painel/funil';
  * "afunila"; quem diz "quanto" é o número.
  */
 
-/** Piso visível: abaixo disso a faixa some e "quase ninguém" vira "ninguém". */
-const PISO = 9;
-
-function larguraDe(etapa: Etapa, topo: number): number {
-  if (etapa.desconhecido || topo <= 0 || etapa.total === 0) return 0;
-  return Math.max(PISO, Math.min(100, (etapa.total / topo) * 100));
-}
-
 export function FunilEtapas({ funil }: { funil: Funil }) {
-  const topo = funil.etapas[0]?.total ?? 0;
   const n = funil.etapas.length;
 
-  const larguras = funil.etapas.map((e) => larguraDe(e, topo));
-
   /*
-   * A etapa desconhecida não tem largura própria. A forma interpola entre os
-   * vizinhos só para o funil não abrir um buraco; quem diz que ali não há
-   * medida é o tracejado e o travessão na calha, não a geometria.
+   * A geometria mora em `funil.ts`, com teste. Ela estava aqui e tinha um
+   * defeito que só a foto pegou: o piso de largura era aplicado à etapa com
+   * total ZERO, e "Comprou 0" virava uma barra sólida — compra fantasma
+   * desenhada numa conta que não vendeu nada.
    */
-  const efetiva = larguras.map((l, i) => {
-    if (l > 0) return l;
-    if (!funil.etapas[i]?.desconhecido) return PISO;
-    const antes = larguras[i - 1] ?? 100;
-    const depois = larguras.slice(i + 1).find((x) => x > 0) ?? PISO;
-    return (antes + depois) / 2;
-  });
+  const efetiva = largurasDoFunil(funil.etapas);
 
   const alturaDaFaixa = 100 / n;
 
@@ -81,6 +65,15 @@ export function FunilEtapas({ funil }: { funil: Funil }) {
           {funil.etapas.map((etapa, i) => {
             const cima = efetiva[i] ?? PISO;
             const baixo = efetiva[i + 1] ?? cima;
+
+            /*
+             * Nada a desenhar. Acontece na etapa que mediu ZERO: a forma
+             * fecha num ponto na etapa anterior e daqui para baixo não há
+             * corpo nenhum. Um polígono de largura zero seria invisível de
+             * todo modo, mas deixá-lo fora diz no código o que a tela mostra.
+             */
+            if (cima === 0 && baixo === 0) return null;
+
             const y1 = i * alturaDaFaixa;
             const y2 = (i + 1) * alturaDaFaixa;
             const pts = [

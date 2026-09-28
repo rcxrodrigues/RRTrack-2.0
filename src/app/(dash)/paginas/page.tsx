@@ -3,7 +3,7 @@ import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
 import { inteiro, moeda, percentual, razao } from '@/lib/formato';
 import { buscarPaginas } from '@/lib/painel/consultas';
-import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import { intervaloDe, lerEscolha } from '@/lib/painel/periodo';
 import { caminhoDaUrl } from '@/lib/painel/url';
 import { carregarConfiguracao } from '@/lib/settings';
 
@@ -15,11 +15,11 @@ export default async function PaginasPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { periodo: bruto } = await searchParams;
-  const periodo = lerPeriodo(bruto);
+  const params = await searchParams;
+  const escolha = lerEscolha(params);
 
   const { settings } = await carregarConfiguracao();
-  const intervalo = intervaloDe(periodo, settings.timezone);
+  const intervalo = intervaloDe(escolha, settings.timezone);
   const paginas = await buscarPaginas(intervalo);
 
   const totalVisitantes = paginas.reduce((s, p) => s + p.visitantes, 0);
@@ -29,7 +29,7 @@ export default async function PaginasPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Páginas</h2>
-        <SeletorPeriodo atual={periodo} />
+        <SeletorPeriodo atual={escolha} />
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">

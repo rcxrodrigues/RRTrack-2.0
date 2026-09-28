@@ -17,6 +17,8 @@
  * mais que os dois dias juntos.
  */
 
+const UM_DIA = 86_400_000;
+
 export const PERIODOS = ['hoje', 'ontem', '7d', '30d', 'mes'] as const;
 
 export type Periodo = (typeof PERIODOS)[number];
@@ -30,6 +32,36 @@ export const ROTULOS: Record<Periodo, string> = {
 };
 
 /**
+ * Uma faixa escolhida à mão, em datas CIVIS e INCLUSIVAS nas duas pontas.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ Inclusiva aqui, exclusiva lá dentro — e a tradução é o ponto.            │
+ * │                                                                          │
+ * │ Quem escolhe "1 a 15 de setembro" quer o dia 15 INTEIRO. O `Intervalo`   │
+ * │ do painel tem fim exclusivo, porque com limite inclusivo o último        │
+ * │ milissegundo do dia entraria em dois períodos ao mesmo tempo. Então a    │
+ * │ faixa guarda o que a pessoa disse, e `intervaloDe` converte: `ate`       │
+ * │ vira a meia-noite do dia 16.                                            │
+ * │                                                                          │
+ * │ Guardar já convertido faria a tela mostrar "1 a 16" de volta para quem   │
+ * │ pediu "1 a 15", e a caixa de data viria com o dia errado.                │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Texto `YYYY-MM-DD`, não `Date`: é o que o `<input type="date">` manda e o
+ * que a URL carrega. Passar por `Date` aqui reintroduziria o fuso no lugar
+ * onde ele não pertence — "1º de setembro" é um dia do calendário, não um
+ * instante.
+ */
+export type Faixa = { de: string; ate: string };
+
+/** O que o filtro pode estar mostrando: um dos atalhos, ou uma faixa. */
+export type Escolha = Periodo | Faixa;
+
+export function ehFaixa(escolha: Escolha): escolha is Faixa {
+  return typeof escolha !== 'string';
+}
+
+/**
  * Ao ABRIR o painel, o dia de hoje.
  *
  * Quem abre o painel quer saber como está hoje — "sete dias" é relatório, e
@@ -39,8 +71,19 @@ export const ROTULOS: Record<Periodo, string> = {
  */
 export const PERIODO_PADRAO: Periodo = 'hoje';
 
+/**
+ * O teto da faixa, em dias.
+ *
+ * Um ano é a comparação mais longa que alguém faz de verdade, e passar disso
+ * quebra coisa de fora: a API da Meta recusa `time_range` além de 37 meses, e
+ * o "vs período anterior" de uma faixa de cinco anos compara com cinco anos
+ * que talvez nem existam. Faixa maior que isto cai no padrão, como qualquer
+ * outro lixo de query string.
+ */
+export const MAXIMO_DE_DIAS = 366;
+
 export type Intervalo = {
-  periodo: Periodo;
+  escolha: Escolha;
   /** Início, inclusivo. */
   de: Date;
   /** Fim, EXCLUSIVO. */
@@ -54,10 +97,118 @@ function ehPeriodo(valor: string | undefined): valor is Periodo {
   return valor !== undefined && (PERIODOS as readonly string[]).includes(valor);
 }
 
-/** O que veio na URL, ou o padrão. Nunca lança: query string é sugestão. */
-export function lerPeriodo(valor: string | string[] | undefined): Periodo {
-  const texto = Array.isArray(valor) ? valor[0] : valor;
-  return ehPeriodo(texto) ? texto : PERIODO_PADRAO;
+/** O parâmetro pode chegar repetido na URL; vale o primeiro. */
+function umValor(
+  valor: string | string[] | null | undefined,
+): string | undefined {
+  return Array.isArray(valor) ? valor[0] : (valor ?? undefined);
+}
+
+/**
+ * `YYYY-MM-DD` que existe no calendário.
+ *
+ * A ida e volta é o que pega `2026-02-31`: o `Date.UTC` aceita e rola para 3
+ * de março, então comparar o texto de volta reprova. Sem isso, a faixa
+ * aceitaria um dia inexistente e o painel mostraria um intervalo que ninguém
+ * pediu, sem erro nenhum.
+ */
+function ehDataCivil(texto: string | undefined): texto is string {
+  if (texto === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(texto)) return false;
+
+  const [ano = 0, mes = 0, dia = 0] = texto.split('-').map(Number);
+  const instante = new Date(Date.UTC(ano, mes - 1, dia));
+
+  return (
+    instante.getUTCFullYear() === ano &&
+    instante.getUTCMonth() === mes - 1 &&
+    instante.getUTCDate() === dia
+  );
+}
+
+/** Quantos dias a faixa cobre, contando as duas pontas. */
+function diasDaFaixa(faixa: Faixa): number {
+  const emDias = (t: string): number => {
+    const [a = 0, m = 0, d = 0] = t.split('-').map(Number);
+    return Date.UTC(a, m - 1, d) / UM_DIA;
+  };
+  return emDias(faixa.ate) - emDias(faixa.de) + 1;
+}
+
+/**
+ * O que veio na URL, ou o padrão. Nunca lança: query string é sugestão.
+ *
+ * Lê o objeto inteiro de parâmetros, e não um valor só, porque a faixa chega
+ * em DOIS (`?de=…&ate=…`). São dois, e não um `?periodo=de..ate`, por causa
+ * do formulário: `<input type="date">` num `<form method="get">` manda o
+ * nome do campo, e é assim que o seletor funciona sem uma linha de
+ * JavaScript — do mesmo jeito que os cinco atalhos, que são `<Link>`.
+ *
+ * A faixa ganha do atalho quando os dois vêm: quem acabou de submeter o
+ * formulário mandou junto o `periodo` que estava na tela, e ignorar a faixa
+ * ali faria o botão não fazer nada.
+ */
+export function lerEscolha(
+  params: Record<string, string | string[] | null | undefined>,
+): Escolha {
+  const de = umValor(params.de);
+  const ate = umValor(params.ate);
+
+  if (ehDataCivil(de) && ehDataCivil(ate) && de <= ate) {
+    // Comparação de texto basta: `YYYY-MM-DD` ordena igual à data.
+    const faixa = { de, ate };
+    if (diasDaFaixa(faixa) <= MAXIMO_DE_DIAS) return faixa;
+  }
+
+  const periodo = umValor(params.periodo);
+  return ehPeriodo(periodo) ? periodo : PERIODO_PADRAO;
+}
+
+/**
+ * A escolha lida de uma `URLSearchParams` — o que os componentes cliente têm.
+ *
+ * Existe para a sidebar e a barra do celular não remontarem a leitura à mão:
+ * eram elas que só olhavam `periodo`, e uma faixa escolhida se perderia na
+ * primeira troca de aba — calada, que é o modo de falha que `comPeriodo`
+ * existe para evitar.
+ */
+export function escolhaDaQuery(query: URLSearchParams): Escolha {
+  return lerEscolha({
+    periodo: query.get('periodo'),
+    de: query.get('de'),
+    ate: query.get('ate'),
+  });
+}
+
+/**
+ * A escolha como parâmetros de URL.
+ *
+ * Fonte única para os três lugares que precisam remontar a query — o menu, a
+ * paginação da aba de Eventos e os campos escondidos dos formulários. Cada um
+ * montando o seu seria garantir que um dia a faixa deixa de atravessar de um
+ * deles, em silêncio.
+ */
+export function paramsDaEscolha(escolha: Escolha): Record<string, string> {
+  return ehFaixa(escolha)
+    ? { de: escolha.de, ate: escolha.ate }
+    : { periodo: escolha };
+}
+
+// À mão, sem `toLocaleDateString`: o ICU do Node não é o do navegador, e a
+// diferença quebra a hidratação. É a mesma regra de `formato.ts`.
+const curto = (dia: string, mes: string): string => `${dia}/${mes}`;
+const comAno = (dia: string, mes: string, ano: string): string =>
+  `${dia}/${mes}/${ano.slice(2)}`;
+
+/** `01/09 – 15/09`, ou com o ano quando a faixa atravessa dezembro. */
+export function rotuloDaEscolha(escolha: Escolha): string {
+  if (!ehFaixa(escolha)) return ROTULOS[escolha];
+
+  const [anoDe = '', mesDe = '', diaDe = ''] = escolha.de.split('-');
+  const [anoAte = '', mesAte = '', diaAte = ''] = escolha.ate.split('-');
+
+  return anoDe === anoAte
+    ? `${curto(diaDe, mesDe)} – ${curto(diaAte, mesAte)}`
+    : `${comAno(diaDe, mesDe, anoDe)} – ${comAno(diaAte, mesAte, anoAte)}`;
 }
 
 /**
@@ -72,9 +223,9 @@ export function lerPeriodo(valor: string | string[] | undefined): Periodo {
  * O padrão é omitido de propósito: URL sem query é o estado inicial, e
  * carregar `?periodo=hoje` só faria o link parecer sujo sem mudar nada.
  */
-export function comPeriodo(href: string, periodo: string | null | undefined): string {
-  if (!ehPeriodo(periodo ?? undefined) || periodo === PERIODO_PADRAO) return href;
-  return `${href}?periodo=${String(periodo)}`;
+export function comPeriodo(href: string, escolha: Escolha): string {
+  if (!ehFaixa(escolha) && escolha === PERIODO_PADRAO) return href;
+  return `${href}?${new URLSearchParams(paramsDaEscolha(escolha)).toString()}`;
 }
 
 /**
@@ -149,8 +300,6 @@ function meiaNoiteLocal(
   return new Date(segundo);
 }
 
-const UM_DIA = 86_400_000;
-
 /**
  * Traduz o período em dois instantes.
  *
@@ -158,10 +307,32 @@ const UM_DIA = 86_400_000;
  * testável: uma função que lê o relógio por dentro só se testa esperando.
  */
 export function intervaloDe(
-  periodo: Periodo,
+  escolha: Escolha,
   fuso: string,
   agora: Date = new Date(),
 ): Intervalo {
+  /*
+   * A faixa não olha o relógio: ela já traz os dois dias. O que ela precisa
+   * do fuso é só a meia-noite — e o `+ 1` no fim é a conversão de inclusivo
+   * (o que a pessoa escolheu) para exclusivo (o que o resto do painel usa).
+   */
+  if (ehFaixa(escolha)) {
+    const [aDe = 0, mDe = 0, dDe = 0] = escolha.de.split('-').map(Number);
+    const [aAte = 0, mAte = 0, dAte = 0] = escolha.ate.split('-').map(Number);
+
+    const de = meiaNoiteLocal(aDe, mDe, dDe, fuso);
+    const ate = meiaNoiteLocal(aAte, mAte, dAte + 1, fuso);
+
+    return {
+      escolha,
+      de,
+      ate,
+      fuso,
+      dias: Math.max(1, Math.round((ate.getTime() - de.getTime()) / UM_DIA)),
+    };
+  }
+
+  const periodo = escolha;
   const [ano, mes, dia] = dataLocal(agora, fuso);
   const hoje = meiaNoiteLocal(ano, mes, dia, fuso);
   const amanha = meiaNoiteLocal(ano, mes, dia + 1, fuso);
@@ -185,7 +356,7 @@ export function intervaloDe(
   const [de, ate] = janelas[periodo]();
 
   return {
-    periodo,
+    escolha: periodo,
     de,
     ate,
     fuso,

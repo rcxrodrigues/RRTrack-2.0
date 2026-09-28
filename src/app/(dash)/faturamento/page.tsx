@@ -13,7 +13,12 @@ import {
   lerFiltroCompras,
 } from '@/lib/painel/compras-lista';
 import { buscarResumo, buscarSerieDiaria } from '@/lib/painel/consultas';
-import { intervaloAnterior, intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import {
+  intervaloAnterior,
+  intervaloDe,
+  lerEscolha,
+  paramsDaEscolha,
+} from '@/lib/painel/periodo';
 import { carregarConfiguracao } from '@/lib/settings';
 import { STATUS_COMPRA } from '@/lib/webhooks/tipos';
 
@@ -57,11 +62,11 @@ export default async function FaturamentoPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const periodo = lerPeriodo(params.periodo);
+  const escolha = lerEscolha(params);
   const filtro = lerFiltroCompras(params);
 
   const { settings } = await carregarConfiguracao();
-  const intervalo = intervaloDe(periodo, settings.timezone);
+  const intervalo = intervaloDe(escolha, settings.timezone);
 
   const [resumo, antes, serie, { linhas, total }] = await Promise.all([
     buscarResumo(intervalo),
@@ -75,7 +80,7 @@ export default async function FaturamentoPage({
 
   const ultimaPagina = Math.max(0, Math.ceil(total / COMPRAS_POR_PAGINA) - 1);
   const link = (extra: Record<string, string>): string => {
-    const q = new URLSearchParams({ periodo, ...extra });
+    const q = new URLSearchParams({ ...paramsDaEscolha(escolha), ...extra });
     return `?${q.toString()}`;
   };
 
@@ -85,7 +90,7 @@ export default async function FaturamentoPage({
         <h2 className="text-lg font-semibold tracking-tight md:hidden">
           Faturamento
         </h2>
-        <SeletorPeriodo atual={periodo} />
+        <SeletorPeriodo atual={escolha} />
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">

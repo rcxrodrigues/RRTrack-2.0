@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { inteiro } from '@/lib/formato';
 import { buscarEventosPorTipo } from '@/lib/painel/consultas';
 import { buscarEventos, lerFiltro, POR_PAGINA } from '@/lib/painel/eventos';
-import { intervaloDe, lerPeriodo } from '@/lib/painel/periodo';
+import { intervaloDe, lerEscolha, paramsDaEscolha } from '@/lib/painel/periodo';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -82,11 +82,11 @@ export default async function EventosPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const periodo = lerPeriodo(params.periodo);
+  const escolha = lerEscolha(params);
   const filtro = lerFiltro(params);
 
   const { settings } = await carregarConfiguracao();
-  const intervalo = intervaloDe(periodo, settings.timezone);
+  const intervalo = intervaloDe(escolha, settings.timezone);
 
   const [{ linhas, total }, tipos, webhooks] = await Promise.all([
     buscarEventos(intervalo, filtro),
@@ -110,7 +110,7 @@ export default async function EventosPage({
 
   const ultimaPagina = Math.max(0, Math.ceil(total / POR_PAGINA) - 1);
   const linkDaPagina = (n: number): string => {
-    const q = new URLSearchParams({ periodo });
+    const q = new URLSearchParams(paramsDaEscolha(escolha));
     if (filtro.nome) q.set('nome', filtro.nome);
     if (filtro.busca) q.set('busca', filtro.busca);
     if (n > 0) q.set('pagina', String(n));
@@ -121,7 +121,7 @@ export default async function EventosPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Eventos</h2>
-        <SeletorPeriodo atual={periodo} />
+        <SeletorPeriodo atual={escolha} />
       </div>
 
       <Card>
@@ -141,7 +141,16 @@ export default async function EventosPage({
             última coisa que deveria depender de JavaScript.
           */}
           <form method="get" className="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="periodo" value={periodo} />
+            {/*
+              Um campo por parâmetro da escolha: `periodo` para os atalhos,
+              `de`+`ate` para a faixa. Cravar `name="periodo"` aqui fazia o
+              formulário de filtro DESFAZER a faixa escolhida — a pessoa
+              filtrava por tipo de evento e o período voltava para hoje, sem
+              nada na tela dizendo que mudou.
+            */}
+            {Object.entries(paramsDaEscolha(escolha)).map(([nome, valor]) => (
+              <input key={nome} type="hidden" name={nome} value={valor} />
+            ))}
 
             <select
               name="nome"
@@ -175,7 +184,7 @@ export default async function EventosPage({
 
             {(filtro.nome || filtro.busca) && (
               <Link
-                href={`?periodo=${periodo}`}
+                href={`?${new URLSearchParams(paramsDaEscolha(escolha)).toString()}`}
                 className="text-muted-foreground hover:text-foreground flex h-9 items-center px-2 text-sm"
               >
                 Limpar

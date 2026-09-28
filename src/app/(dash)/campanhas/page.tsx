@@ -14,7 +14,8 @@ import { buscarReceitaPorUtmCompleta } from '@/lib/painel/consultas';
 import { montarArvore } from '@/lib/painel/arvore';
 import {
   intervaloDe,
-  lerPeriodo,
+  lerEscolha,
+  paramsDaEscolha,
   type Intervalo,
 } from '@/lib/painel/periodo';
 
@@ -35,10 +36,10 @@ export default async function CampanhasPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const periodo = lerPeriodo(params.periodo);
+  const escolha = lerEscolha(params);
 
   const { settings } = await carregarConfiguracao();
-  const intervalo = intervaloDe(periodo, settings.timezone);
+  const intervalo = intervaloDe(escolha, settings.timezone);
 
   const supabase = await criarClienteServidor();
   const { data } = await supabase
@@ -86,7 +87,7 @@ export default async function CampanhasPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight md:hidden">Campanhas</h2>
-        <SeletorPeriodo atual={periodo} />
+        <SeletorPeriodo atual={escolha} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -94,7 +95,7 @@ export default async function CampanhasPage({
           contas.map((c) => (
             <Link
               key={c.id}
-              href={`?${new URLSearchParams({ periodo, conta: c.id }).toString()}`}
+              href={`?${new URLSearchParams({ ...paramsDaEscolha(escolha), conta: c.id }).toString()}`}
               className={
                 c.id === conta.id
                   ? 'bg-primary text-primary-foreground flex h-9 items-center rounded-md px-3 text-sm font-medium'
