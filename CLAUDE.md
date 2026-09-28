@@ -328,6 +328,16 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   do servidor e outro do cliente — não `setState` num efeito, que dispara
   render em cascata e o lint recusa. Ver `Quando` em
   `src/app/(dash)/eventos/_components/webhook-recebido.tsx`.
+- **No desenho do funil, ZERO não ganha corpo.** O piso de largura existe
+  para uma etapa PEQUENA não sumir, e estava sendo aplicado ao zero também:
+  numa conta com 6 visitantes e nenhuma compra, "Comprou 0" ganhava 9% de
+  largura e virava barra sólida — compra fantasma desenhada. É a regra do
+  travessão quebrada por outra porta: ela cuidava do número, e a forma
+  continuava afirmando quantidade. São três estados (`largurasDoFunil` em
+  `funil.ts`, com teste): medida > 0 com piso, medida ZERO com largura zero,
+  e sem medida interpolando entre os vizinhos — linearmente ao longo do
+  trecho, porque com carrinho E checkout sem medida juntos a média dos
+  extremos dava a mesma largura aos dois e o meio virava um bloco reto.
 - **O funil tem QUATRO etapas, e a tela busca por `id` — nunca por índice.**
   Visitou → Adicionou ao carrinho → Chegou no checkout → Comprou. Ele nasceu
   com três e o carrinho entrou no meio: quem lesse `etapas[1]` para "chegou no
@@ -375,6 +385,35 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   quebra. `src/lib/formato.ts` formata à mão, com vetores em `formato.test.ts`.
   É a mesma armadilha do `toLocaleString` em data, por outra porta, e pior:
   o erro depende de qual navegador abriu a página.
+
+### O filtro de período: cinco atalhos e uma faixa
+
+Hoje · Ontem · 7 dias · 30 dias · Este mês cobrem o dia a dia, e **não**
+cobrem "1 a 15 de setembro". A faixa entra pelo mesmo caminho: vive na URL
+(`?de=…&ate=…`), é compartilhável, sobrevive ao recarregar e atravessa a
+troca de aba.
+
+- **`<form method="get">` com dois `<input type="date">`**, não um calendário
+  em React. O navegador vira isso em query string sozinho, sem uma linha de
+  JS — a mesma propriedade que os cinco atalhos têm por serem `<Link>`. O
+  `type="date"` ainda resolve o formato: mostra no formato de quem olha e
+  manda sempre `YYYY-MM-DD`, então não há adivinhar se "03/04" é março ou
+  abril.
+- **A faixa é INCLUSIVA nas duas pontas**, e a conversão para o `ate`
+  exclusivo do painel acontece em `intervaloDe`. Guardar já convertido faria
+  a tela devolver "1 a 16" para quem pediu "1 a 15".
+- **`paramsDaEscolha` é fonte única** para os quatro lugares que remontam a
+  query — menu, paginação de Eventos, filtro de tipo e seletor de conta.
+  Cada um montando o seu seria garantir que um dia a faixa deixa de
+  atravessar de um deles, calado. O formulário de filtro da aba de Eventos
+  era esse caso: tinha `name="periodo"` cravado num campo escondido, e
+  filtrar por tipo de evento DESFAZIA a faixa escolhida.
+- **Teto de 366 dias.** A Meta recusa `time_range` além de 37 meses, e o "vs
+  período anterior" de uma faixa de cinco anos compara com anos que talvez
+  não existam. Fora disso cai no padrão, como qualquer lixo de query string.
+- **A grade no celular veio da foto.** Os dois campos e o botão numa linha
+  só, a 390px, cortavam o ano: `09/01/2(`. Um seletor de data que não deixa
+  ler a data escolhida é pior que não ter seletor.
 
 ### Navegação entre abas: `loading.tsx` não é enfeite
 
@@ -486,23 +525,52 @@ legibilidade sem ganhar identificação.
 campo de copiar; só estava atrás de "Geral", e a pergunta que chegou foi
 "onde no painel eu acho o script para colar no tema?".
 
-### Geo é tabela, não mapa — e é escolha, não preguiça
+### Geo é ÁRVORE, não mapa — e não é preguiça
 
 Um mapa colorido mostra **concentração** e nada mais. Comparar dois tons de
 azul é o pior jeito de comparar dois números, e a skill de `dataviz` lista
-coroplética acima de três séries como anti-padrão.
+coroplética acima de três séries como anti-padrão. Isso não mudou.
 
-O que decide frete, fraude e corte de campanha é o **número por região** — e
-a **conversão** por região, que num mapa não cabe. A tela põe receita e
-visitantes lado a lado de propósito: região que aparece numa lista e não na
-outra é tráfego que não converte, e isso é a leitura que interessa.
+O que mudou é a forma. Eram **três listas soltas** — receita por região,
+visitantes por região, cidades — e elas respondiam "quem são os maiores" em
+cada grão sem responder a pergunta que decide frete, prazo e corte de
+campanha: **de onde veio a conversão**. Ver "SP" numa lista e "Campinas" na
+outra não diz se Campinas está dentro daquele SP nem quanto pesa nele.
 
-São **três** listas, não duas: a terceira é CIDADE (`painel_cidades`). No
-Brasil "SP" é metade do país, e parar na região é parar cedo demais para
-decidir frete e prazo. Cinco linhas cada, não oito — da sexta em diante a
-cauda é longa e não muda decisão nenhuma.
+Agora é **País > Estado > Cidade**, fechada por padrão, como a árvore de
+campanhas. Cada nível traz receita, visitantes, vendas e conversão, com
+**duas barras empilhadas**: verde de receita, azul de visitantes. A
+comparação entre elas é o dado — azul comprida com verde curta é tráfego que
+não converte, e agora isso salta sem procurar o mesmo nome em duas colunas.
 
-Se o mapa entrar um dia, entra **ao lado** da tabela, nunca no lugar dela.
+> **Uma consulta só, no grão mais fino — e os níveis somam a partir dela.**
+> `painel_cidades` exigia `geo_city is not null`, e a Vercel manda país
+> sempre e cidade nem sempre. Somando as cidades de um estado para conferir
+> com o estado, faltava gente, e nada na tela diria por quê. Numa árvore, em
+> que abrir o nó é justamente conferir a soma, discordar é o pior defeito
+> possível. `painel_geo_arvore` devolve o grão fino com região e cidade
+> **nulas preservadas**, e `montarArvoreGeo` soma para cima — fecha por
+> construção, não por coincidência. Quem não tem cidade aparece como
+> **"Não informado"**, que é diferente de sumir.
+>
+> `painel_geo` e `painel_cidades` foram **apagadas**, não deixadas de lado:
+> `painel_cidades` é o caminho pronto e óbvio para quem for escrever a
+> próxima tela de cidades, e traz o furo embutido. Deixá-la de pé é deixar a
+> armadilha de pé.
+
+**Barra tem três estados, como o funil.** Zero não desenha nada; um valor
+pequeno desenha um toco de **3px**; o resto é proporcional. Sem o piso, seis
+visitantes entre quatro mil viravam meio pixel, que lê como sujeira de
+renderização e não como valor. Com piso no zero também, uma região sem venda
+ganharia corpo — a compra fantasma do funil por outra porta. O piso é em
+**pixel**, não em porcentagem: 1,5% de uma barra de 900px são 13px, largura
+que já afirma quantidade.
+
+**Nó com um filho só que repete o pai não abre.** Um país com um estado só,
+um estado com uma cidade só: abrir para ver o mesmo número ensina que abrir
+não vale a pena, e aí ninguém abre o nó que tem ramo.
+
+Se o mapa entrar um dia, entra **ao lado** da árvore, nunca no lugar dela.
 
 ### Gráfico: a cor é computável, então compute
 

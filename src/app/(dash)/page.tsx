@@ -5,19 +5,19 @@ import { EsqueletoMetrica } from '@/components/dash/esqueletos';
 import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
-import { SecaoGeo } from '@/components/dash/secao-geo';
+import { ArvoreGeo } from '@/components/dash/arvore-geo';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { Card } from '@/components/ui/card';
 import { inteiro, moeda, multiplo, percentual, razao, variacao } from '@/lib/formato';
 import {
-  buscarCidades,
   buscarEventosPorTipo,
-  buscarGeo,
+  buscarGeoArvore,
   buscarPaginas,
   buscarResumo,
 } from '@/lib/painel/consultas';
 import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
 import { etapaDe, montarFunil } from '@/lib/painel/funil';
+import { montarArvoreGeo } from '@/lib/painel/geo-arvore';
 import {
   comPeriodo,
   intervaloAnterior,
@@ -161,15 +161,15 @@ export default async function VisaoGeralPage({
    * estavam prontas e ninguém as via. Agora ele entra em `Suspense`, por
    * último, e só os dois cartões que dependem dele esperam.
    */
-  const [resumo, antes, eventos, geo, cidades, paginas] = await Promise.all([
+  const [resumo, antes, eventos, geo, paginas] = await Promise.all([
     buscarResumo(intervalo),
     buscarResumo(intervaloAnterior(intervalo)),
     buscarEventosPorTipo(intervalo),
-    buscarGeo(intervalo),
-    buscarCidades(intervalo),
+    buscarGeoArvore(intervalo),
     buscarPaginas(intervalo),
   ]);
 
+  const arvoreGeo = montarArvoreGeo(geo);
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
   // Por `id`, nunca por índice: o carrinho entrou no meio do funil, e
   // `etapas[1]` passaria a ser ele — sem erro nenhum aparecer.
@@ -336,7 +336,28 @@ export default async function VisaoGeralPage({
         />
       </Card>
 
-      <SecaoGeo linhas={geo} cidades={cidades} />
+      <Card className="gap-0 overflow-hidden p-0">
+        <div className="flex flex-col gap-1 px-4 pt-4 pb-3 sm:px-5">
+          <h3 className="text-sm font-semibold tracking-tight">
+            De onde vem
+          </h3>
+          {/*
+            O aviso é a chave de leitura, não rodapé. Duas barras por linha,
+            e a comparação entre elas é o dado: gente comprida com receita
+            curta é tráfego que não converte — e era isso que as duas listas
+            antigas pediam para o olho fazer procurando o mesmo nome nas
+            duas colunas.
+          */}
+          <p className="text-muted-foreground text-xs">
+            Abra o país para ver os estados, e o estado para ver as cidades. A
+            barra <span className="text-success font-medium">verde</span> é
+            receita; a <span className="text-chart-1 font-medium">azul</span>,
+            visitantes. Uma azul comprida com a verde curta é tráfego que não
+            converte.
+          </p>
+        </div>
+        <ArvoreGeo raizes={arvoreGeo} />
+      </Card>
 
       {/*
         A saúde da atribuição, e não um detalhe: venda órfã entra na receita e

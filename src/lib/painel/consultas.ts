@@ -4,6 +4,7 @@ import { numeroTolerante, texto as textoEm } from '@/lib/json';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import type { ReceitaPorUtm } from './roas';
+import type { LinhaGeoFina } from './geo-arvore';
 import type { Intervalo } from './periodo';
 
 /**
@@ -205,54 +206,42 @@ export type LinhaCidade = {
   receita: number;
 };
 
-export async function buscarCidades(
+
+/**
+ * O geo no grão mais fino — país, estado e cidade numa consulta só.
+ *
+ * É daqui que a árvore da visão geral sai. Uma consulta, e não as duas de
+ * antes (`painel_geo` + `painel_cidades`), porque os níveis somam a partir
+ * das MESMAS linhas: `painel_cidades` exige cidade não nula, então quem tem
+ * país e não tem cidade sumia dela — e as cidades de um estado não somavam o
+ * estado, calado.
+ */
+export async function buscarGeoArvore(
   intervalo: Intervalo,
-): Promise<LinhaCidade[]> {
+): Promise<LinhaGeoFina[]> {
   const supabase = await criarClienteServidor();
 
-  const { data, error } = await supabase.rpc('painel_cidades', janela(intervalo));
+  const { data, error } = await supabase.rpc(
+    'painel_geo_arvore',
+    janela(intervalo),
+  );
 
   if (error) {
-    console.error('[painel] cidades falhou:', error.message);
-    return [];
-  }
-
-  return linhas(data).flatMap((linha) => {
-    const cidade = textoEm(linha, 'cidade');
-    return cidade === undefined
-      ? []
-      : [
-          {
-            cidade,
-            regiao: textoEm(linha, 'regiao') ?? null,
-            pais: textoEm(linha, 'pais') ?? null,
-            visitantes: num(linha, 'visitantes'),
-            aprovadas: num(linha, 'aprovadas'),
-            receita: num(linha, 'receita'),
-          },
-        ];
-  });
-}
-
-export async function buscarGeo(intervalo: Intervalo): Promise<LinhaGeo[]> {
-  const supabase = await criarClienteServidor();
-
-  const { data, error } = await supabase
-    .rpc('painel_geo', janela(intervalo));
-
-  if (error) {
-    console.error('[painel] geo falhou:', error.message);
+    console.error('[painel] geo em árvore falhou:', error.message);
     return [];
   }
 
   return linhas(data).flatMap((linha) => {
     const pais = textoEm(linha, 'pais');
+    // Sem país não há onde pendurar o nó — e a consulta já filtra por
+    // `geo_country is not null`, então isto é só a guarda de tipo.
     return pais === undefined
       ? []
       : [
           {
             pais,
             regiao: textoEm(linha, 'regiao') ?? null,
+            cidade: textoEm(linha, 'cidade') ?? null,
             visitantes: num(linha, 'visitantes'),
             aprovadas: num(linha, 'aprovadas'),
             receita: num(linha, 'receita'),
@@ -260,6 +249,7 @@ export async function buscarGeo(intervalo: Intervalo): Promise<LinhaGeo[]> {
         ];
   });
 }
+
 
 /**
  * A receita aprovada por UTM — o outro lado do ROAS.

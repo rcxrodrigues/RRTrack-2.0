@@ -7,7 +7,8 @@ import {
 
 /**
  * Visão geral: seis métricas (as três do topo com o rodapé de custo), o
- * funil em linha inteira, as páginas mais visitadas e o geo em três colunas.
+ * funil em linha inteira, as páginas mais visitadas e a árvore de geo —
+ * um cartão de largura inteira, não mais as três colunas de antes.
  *
  * Ver o comentário grande em `esqueletos.tsx` para o porquê: sem este arquivo
  * a navegação não troca a tela, ela congela na aba antiga até o servidor
@@ -20,11 +21,10 @@ export default function Carregando() {
       <EsqueletoMetricas quantos={6} custoAte={3} />
       <EsqueletoFunil />
       <EsqueletoCartao linhas={5} />
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <EsqueletoCartao linhas={5} />
-        <EsqueletoCartao linhas={5} />
-        <EsqueletoCartao linhas={5} />
-      </div>
+      {/* A árvore nasce fechada: o esqueleto mostra os países, não a
+          hierarquia aberta. Esqueleto maior que a tela real faz o conteúdo
+          saltar quando chega. */}
+      <EsqueletoCartao linhas={4} />
     </div>
   );
 }
