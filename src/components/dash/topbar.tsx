@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { NAV_ITEMS } from '@/lib/nav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Logo } from '@/components/dash/logo';
+import { BotaoAtualizar } from '@/components/dash/botao-atualizar';
 
 function titleFor(pathname: string): string {
   const match = NAV_ITEMS.find((item) =>
@@ -28,6 +29,13 @@ export function Topbar({ children }: { children?: React.ReactNode }) {
       </h1>
 
       <div className="ml-auto flex items-center gap-1">
+        {/*
+          Na topbar, e não em cada aba: o painel inteiro é `force-dynamic`, e
+          "está atualizado?" é a mesma pergunta em todas elas. Um botão por
+          tela seria o mesmo código repetido cinco vezes, e o dia em que uma
+          aba nova esquecesse de copiar ninguém notaria.
+        */}
+        <BotaoAtualizar />
         <ThemeToggle />
         {children}
       </div>

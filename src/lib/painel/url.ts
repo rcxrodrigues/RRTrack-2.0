@@ -20,8 +20,12 @@ export function caminhoDaUrl(url: string): string {
      * área de pagamento". É a linha mais importante da lista — a porta de
      * entrada da loja — identificada pelo caractere menos informativo que
      * existe.
+     *
+     * "início" não resolveu ("tá com um tal de início que não sei o que é").
+     * O nome que as pessoas usam para essa página é PÁGINA INICIAL, e é ele
+     * que vai. Rótulo que ainda precisa de explicação não é rótulo.
      */
-    if (u.pathname === '/') return '/ (início)';
+    if (u.pathname === '/') return '/ (página inicial)';
     return u.pathname.replace(/\/$/, '');
   } catch {
     /*

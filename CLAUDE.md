@@ -442,6 +442,24 @@ troca de aba.
   só, a 390px, cortavam o ano: `09/01/2(`. Um seletor de data que não deixa
   ler a data escolhida é pior que não ter seletor.
 
+### Atualizar é `router.refresh()`, não `location.reload()`
+
+O botão de atualizar fica na **topbar**, não em cada aba: o painel inteiro é
+`force-dynamic` e "está atualizado?" é a mesma pergunta em todas elas. Um
+botão por tela seria o mesmo código cinco vezes, e o dia em que uma aba nova
+esquecesse de copiar ninguém notaria — o mesmo modo de falha do
+`loading.tsx`.
+
+`router.refresh()` refaz só os Server Components. O `reload` joga fora o
+bundle, as fontes e o CSS, e **perde o que está aberto na tela**: a gaveta do
+visitante fecha, a árvore de geo volta ao estado fechado, o scroll vai para o
+topo. Quem está conferindo um visitante e clica em atualizar perde
+exatamente o lugar onde estava olhando.
+
+O ícone gira enquanto a transição está pendente. Sem isso, num painel que
+responde rápido o clique não produz nada visível e a pessoa clica de novo
+achando que não funcionou.
+
 ### Navegação entre abas: `loading.tsx` não é enfeite
 
 Toda aba do painel é `force-dynamic`. **Sem um `loading.tsx`, a navegação não

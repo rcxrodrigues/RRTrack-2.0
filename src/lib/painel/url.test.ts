@@ -17,8 +17,8 @@ describe('caminhoDaUrl', () => {
    * identificada pelo caractere menos informativo que existe.
    */
   it('a home vem nomeada, não como uma barra solta', () => {
-    expect(caminhoDaUrl('https://transforlar.com/')).toBe('/ (início)');
-    expect(caminhoDaUrl('https://transforlar.com')).toBe('/ (início)');
+    expect(caminhoDaUrl('https://transforlar.com/')).toBe('/ (página inicial)');
+    expect(caminhoDaUrl('https://transforlar.com')).toBe('/ (página inicial)');
   });
 
   it('tira a barra do fim para a mesma página não virar duas linhas', () => {
