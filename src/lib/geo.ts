@@ -11,6 +11,11 @@
  *
  * Ler os dois evita que uma mudança no DNS quebre o geo em silêncio — e é o
  * tipo de falha que ninguém percebe até o mapa esvaziar.
+ *
+ * **A ORDEM importa, e não é a mesma nas duas configurações.** Com o proxy
+ * ligado os DOIS conjuntos chegam: os da Vercel descrevendo a borda do
+ * Cloudflare e os do Cloudflare descrevendo o visitante. Preferir a Vercel
+ * ali devolve um datacenter. Ver `extrairGeo`.
  */
 
 export type Geo = {
@@ -82,17 +87,62 @@ function normalizarPais(valor: string | null | undefined): string | null {
   return pais;
 }
 
+/**
+ * O Cloudflare está na frente?
+ *
+ * `cf-connecting-ip` é o sinal, e é o MESMO que `extrairIp` já usa. Quando ele
+ * está presente, quem falou com a Vercel foi a borda do Cloudflare, não o
+ * visitante.
+ */
+function atrasDoCloudflare(cabecalhos: LeitorDeCabecalho): boolean {
+  return cabecalhos.get('cf-connecting-ip') !== null;
+}
+
+/**
+ * O geo do visitante.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ COM O CLOUDFLARE NA FRENTE, OS CABEÇALHOS DA VERCEL DESCREVEM A BORDA    │
+ * │ DO CLOUDFLARE — NÃO O VISITANTE. E este arquivo se contradizia.          │
+ * │                                                                          │
+ * │ `extrairIp` já lia `cf-connecting-ip` PRIMEIRO, exatamente por isso. O   │
+ * │ geo fazia o contrário: `x-vercel-ip-* ?? cf-*`. Com o proxy ligado os    │
+ * │ DOIS conjuntos chegam, o `??` nunca cai para o segundo, e a Vercel       │
+ * │ responde sobre um datacenter. Resultado observado: o IP certo e o geo    │
+ * │ dizendo "The Dalles, Oregon" para quem estava em Minas Gerais.           │
+ * │                                                                          │
+ * │ O teste antigo cobria só "a Vercel não mandou nada" — o caso em que os   │
+ * │ dois chegam, que é o que acontece de verdade com a nuvem laranja, nunca  │
+ * │ foi exercitado. Por isso a contradição passou.                           │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * **Cloudflare manda só o país por padrão.** Região e cidade exigem ligar o
+ * managed transform "Add visitor location headers" no painel dele. Sem isso o
+ * visitante chega com país e sem o resto — que é honesto e vira "Não
+ * informado" na árvore, em vez de um datacenter americano que mente.
+ */
 export function extrairGeo(cabecalhos: LeitorDeCabecalho): Geo {
+  const cloudflare = atrasDoCloudflare(cabecalhos);
+
+  /*
+   * Com o Cloudflare na frente NÃO HÁ RESERVA: os cabeçalhos da Vercel estão
+   * errados por construção, não apenas em segundo lugar. Cair neles quando
+   * falta a região do Cloudflare — que é o padrão, porque ele só manda o país
+   * sem o managed transform — traria de volta exatamente o Oregon que esta
+   * correção existe para tirar. Ausente é `null`: "não sei" é honesto, um
+   * datacenter no lugar da cidade de quem comprou não é.
+   */
+  const daFonte = (daVercel: string, doCloudflare: string): string | null =>
+    cloudflare
+      ? cabecalhos.get(doCloudflare)
+      : (cabecalhos.get(daVercel) ?? cabecalhos.get(doCloudflare));
+
   return {
     ip: extrairIp(cabecalhos),
-    pais: normalizarPais(
-      cabecalhos.get('x-vercel-ip-country') ?? cabecalhos.get('cf-ipcountry'),
-    ),
+    pais: normalizarPais(daFonte('x-vercel-ip-country', 'cf-ipcountry')),
     regiao: decodificar(
-      cabecalhos.get('x-vercel-ip-country-region') ?? cabecalhos.get('cf-region-code'),
+      daFonte('x-vercel-ip-country-region', 'cf-region-code'),
     ),
-    cidade: decodificar(
-      cabecalhos.get('x-vercel-ip-city') ?? cabecalhos.get('cf-ipcity'),
-    ),
+    cidade: decodificar(daFonte('x-vercel-ip-city', 'cf-ipcity')),
   };
 }

@@ -99,12 +99,26 @@ CORS nunca fica aberto: a allowlist de origens é configurada no painel.
 
 > **Cloudflare na frente da Vercel — cuidado com o geo.** Se o registro
 > `track` ficar com o proxy ligado (nuvem laranja), a Vercel passa a ver o IP
-> do Cloudflare e os cabeçalhos `x-vercel-ip-*` deixam de valer: perde-se o
-> mapa por região e, pior, vai o IP errado para a Conversions API, o que
-> degrada o match na Meta. O recomendado é **DNS only** (nuvem cinza) nesse
-> registro. De todo modo `src/lib/geo.ts` detecta os dois conjuntos de
-> cabeçalhos (Vercel e `CF-Connecting-IP`/`CF-IPCountry`), então funciona nas
-> duas configurações e não quebra se mudar.
+> do Cloudflare e os cabeçalhos `x-vercel-ip-*` deixam de valer. O recomendado
+> é **DNS only** (nuvem cinza) nesse registro.
+>
+> **E a ORDEM de leitura não é a mesma nas duas configurações — este arquivo
+> se contradizia.** `extrairIp` já lia `cf-connecting-ip` PRIMEIRO, certo:
+> com o proxy ligado ele é o visitante e o `x-forwarded-for` é a borda do
+> Cloudflare. O geo fazia o contrário (`x-vercel-ip-* ?? cf-*`), e com o
+> proxy ligado os DOIS conjuntos chegam — então o `??` nunca caía para o
+> segundo e a Vercel respondia sobre um datacenter. **Observado em produção:
+> IP certo e geo dizendo "The Dalles, Oregon" para quem estava em Minas
+> Gerais.** O teste antigo cobria só "a Vercel não mandou nada"; o caso em
+> que os dois chegam, que é o que acontece de verdade, nunca foi exercitado.
+>
+> Agora, com `cf-connecting-ip` presente, o Cloudflare ganha **e não há
+> reserva**: os cabeçalhos da Vercel estão errados por construção, não em
+> segundo lugar. Como o Cloudflare só manda o país por padrão (região e
+> cidade exigem ligar o managed transform *Add visitor location headers*), o
+> visitante chega com país e sem o resto — que vira "Não informado" na
+> árvore. É honesto; um datacenter americano no lugar da cidade de quem
+> comprou não é.
 
 ---
 

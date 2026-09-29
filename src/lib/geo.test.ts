@@ -101,3 +101,73 @@ describe('extrairGeo', () => {
     });
   });
 });
+
+/**
+ * O CASO QUE FALTAVA — e que é o que acontece de verdade.
+ *
+ * O teste antigo cobria "a Vercel não mandou nada". Com a nuvem laranja os
+ * DOIS conjuntos chegam, e aí a ordem decide: os cabeçalhos da Vercel
+ * descrevem a BORDA DO CLOUDFLARE, não o visitante. Preferindo a Vercel, um
+ * visitante de Minas Gerais aparecia em The Dalles, Oregon — com o IP certo,
+ * porque `extrairIp` já lia `cf-connecting-ip` primeiro. O mesmo arquivo se
+ * contradizia, e só o caso não testado expunha isso.
+ */
+describe('com o Cloudflare na frente, quem viu o visitante ganha', () => {
+  const comOsDois = new Headers({
+    'cf-connecting-ip': '189.4.1.10',
+    // O que o Cloudflare diz do VISITANTE.
+    'cf-ipcountry': 'BR',
+    'cf-region-code': 'MG',
+    'cf-ipcity': 'Belo Horizonte',
+    // O que a Vercel diz da BORDA do Cloudflare.
+    'x-vercel-ip-country': 'US',
+    'x-vercel-ip-country-region': 'OR',
+    'x-vercel-ip-city': 'The Dalles',
+    'x-forwarded-for': '104.16.0.1',
+  });
+
+  it('o geo é o do visitante, não o do datacenter', () => {
+    const geo = extrairGeo(comOsDois);
+    expect(geo.pais).toBe('BR');
+    expect(geo.regiao).toBe('MG');
+    expect(geo.cidade).toBe('Belo Horizonte');
+  });
+
+  it('e o IP também — os dois passam a concordar', () => {
+    // Era aqui que a contradição aparecia: IP brasileiro, geo americano.
+    expect(extrairGeo(comOsDois).ip).toBe('189.4.1.10');
+  });
+
+  it('o Cloudflare manda só o país por padrão, e isso é honesto', () => {
+    // Região e cidade exigem ligar o managed transform "Add visitor location
+    // headers". Sem ele o visitante chega com país e sem o resto — que na
+    // árvore vira "Não informado", em vez de um datacenter que mente.
+    const soPais = new Headers({
+      'cf-connecting-ip': '189.4.1.10',
+      'cf-ipcountry': 'BR',
+      'x-vercel-ip-country': 'US',
+      'x-vercel-ip-country-region': 'OR',
+      'x-vercel-ip-city': 'The Dalles',
+    });
+    const geo = extrairGeo(soPais);
+    expect(geo.pais).toBe('BR');
+    expect(geo.regiao).toBeNull();
+    expect(geo.cidade).toBeNull();
+  });
+
+  it('sem Cloudflare na frente, a Vercel continua mandando', () => {
+    // A nuvem CINZA é a configuração recomendada, e ali a Vercel vê o
+    // visitante de verdade. A correção não pode inverter esse caso.
+    const soVercel = new Headers({
+      'x-vercel-ip-country': 'BR',
+      'x-vercel-ip-country-region': 'MG',
+      'x-vercel-ip-city': 'Belo Horizonte',
+      'x-forwarded-for': '189.4.1.10',
+    });
+    const geo = extrairGeo(soVercel);
+    expect(geo.pais).toBe('BR');
+    expect(geo.regiao).toBe('MG');
+    expect(geo.cidade).toBe('Belo Horizonte');
+    expect(geo.ip).toBe('189.4.1.10');
+  });
+});
