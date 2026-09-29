@@ -133,6 +133,8 @@ export const adoorei: Adaptador = {
     }
 
     const cliente = ehObjeto(recurso.customer) ? recurso.customer : {};
+    // O endereço é IRMÃO do cliente, não filho dele — `resource.address`.
+    const endereco = ehObjeto(recurso.address) ? recurso.address : {};
 
     return {
       plataforma: 'adoorei',
@@ -148,6 +150,9 @@ export const adoorei: Adaptador = {
       telefone: texto(cliente, 'phone') ?? null,
       primeiroNome: texto(cliente, 'first_name') ?? null,
       sobrenome: texto(cliente, 'last_name') ?? null,
+      // A Adoorei é a única das cinco cujo payload real conhecido traz o
+      // CEP. Vira o `zp` da Meta; quem normaliza é `hashCep()` no envio.
+      cep: texto(endereco, 'zipcode') ?? null,
       // A Adoorei é a única das quatro que manda o IP do comprador.
       ipCliente: texto(cliente, 'ip') ?? null,
       produtos: produtosDe(recurso),

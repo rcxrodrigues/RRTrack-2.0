@@ -33,6 +33,7 @@ export type UserDataCapi = {
   ln?: string[];
   ct?: string[];
   st?: string[];
+  zp?: string[];
   country?: string[];
   external_id?: string[];
 
@@ -68,7 +69,16 @@ export type RespostaCapi = {
 };
 
 /** As chaves hasheadas, que a Meta espera em array. */
-type ChaveHash = 'em' | 'ph' | 'fn' | 'ln' | 'ct' | 'st' | 'country' | 'external_id';
+type ChaveHash =
+  | 'em'
+  | 'ph'
+  | 'fn'
+  | 'ln'
+  | 'ct'
+  | 'st'
+  | 'zp'
+  | 'country'
+  | 'external_id';
 
 /**
  * Monta o `user_data` a partir do que já está gravado no visitante.
@@ -84,6 +94,7 @@ export function montarUserData(dados: {
   lastNameHash?: string | null;
   cityHash?: string | null;
   stateHash?: string | null;
+  zipHash?: string | null;
   countryHash?: string | null;
   externalIdHash?: string | null;
   fbp?: string | null;
@@ -102,6 +113,7 @@ export function montarUserData(dados: {
     ['ln', dados.lastNameHash],
     ['ct', dados.cityHash],
     ['st', dados.stateHash],
+    ['zp', dados.zipHash],
     ['country', dados.countryHash],
     ['external_id', dados.externalIdHash],
   ];

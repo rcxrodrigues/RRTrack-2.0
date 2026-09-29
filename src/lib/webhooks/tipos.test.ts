@@ -53,6 +53,7 @@ describe('indeciso', () => {
     valor: 10,
     moeda: 'BRL',
     trckUserId: null,
+    cep: null,
     email: null,
     telefone: null,
     primeiroNome: null,

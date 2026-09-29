@@ -138,6 +138,7 @@ const BASE: CompraNormalizada = {
   moeda: 'BRL',
   trckUserId: null,
   email: null,
+  cep: null,
   telefone: null,
   primeiroNome: null,
   sobrenome: null,
@@ -233,6 +234,33 @@ describe('gravarCompra', () => {
     await gravarCompra(compra({ ipCliente: '187.1.2.3' }), null);
 
     expect(gravado().ip).toBe('187.1.2.3');
+  });
+
+  /*
+   * Os dois campos que o código já produzia e jogava fora.
+   *
+   * `cep` vira o `zp` da Meta; `ocorridoEm` vira o `event_time` dela e o
+   * `timestamp_micros` do GA4. Os cinco adaptadores já extraíam a hora, e
+   * `hashCep` existia desde a Fase 4 — faltava coluna para os dois, e sem
+   * coluna o valor morre aqui, calado.
+   */
+  it('grava o CEP e a hora que o gateway informou', async () => {
+    await gravarCompra(
+      compra({ cep: '01310-100', ocorridoEm: '2026-09-20T15:30:00.000Z' }),
+      null,
+    );
+
+    expect(gravado().zip).toBe('01310-100');
+    expect(gravado().occurred_at).toBe('2026-09-20T15:30:00.000Z');
+  });
+
+  it('o gateway que não manda CEP não apaga o que outro evento trouxe', async () => {
+    // Mesma trava do cliente: o evento de estorno pode vir sem o que o de
+    // aprovação trouxe, e campo vazio nunca entra no update.
+    await gravarCompra(compra({ cep: null, ocorridoEm: null }), null);
+
+    expect(gravado()).not.toHaveProperty('zip');
+    expect(gravado()).not.toHaveProperty('occurred_at');
   });
 });
 

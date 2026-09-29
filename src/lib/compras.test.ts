@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { lista, numero, objeto, texto } from '@/lib/json';
-import { hashCidade, hashEstado, hashExternalId, hashPais } from '@/lib/hash';
+import { hashCep, hashCidade, hashEstado, hashExternalId, hashPais } from '@/lib/hash';
 
 /**
  * As travas do disparo da compra. Cada uma existe porque quebrá-la conta
@@ -118,13 +118,19 @@ const APROVADA = {
   geo_region: 'BR-MG',
   geo_city: 'Belo Horizonte',
 
-  // Bem no passado de propósito: é o que separa "a hora da venda" de "a
-  // hora em que estamos mandando".
-  created_at: '2026-09-20T15:30:00.000Z',
+  zip: '01310-100',
+
+  // Duas horas DIFERENTES de propósito: `occurred_at` é quando o gateway diz
+  // que o pagamento saiu, `created_at` é quando o webhook chegou aqui. Só
+  // com as duas distintas dá para provar qual vence.
+  occurred_at: '2026-09-20T15:30:00.000Z',
+  created_at: '2026-09-23T09:00:00.000Z',
 };
 
-/** O instante do `created_at` acima, para os testes de hora. */
+/** A hora que o GATEWAY informou — a que deve valer. */
 const INSTANTE_DA_VENDA = Date.parse('2026-09-20T15:30:00.000Z');
+/** A hora em que o webhook chegou aqui — a reserva. */
+const INSTANTE_DA_CHEGADA = Date.parse('2026-09-23T09:00:00.000Z');
 
 const CONFIG = {
   settings: {
@@ -298,8 +304,27 @@ describe('o payload da Meta', () => {
     );
   });
 
-  it('sem data legível na linha, manda agora em vez de NaN', async () => {
-    maybeSingle.mockResolvedValue({ data: { ...APROVADA, created_at: null } });
+  it('a hora do GATEWAY vence a da nossa chegada', async () => {
+    await dispararCompra('yampi:1000001');
+    // `occurred_at` é lá, `created_at` é aqui. Num retry da Appmax — são
+    // quatro — ou num Reprocessar, a diferença é de dias.
+    expect(numero(payloadMeta(), 'event_time')).toBe(
+      Math.floor(INSTANTE_DA_VENDA / 1000),
+    );
+  });
+
+  it('sem hora do gateway, cai para a da chegada', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, occurred_at: null } });
+    await dispararCompra('yampi:1000001');
+    expect(numero(payloadMeta(), 'event_time')).toBe(
+      Math.floor(INSTANTE_DA_CHEGADA / 1000),
+    );
+  });
+
+  it('sem data legível nenhuma, manda agora em vez de NaN', async () => {
+    maybeSingle.mockResolvedValue({
+      data: { ...APROVADA, occurred_at: null, created_at: null },
+    });
     const antes = Math.floor(Date.now() / 1000);
     await dispararCompra('yampi:1000001');
 
@@ -307,6 +332,27 @@ describe('o payload da Meta', () => {
     expect(quando).toBeDefined();
     expect(Number.isNaN(quando)).toBe(false);
     expect(quando).toBeGreaterThanOrEqual(antes);
+  });
+
+  /*
+   * `hashCep()` estava implementada e testada desde a Fase 4, e NUNCA tinha
+   * sido chamada: não havia `zp` no tipo, nenhum adaptador extraía o CEP e
+   * nenhuma coluna o guardava. Função órfã não dá erro — só deixa de valer.
+   */
+  it('leva o zp, hasheado pela hashCep', async () => {
+    await dispararCompra('yampi:1000001');
+    const user = objeto(payloadMeta(), 'user_data');
+
+    expect(lista(user, 'zp')).toEqual([hashCep('01310-100')]);
+    // A regra da Meta corta no primeiro hífen: `01310-100` → `01310`.
+    expect(lista(user, 'zp')[0]).toBe(hashCep('01310'));
+  });
+
+  it('sem CEP, o zp nem entra no payload', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, zip: null } });
+    await dispararCompra('yampi:1000001');
+    // Chave com `undefined` faria a Meta reclamar; a ausência é o certo.
+    expect(objeto(payloadMeta(), 'user_data')).not.toHaveProperty('zp');
   });
 });
 

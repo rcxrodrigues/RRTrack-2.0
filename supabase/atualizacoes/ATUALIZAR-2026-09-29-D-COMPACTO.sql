@@ -1,0 +1,5 @@
+-- RRTrack 2.0 - ATUALIZAR-2026-09-29-D-COMPACTO (versao compacta)
+-- O SQL Editor do Supabase corta o script na linha 100; esta versao cabe.
+-- Mesmo conteudo de ATUALIZAR-2026-09-29-D.sql, sem as quebras de linha. Cole tudo e rode.
+
+alter table public.purchases add column if not exists zip text; alter table public.purchases add column if not exists occurred_at timestamptz; comment on column public.purchases.zip is 'CEP/postcode do comprador, como o gateway mandou. Vira o `zp` da Meta, hasheado no envio por hashCep() — que corta no primeiro hífen e PRESERVA letras, porque postcode britânico é letra e número. NULL = o gateway não mandou.'; comment on column public.purchases.occurred_at is 'Quando a venda ocorreu SEGUNDO O GATEWAY (paid_at/created_at/time, conforme a plataforma). É a fonte do event_time da Meta e do timestamp_micros do GA4. NULL = o gateway não informou, e aí vale created_at — que é quando o webhook chegou aqui, não quando o pagamento aconteceu lá.'; grant select (zip, occurred_at) on public.purchases to authenticated;

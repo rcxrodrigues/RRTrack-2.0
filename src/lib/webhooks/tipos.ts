@@ -120,6 +120,19 @@ export type CompraNormalizada = {
   primeiroNome: string | null;
   sobrenome: string | null;
 
+  /**
+   * O CEP do comprador, cru, como o gateway mandou.
+   *
+   * Vira o `zp` da Meta — um parâmetro de match que ela aceita e que num
+   * checkout brasileiro é obrigatório, portanto o mais fácil de ganhar.
+   * Quem normaliza é `hashCep()` na hora do envio, e ela corta no primeiro
+   * hífen PRESERVANDO letras: postcode britânico é letra e número.
+   *
+   * `null` quando o gateway não manda — ou quando ainda não sabemos em que
+   * campo ele manda, que hoje é o caso de quatro dos cinco.
+   */
+  cep: string | null;
+
   produtos: ProdutoComprado[];
 
   /**

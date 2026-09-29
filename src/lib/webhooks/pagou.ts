@@ -215,6 +215,16 @@ export const pagou: Adaptador = {
       moeda: texto(dados, 'currency') ?? 'BRL',
       trckUserId: trckUserIdDe(dados, corpo),
       ...compradorDe(dados),
+      /*
+       * O CEP ainda não tem campo conhecido neste gateway.
+       *
+       * `null` é a resposta HONESTA: chutar o nome do campo produziria um
+       * adaptador que extrai nada e PARECE que extrai algo. Quando o
+       * primeiro webhook real chegar, o payload fica inteiro em
+       * `webhooks_recebidos` — é de lá que sai o caminho certo, que é como
+       * todo adaptador deste projeto foi escrito.
+       */
+      cep: null,
       ipCliente: texto(dados, 'ip_address') ?? null,
       produtos: produtosDe(dados),
       ocorridoEm: texto(dados, 'paid_at') ?? texto(dados, 'created_at') ?? null,

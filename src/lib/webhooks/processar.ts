@@ -46,6 +46,17 @@ export async function gravarCompra(
     phone_hash: hashTelefone(compra.telefone),
     first_name: compra.primeiroNome,
     last_name: compra.sobrenome,
+    /** Vira o `zp` da Meta. Quem normaliza é `hashCep()`, na hora do envio. */
+    zip: compra.cep,
+    /*
+     * Quando a venda ocorreu SEGUNDO O GATEWAY.
+     *
+     * É a fonte do `event_time` da Meta e do `timestamp_micros` do GA4.
+     * `created_at` (quando o webhook chegou AQUI) fica de reserva: no fluxo
+     * normal os dois diferem por segundos, mas num retry da Appmax — são
+     * quatro — ou num Reprocessar de venda antiga, diferem por dias.
+     */
+    occurred_at: compra.ocorridoEm,
     product_id: compra.produtos[0]?.id ?? null,
     product_name: compra.produtos[0]?.nome ?? null,
     /*

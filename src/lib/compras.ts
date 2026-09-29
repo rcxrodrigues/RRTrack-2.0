@@ -5,6 +5,7 @@ import { enviarParaGa4, montarPayloadGa4, type RespostaGa4 } from '@/lib/ga4/mp'
 import { texto } from '@/lib/json';
 import { montarPayload, montarUserData } from '@/lib/meta/capi';
 import {
+  hashCep,
   hashCidade,
   hashEmail,
   hashEstado,
@@ -62,12 +63,25 @@ export function eventIdDaCompra(transactionId: string): string {
  * Este painel existe para não errar em silêncio.
  */
 function instanteDaCompra(compra: LinhaCompra): number {
-  const bruto = texto(compra, 'created_at');
-  const quando = bruto ? Date.parse(bruto) : Number.NaN;
+  /*
+   * A hora do GATEWAY primeiro, a nossa depois.
+   *
+   * `occurred_at` é quando o pagamento aconteceu LÁ; `created_at` é quando o
+   * webhook chegou AQUI. No fluxo normal diferem por segundos — mas o
+   * gateway reenvia (a Appmax até quatro vezes) e o Reprocessar existe para
+   * venda de dias atrás. Os cinco adaptadores já extraíam essa hora e ela
+   * morria no caminho, porque não havia coluna para ela.
+   */
+  for (const campo of ['occurred_at', 'created_at']) {
+    const bruto = texto(compra, campo);
+    const quando = bruto ? Date.parse(bruto) : Number.NaN;
+    if (!Number.isNaN(quando)) return quando;
+  }
 
-  // Linha sem data legível não deveria existir; se existir, mandar agora é
-  // melhor que mandar `NaN`, que os dois destinos recusam sem dizer o motivo.
-  return Number.isNaN(quando) ? Date.now() : quando;
+  // Linha sem data legível nenhuma não deveria existir; se existir, mandar
+  // agora é melhor que mandar `NaN`, que os dois destinos recusam sem dizer
+  // o motivo.
+  return Date.now();
 }
 
 /** Para a Meta: SEGUNDOS. Com milissegundos ela recusa por "fora da janela". */
@@ -104,8 +118,9 @@ export async function dispararCompra(transactionId: string): Promise<void> {
           'first_name, last_name, product_id, product_name, fbp, fbc, ' +
           'ga_client_id, ga_session_id, geo_country, geo_region, geo_city, ip, sent_at, reverted_at, ' +
           // Identidade e hora do evento. `trck_user_id` vira o `external_id`
-          // da Meta; `created_at` é QUANDO a venda chegou — ver o event_time.
-          'trck_user_id, created_at',
+          // da Meta, `zip` vira o `zp`; a hora sai de `occurred_at`, com
+          // `created_at` de reserva — ver `instanteDaCompra`.
+          'trck_user_id, created_at, occurred_at, zip',
       )
       .eq('transaction_id', transactionId)
       .returns<LinhaCompra[]>()
@@ -441,6 +456,9 @@ async function enviarParaMeta(compra: LinhaCompra, eventId: string): Promise<unk
         cityHash: hashCidade(texto(compra, 'geo_city')),
         stateHash: hashEstado(texto(compra, 'geo_region')),
         countryHash: hashPais(texto(compra, 'geo_country')),
+        // O CEP do comprador, quando o gateway manda. `hashCep` corta no
+        // primeiro hífen e PRESERVA letras — postcode não é só dígito.
+        zipHash: hashCep(texto(compra, 'zip')),
         // Mesma forma do `/api/event`: hasheado dos dois lados, senão a Meta
         // veria dois identificadores diferentes para a mesma pessoa.
         externalIdHash: hashExternalId(texto(compra, 'trck_user_id')),

@@ -223,6 +223,16 @@ export const appmax: Adaptador = {
       moeda: 'BRL',
       trckUserId: trckUserIdDe(corpo, dados),
       ...clienteDe(dados),
+      /*
+       * O CEP ainda não tem campo conhecido neste gateway.
+       *
+       * `null` é a resposta HONESTA: chutar o nome do campo produziria um
+       * adaptador que extrai nada e PARECE que extrai algo. Quando o
+       * primeiro webhook real chegar, o payload fica inteiro em
+       * `webhooks_recebidos` — é de lá que sai o caminho certo, que é como
+       * todo adaptador deste projeto foi escrito.
+       */
+      cep: null,
       // A Appmax não manda IP do comprador em evento de pedido.
       ipCliente: null,
       produtos: produtosDe(dados),

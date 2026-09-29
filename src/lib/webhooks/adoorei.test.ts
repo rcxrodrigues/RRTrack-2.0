@@ -68,6 +68,35 @@ describe('a armadilha do valor', () => {
   });
 });
 
+describe('o CEP', () => {
+  /*
+   * Vira o `zp` da Meta — parâmetro de match que ela aceita e que num
+   * checkout brasileiro é obrigatório, portanto o mais fácil de ganhar.
+   *
+   * A Adoorei é a única das cinco cujo payload real conhecido traz o
+   * endereço, e ele é IRMÃO do cliente (`resource.address`), não filho.
+   * Procurar dentro de `customer` acharia nada — e "nada" aqui é silencioso:
+   * o evento vai para a Meta sem o parâmetro, e ninguém fica sabendo.
+   */
+  it('sai do endereço, que é irmão do cliente', () => {
+    expect(ler(PEDIDO)?.cep).toBe('11111-111');
+  });
+
+  it('vem CRU — quem normaliza é a hashCep no envio', () => {
+    // O hífen fica. Cortar aqui seria normalizar em dois lugares, e o dia em
+    // que os dois divergirem o hash não bate e a Meta só casa menos.
+    expect(ler(PEDIDO)?.cep).toContain('-');
+  });
+
+  it('sem endereço no payload, é null e não quebra', () => {
+    const semEndereco = {
+      ...PEDIDO,
+      resource: { ...PEDIDO.resource, address: undefined },
+    };
+    expect(ler(semEndereco)?.cep).toBeNull();
+  });
+});
+
 describe('normalizar', () => {
   const c = ler(PEDIDO);
 
