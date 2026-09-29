@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 
 import { caminhoInterno } from '@/lib/rotas';
-import { criarClienteServidor } from '@/lib/supabase/server';
+import { criarClienteServidorComCabecalhos } from '@/lib/supabase/server';
 
 /** Tipos de OTP por e-mail que aceitamos trocar por sessão. */
 const TIPOS_OTP: readonly EmailOtpType[] = ['magiclink', 'email', 'recovery', 'invite'];
@@ -36,13 +36,33 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get('token_hash');
   const tipo = searchParams.get('type');
 
-  const supabase = await criarClienteServidor();
+  const { supabase, cabecalhos } = await criarClienteServidorComCabecalhos();
+
+  /**
+   * Os cabeçalhos anti-cache que vieram junto com o cookie de sessão.
+   *
+   * NÃO REMOVA. Esta é a única rota do projeto que grava sessão de dentro de
+   * um Route Handler, e a resposta dela sai com `Set-Cookie`. Sem isto o
+   * `Cache-Control` não existe — não é que fique fraco, ele não vem: medido
+   * num build de produção, um Route Handler que grava cookie responde sem
+   * nenhum. Um CDN pode então guardar esta resposta e servir o token desta
+   * sessão para outra pessoa.
+   *
+   * Vazio enquanto a sessão não foi gravada, então nas saídas de erro o
+   * laço é um no-op e não há o que decidir.
+   */
+  function comCabecalhos(resposta: NextResponse) {
+    for (const [chave, valor] of Object.entries(cabecalhos)) {
+      resposta.headers.set(chave, valor);
+    }
+    return resposta;
+  }
 
   /** Entrou: leva ao destino e descarta o cookie, que já cumpriu o papel. */
   function entrar() {
     const resposta = NextResponse.redirect(`${origem}${proximo}`);
     resposta.cookies.delete('trck_proximo');
-    return resposta;
+    return comCabecalhos(resposta);
   }
 
   if (code) {
@@ -60,5 +80,7 @@ export async function GET(request: NextRequest) {
   // O Supabase também pode mandar o erro na própria URL, quando recusa o
   // link antes de chegar aqui. Repassamos o motivo para a tela explicar.
   const motivo = searchParams.get('error_code') ?? 'invalido';
-  return NextResponse.redirect(`${origem}/auth/erro?motivo=${encodeURIComponent(motivo)}`);
+  return comCabecalhos(
+    NextResponse.redirect(`${origem}/auth/erro?motivo=${encodeURIComponent(motivo)}`),
+  );
 }
