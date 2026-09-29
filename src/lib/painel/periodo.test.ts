@@ -10,6 +10,7 @@ import {
   lerEscolha,
   MAXIMO_DE_DIAS,
   paramsDaEscolha,
+  PERIODOS,
   PERIODO_PADRAO,
   rotuloDaEscolha,
 } from './periodo';
@@ -416,5 +417,63 @@ describe('mês passado', () => {
     const passado = intervaloDe('mes-passado', SP, NOITE_EM_SP);
     const atual = intervaloDe('mes', SP, NOITE_EM_SP);
     expect(iso(passado.ate)).toBe(iso(atual.de));
+  });
+});
+
+/**
+ * "Máximo" é a janela mais longa em que TODOS os números fecham.
+ *
+ * A receita sai do nosso banco e não tem limite; o gasto sai do `time_range`
+ * da Meta, recusado além de 37 meses. Esticar além disso devolveria receita
+ * completa com gasto faltando — e o ROAS dividindo um pelo outro estaria
+ * errado, calado.
+ */
+describe('máximo', () => {
+  it('cobre 36 meses cheios mais o mês corrente', () => {
+    const i = intervaloDe('maximo', SP, NOITE_EM_SP); // 22/09/2026
+    expect(iso(i.de)).toBe('2023-09-01T03:00:00.000Z');
+    // Termina amanhã, exclusivo — hoje inteiro está dentro.
+    expect(iso(i.ate)).toBe('2026-09-23T03:00:00.000Z');
+  });
+
+  it('cabe nos 37 meses que a Meta aceita', () => {
+    // O `time_range` dela é o teto real, e é ele que define este período.
+    // Passar disso faria a chamada ser recusada e o gasto sumir da tela.
+    const i = intervaloDe('maximo', SP, NOITE_EM_SP);
+    const meses =
+      (i.ate.getUTCFullYear() - i.de.getUTCFullYear()) * 12 +
+      (i.ate.getUTCMonth() - i.de.getUTCMonth());
+    expect(meses).toBeLessThanOrEqual(37);
+    expect(meses).toBeGreaterThanOrEqual(36);
+  });
+
+  it('a virada de ano não erra o ano', () => {
+    // `mes - 36` fica negativo boa parte do ano; quem "consertasse" isso com
+    // uma conta de ano escrita à mão teria chance de errar.
+    const emMarco = new Date('2027-03-10T15:00:00Z');
+    expect(iso(intervaloDe('maximo', SP, emMarco).de)).toBe(
+      '2024-03-01T03:00:00.000Z',
+    );
+    const emJaneiro = new Date('2027-01-10T15:00:00Z');
+    expect(iso(intervaloDe('maximo', SP, emJaneiro).de)).toBe(
+      '2024-01-01T03:00:00.000Z',
+    );
+  });
+
+  it('a fronteira não anda sozinha de um dia para o outro', () => {
+    // Começa no dia 1º, então dois dias do mesmo mês veem a mesma janela —
+    // e o número de "Máximo" não muda sem nada ter acontecido.
+    const dia10 = intervaloDe('maximo', SP, new Date('2026-09-10T15:00:00Z'));
+    const dia20 = intervaloDe('maximo', SP, new Date('2026-09-20T15:00:00Z'));
+    expect(iso(dia10.de)).toBe(iso(dia20.de));
+  });
+
+  it('engloba os outros períodos — é o mais largo de todos', () => {
+    for (const p of PERIODOS) {
+      const i = intervaloDe(p, SP, NOITE_EM_SP);
+      const max = intervaloDe('maximo', SP, NOITE_EM_SP);
+      expect(max.de.getTime()).toBeLessThanOrEqual(i.de.getTime());
+      expect(max.ate.getTime()).toBeGreaterThanOrEqual(i.ate.getTime());
+    }
   });
 });

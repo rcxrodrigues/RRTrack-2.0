@@ -26,6 +26,7 @@ export const PERIODOS = [
   '30d',
   'mes',
   'mes-passado',
+  'maximo',
 ] as const;
 
 export type Periodo = (typeof PERIODOS)[number];
@@ -37,6 +38,7 @@ export const ROTULOS: Record<Periodo, string> = {
   '30d': '30 dias',
   mes: 'Este mês',
   'mes-passado': 'Mês passado',
+  maximo: 'Máximo',
 };
 
 /**
@@ -78,6 +80,33 @@ export function ehFaixa(escolha: Escolha): escolha is Faixa {
  * o que não acontece é ela persistir depois de fechar.
  */
 export const PERIODO_PADRAO: Periodo = 'hoje';
+
+/**
+ * Até onde o "Máximo" vai para trás, em meses.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ O LIMITE É DA META, E ELE DECIDE O QUE O PAINEL PODE AFIRMAR.           │
+ * │                                                                          │
+ * │ A nossa receita sai do nosso banco e não tem limite nenhum. O GASTO sai  │
+ * │ do `time_range` da Meta, que ela recusa além de 37 meses. Uma janela     │
+ * │ maior devolveria a tela com receita completa e gasto faltando — e o      │
+ * │ ROAS dividindo um pelo outro estaria errado, calado, que é exatamente o  │
+ * │ que este painel existe para não fazer.                                   │
+ * │                                                                          │
+ * │ Então "Máximo" é a janela mais longa em que TODOS os números da tela     │
+ * │ são verdade juntos. Para uma loja com menos de três anos — que é o caso  │
+ * │ aqui e será por um bom tempo — é literalmente tudo que existe.           │
+ * │                                                                          │
+ * │ 36 meses cheios mais o mês corrente cabem nos 37 com folga. Começar no   │
+ * │ dia 1º e não "36 meses atrás, hoje" deixa a fronteira estável: ela não   │
+ * │ anda sozinha todo dia.                                                   │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * **Se um dia a loja passar de três anos**, o certo não é esticar isto: é a
+ * tela dizer que o gasto não cobre a janela inteira. Número mais longo que
+ * não fecha é pior que número curto que fecha.
+ */
+export const MAXIMO_DE_MESES = 36;
 
 /**
  * O teto da faixa, em dias.
@@ -391,6 +420,10 @@ export function intervaloDe(
       meiaNoiteLocal(ano, mes - 1, 1, fuso),
       meiaNoiteLocal(ano, mes, 1, fuso),
     ],
+    // `mes - 36` fica negativo boa parte do ano, e o `Date.UTC` já resolve
+    // isso recuando o ano — a mesma propriedade que "mês passado" usa em
+    // janeiro. Uma conta de ano escrita à mão é que teria chance de errar.
+    maximo: () => [meiaNoiteLocal(ano, mes - MAXIMO_DE_MESES, 1, fuso), amanha],
   };
 
   const [de, ate] = janelas[periodo]();

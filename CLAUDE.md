@@ -410,9 +410,9 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
 
 ### O filtro de período: um menu, não uma fileira de atalhos
 
-Seis opções — Hoje · Ontem · 7 dias · 30 dias · Este mês · Mês passado — mais
-a faixa livre, tudo dentro de **um controle só**, igual no desktop e no
-celular.
+Sete opções — Hoje · Ontem · 7 dias · 30 dias · Este mês · Mês passado ·
+Máximo — mais a faixa livre, tudo dentro de **um controle só**, igual no
+desktop e no celular.
 
 > **Era uma fileira de chips, e no celular ficava caro.** Cinco chips numa
 > linha que rolava na horizontal, mais dois campos de data e um botão: TRÊS
@@ -455,6 +455,17 @@ celular.
   `mes - 1` dá 0 em janeiro e o `Date.UTC` já trata isso como dezembro do ano
   anterior — um `if (mes === 1)` escrito à mão é que teria chance de errar o
   ano. Há teste para janeiro e para fevereiro bissexto.
+- **"Máximo" para em 36 meses, e o limite é DA META.** A nossa receita sai
+  do nosso banco e não tem teto; o gasto sai do `time_range` da Meta, que ela
+  recusa além de 37 meses. Uma janela maior devolveria a tela com receita
+  completa e gasto faltando — e o ROAS dividindo um pelo outro estaria
+  errado, calado, que é o que este painel existe para não fazer. Então
+  "Máximo" é a janela mais longa em que TODOS os números são verdade juntos;
+  numa loja com menos de três anos é literalmente tudo que existe. Se um dia
+  passar disso, o certo não é esticar o período: é a tela dizer que o gasto
+  não cobre a janela inteira.
+  Começa no dia 1º do mês, não "36 meses atrás, hoje", para a fronteira não
+  andar sozinha todo dia e o número não mudar sem nada ter acontecido.
 - **LARGURA DE `input type="date"` NÃO SE SUPÕE — quem escolhe o formato é o
   NAVEGADOR.** Isto errou duas vezes, e a segunda só apareceu num aparelho de
   verdade: o Chromium headless em que eu testo mostra `09/28/2026` e o
