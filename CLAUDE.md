@@ -841,21 +841,34 @@ nada. Testes com estes vetores em `src/lib/hash.test.ts`.
 **Nunca hasheados:** `fbp`, `fbc`, `client_ip_address`, `client_user_agent`.
 Hashear qualquer um deles o torna inútil.
 
-**E do lado do NAVEGADOR é o contrário: vai em claro porque quem hasheia é
-o `fbevents.js`.** O Advanced Matching do Pixel (`fbq('init', id, dados)`,
-alimentado pelo `rrtrack.identify`) recebe `em`/`ph`/`fn`/`ln` com o valor
-original. Entregar hash ali faria ele hashear um hash, e o resultado não
-casaria com nada — mesma falha silenciosa da normalização errada, por outra
-porta. `snippet-match.test.ts` executa o snippet e prova que o valor chega
-cru.
+**No NAVEGADOR os quatro de identidade vão em CLARO, e o `external_id`
+vai HASHEADO.** Não é inconsistência — são regras diferentes do mesmo
+documento. A doc de Advanced Matching diz que o Pixel hasheia `em`/`ph`/
+`fn`/`ln` sozinho, e diz também que ele **aceita tanto o valor cru quanto o
+SHA-256 já normalizado**. Entregar hash nos quatro primeiros faria ele
+hashear um hash; entregar hash no `external_id` é o que faz o Pixel e a
+Conversions API mandarem o MESMO identificador, que é o que ela pede quando
+o id vai por mais de um canal.
 
-> **O `external_id` fica FORA do Pixel de propósito.** O servidor o manda
-> hasheado e não deu para confirmar — a doc da Meta está bloqueada no
-> ambiente onde isto foi escrito — se o `fbevents.js` hasheia esse campo ou
-> o trata como id opaco. Se hashear, os dois lados divergiriam, e
-> identificador divergente é pior que ausente. Há teste travando a ausência
-> para ela não entrar por engano; resolve-se olhando o Events Manager
-> depois dos primeiros eventos reais.
+**O hash do `external_id` vem PRONTO na resposta do `/api/identify`.** O
+servidor o calcula uma vez e usa nos dois destinos — a coluna do visitante e
+o corpo da resposta. Calcular no navegador seria hashear em dois lugares, e
+o dia em que divergissem a Meta veria duas pessoas sem avisar ninguém. Não
+expõe nada: é o hash de um id que o navegador já tem em claro no `_trck`.
+
+**E o Advanced Matching ACUMULA, num objeto só.** O identify chega em dois
+momentos — o site passando o e-mail, a resposta trazendo o `external_id` — e
+cada um conhece só a sua parte. Reinicializando com o pedaço da vez, o
+segundo apaga o primeiro e o Pixel fica sempre com metade do sinal, sem erro
+nenhum aparecer.
+
+> **Dois arquivos de teste, porque um só deixou furo.**
+> `snippet-match.test.ts` executa o snippet e prova o lado de quem consome —
+> mas ele mocka o `fetch`, então tirar o campo da resposta da rota deixava
+> os nove testes dele verdes. `api/identify/route.test.ts` fecha o contrato
+> do outro lado: que a rota MANDA o campo, que é o hash e não o id cru, e
+> que é o mesmo hash que foi para a coluna. Verificado quebrando as duas
+> pontas.
 
 ---
 

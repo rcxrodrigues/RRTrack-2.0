@@ -126,6 +126,10 @@ export function montarSnippet(base: string, config: Configuracao): string {
         trckUserId = r.trck_user_id;
         marcarLinks();
       }
+      /* O external_id hasheado vem PRONTO daqui, e é o mesmo que a
+         Conversions API manda. Acumula sobre o que o site já tiver
+         contado — ver a nota do matchNoPixel. */
+      matchNoPixel(r);
       return r;
     });
   }
@@ -250,36 +254,53 @@ export function montarSnippet(base: string, config: Configuracao): string {
      sabe quem é a pessoa: o identify vem de um formulário, de uma área
      logada, de um popup de newsletter.
 
-     Valores em CLARO, de propósito: quem normaliza e hasheia aqui é o
-     fbevents.js. Hashear antes entregaria a ele um hash para hashear de
-     novo, e o resultado não casaria com nada — a falha mais silenciosa que
-     existe deste lado, porque o evento chega e só o match piora.
+     O e-mail, o telefone e o nome vão em CLARO: quem normaliza e hasheia
+     esses é o fbevents.js. Hashear antes entregaria a ele um hash para
+     hashear de novo.
 
-     O external_id fica de FORA, e isto é deliberado: o servidor o manda
-     hasheado, e eu não consegui confirmar na doc da Meta se o fbevents.js
-     hasheia esse campo ou o trata como id opaco. Se hashear, os dois lados
-     divergiriam — e identificador divergente é pior que ausente. Dá para
-     resolver olhando o Events Manager depois dos primeiros eventos.
+     O external_id vai HASHEADO, e a diferença tem razão. Ele é o nosso
+     trck_user_id, o mesmo que a Conversions API manda — e a doc de Advanced
+     Matching da Meta diz que o Pixel aceita tanto o valor cru quanto o
+     SHA-256 já normalizado. Mandando o MESMO hash dos dois lados eles
+     casam, que é o que ela pede quando o id vai por mais de um canal. O
+     hash vem PRONTO na resposta do /api/identify: calcular aqui seria
+     hashear em dois lugares, e o dia em que divergissem a Meta veria duas
+     pessoas sem avisar ninguém.
+
+     A ACUMULAÇÃO não é detalhe. O identify chega em dois momentos — o site
+     passando o e-mail, e a resposta trazendo o external_id — e cada um
+     conhece só a sua parte. Reinicializando com o pedaço da vez, o segundo
+     apagaria o primeiro e sobraria sempre metade.
   --------------------------------------------------------------------- */
-  var CAMPOS_MATCH = { email: 'em', phone: 'ph', first_name: 'fn', last_name: 'ln' };
+  var CAMPOS_MATCH = {
+    email: 'em',
+    phone: 'ph',
+    first_name: 'fn',
+    last_name: 'ln',
+    external_id: 'external_id'
+  };
+
+  /* O que já foi dito ao Pixel, acumulado. */
+  var AM = {};
 
   function matchNoPixel(dados) {
     if (!w.fbq || !CFG.pixels.length || !dados) return;
 
-    var am = {};
-    var achou = false;
+    var novo = false;
     for (var chave in CAMPOS_MATCH) {
       if (!Object.prototype.hasOwnProperty.call(CAMPOS_MATCH, chave)) continue;
       var valor = dados[chave];
       if (typeof valor !== 'string' || !valor) continue;
-      am[CAMPOS_MATCH[chave]] = valor;
-      achou = true;
+      var alvo = CAMPOS_MATCH[chave];
+      if (AM[alvo] === valor) continue;
+      AM[alvo] = valor;
+      novo = true;
     }
 
     /* Sem nada novo não se reinicializa: um init a mais por pageview só
        gastaria trabalho do fbevents.js sem acrescentar sinal. */
-    if (!achou) return;
-    CFG.pixels.forEach(function (id) { w.fbq('init', id, am); });
+    if (!novo) return;
+    CFG.pixels.forEach(function (id) { w.fbq('init', id, AM); });
   }
 
   /* ---------------------------------------------------------------------

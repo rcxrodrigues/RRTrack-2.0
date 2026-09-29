@@ -94,6 +94,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .map((c) => sessionIdDoGa(cookies.get(nomeCookieSessaoGa(c.measurementId))))
       .find((s) => s !== null) ?? null;
 
+  /*
+   * O `external_id` é calculado UMA vez e serve a dois destinos.
+   *
+   * Vai para a linha do visitante (e daí para a Conversions API) e volta na
+   * resposta, para o snippet pendurá-lo no Advanced Matching do Pixel. A
+   * doc de Advanced Matching da Meta diz que o Pixel aceita tanto o valor
+   * cru quanto o SHA-256 já normalizado, então mandar o MESMO hash dos dois
+   * lados faz os dois casarem — que é o que ela pede quando o id vai por
+   * mais de um canal.
+   *
+   * Calculado aqui e entregue pronto, nunca recalculado no navegador:
+   * hashear em dois lugares é garantir que um dia os dois divergem, e no
+   * dia em que divergirem a Meta vê duas pessoas sem avisar ninguém.
+   *
+   * Não expõe nada — é o hash de um id que o navegador já tem em claro no
+   * cookie `_trck`.
+   */
+  const externalId = hashExternalId(trckUserId);
+
   const registro = {
     trck_user_id: trckUserId,
 
@@ -109,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     city_hash: hashCidade(geo.cidade),
     state_hash: hashEstado(geo.regiao),
     country_hash: hashPais(geo.pais),
-    external_id_hash: hashExternalId(trckUserId),
+    external_id_hash: externalId,
 
     fbp: lerFbp(cookies.get('_fbp')),
     fbc: lerOuMontarFbc(cookies.get('_fbc'), corpo.fbclid),
@@ -155,10 +174,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Devolve o identificador mesmo assim: sem ele o site não consegue
     // pendurar o vínculo nos links, e aí a venda chegaria órfã. Perder a
     // linha é ruim; perder a atribuição da venda é pior.
-    return responder({ trck_user_id: trckUserId, gravado: false }, origem);
+    return responder(
+      { trck_user_id: trckUserId, external_id: externalId, gravado: false },
+      origem,
+    );
   }
 
-  const resposta = responder({ trck_user_id: trckUserId, gravado: true }, origem);
+  const resposta = responder(
+    { trck_user_id: trckUserId, external_id: externalId, gravado: true },
+    origem,
+  );
   resposta.cookies.set(
     COOKIE_TRCK,
     trckUserId,

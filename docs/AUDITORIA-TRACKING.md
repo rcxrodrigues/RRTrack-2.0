@@ -10,7 +10,7 @@ Diagnóstico antes de publicar.
 > | 2 | `hashCep` órfã, `zp` nunca enviado | **corrigido** — coluna `zip`, extração na Adoorei, `ATUALIZAR-D` |
 > | 3 | `event_time` com `Date.now()` | **corrigido** — e melhor que o proposto: sai de `occurred_at` (a hora do GATEWAY), não de `created_at` |
 > | 4 | Advanced Matching do Pixel desligado | **corrigido** — `identify` alimenta o `fbq` |
-> | 5 | `external_id` fora do Pixel | **deliberadamente NÃO feito** — ver abaixo |
+> | 5 | `external_id` fora do Pixel | **corrigido** — a doc respondeu: o Pixel aceita hash já normalizado |
 > | 6 | `gclid` | não feito — só importa com Google Ads |
 >
 > **Um achado a mais apareceu durante a correção**, do mesmo tipo do CEP: os
@@ -19,11 +19,17 @@ Diagnóstico antes de publicar.
 > coluna. É melhor que o `created_at` que este relatório propunha, e virou a
 > fonte do `event_time` da Meta e do `timestamp_micros` do GA4.
 >
-> **O item 5 continua aberto, e é decisão de dado, não de código:** o
-> servidor manda `external_id` hasheado; não consegui confirmar se o
-> `fbevents.js` hasheia esse campo ou o trata como id opaco. Divergir é pior
-> que faltar, então fica fora, com teste travando a ausência. Resolve-se
-> olhando o Events Manager depois dos primeiros eventos reais.
+> **O item 5 foi resolvido pela doc**, que o dono do projeto colou aqui: a
+> página de Advanced Matching diz que o Pixel *"accepts both lowercase
+> unhashed and normalized SHA-256 hashed"* valores. Ou seja, ele detecta
+> hash já pronto e passa adiante em vez de hashear de novo — então mandar o
+> MESMO hash dos dois canais faz os dois casarem. O hash sai pronto da
+> resposta do `/api/identify`, calculado uma vez no servidor.
+>
+> **E fechar esse item expôs um furo nos testes**, que virou um arquivo
+> novo: `snippet-match.test.ts` mocka o `fetch`, então provava só o lado de
+> quem consome — tirar o campo da resposta da rota deixava os nove testes
+> dele verdes. `api/identify/route.test.ts` fecha o contrato do outro lado.
 >
 > Para rodar: **`supabase/atualizacoes/ATUALIZAR-2026-09-29-D-COMPACTO.sql`**.
 
