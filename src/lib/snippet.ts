@@ -116,6 +116,11 @@ export function montarSnippet(base: string, config: Configuracao): string {
     for (var k in u) if (Object.prototype.hasOwnProperty.call(u, k)) corpo[k] = u[k];
     if (extra) for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) corpo[k2] = extra[k2];
 
+    /* O mesmo dado vai para o Pixel, não só para o servidor. Antes da ida à
+       rede: o Advanced Matching vale para os eventos que saírem daqui em
+       diante, e esperar a resposta atrasaria isso à toa. */
+    matchNoPixel(extra);
+
     return enviar('/api/identify', corpo).then(function (r) {
       if (r && r.trck_user_id) {
         trckUserId = r.trck_user_id;
@@ -231,6 +236,50 @@ export function montarSnippet(base: string, config: Configuracao): string {
     /* O PageView NÃO sai daqui. Um fbq('track','PageView') solto vai só
        pelo navegador e sem eventID — sem deduplicação, e sem nada quando um
        bloqueador mata o pixel. Ele passa pelo api.track, na partida. */
+  }
+
+  /* ---------------------------------------------------------------------
+     ADVANCED MATCHING — o que o navegador sabe da pessoa
+
+     O fbq('init', id) nascia sem o segundo argumento, então o que o site
+     contasse pelo rrtrack.identify({ email }) ia para o SERVIDOR e não para
+     o Pixel. Metade do sinal se perdia numa porta que já estava aberta.
+
+     Reinicializar com os dados é o caminho documentado de acrescentar
+     matching DEPOIS do init — e é preciso, porque na partida ainda não se
+     sabe quem é a pessoa: o identify vem de um formulário, de uma área
+     logada, de um popup de newsletter.
+
+     Valores em CLARO, de propósito: quem normaliza e hasheia aqui é o
+     fbevents.js. Hashear antes entregaria a ele um hash para hashear de
+     novo, e o resultado não casaria com nada — a falha mais silenciosa que
+     existe deste lado, porque o evento chega e só o match piora.
+
+     O external_id fica de FORA, e isto é deliberado: o servidor o manda
+     hasheado, e eu não consegui confirmar na doc da Meta se o fbevents.js
+     hasheia esse campo ou o trata como id opaco. Se hashear, os dois lados
+     divergiriam — e identificador divergente é pior que ausente. Dá para
+     resolver olhando o Events Manager depois dos primeiros eventos.
+  --------------------------------------------------------------------- */
+  var CAMPOS_MATCH = { email: 'em', phone: 'ph', first_name: 'fn', last_name: 'ln' };
+
+  function matchNoPixel(dados) {
+    if (!w.fbq || !CFG.pixels.length || !dados) return;
+
+    var am = {};
+    var achou = false;
+    for (var chave in CAMPOS_MATCH) {
+      if (!Object.prototype.hasOwnProperty.call(CAMPOS_MATCH, chave)) continue;
+      var valor = dados[chave];
+      if (typeof valor !== 'string' || !valor) continue;
+      am[CAMPOS_MATCH[chave]] = valor;
+      achou = true;
+    }
+
+    /* Sem nada novo não se reinicializa: um init a mais por pageview só
+       gastaria trabalho do fbevents.js sem acrescentar sinal. */
+    if (!achou) return;
+    CFG.pixels.forEach(function (id) { w.fbq('init', id, am); });
   }
 
   /* ---------------------------------------------------------------------

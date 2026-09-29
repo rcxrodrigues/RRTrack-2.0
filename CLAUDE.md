@@ -841,6 +841,22 @@ nada. Testes com estes vetores em `src/lib/hash.test.ts`.
 **Nunca hasheados:** `fbp`, `fbc`, `client_ip_address`, `client_user_agent`.
 Hashear qualquer um deles o torna inútil.
 
+**E do lado do NAVEGADOR é o contrário: vai em claro porque quem hasheia é
+o `fbevents.js`.** O Advanced Matching do Pixel (`fbq('init', id, dados)`,
+alimentado pelo `rrtrack.identify`) recebe `em`/`ph`/`fn`/`ln` com o valor
+original. Entregar hash ali faria ele hashear um hash, e o resultado não
+casaria com nada — mesma falha silenciosa da normalização errada, por outra
+porta. `snippet-match.test.ts` executa o snippet e prova que o valor chega
+cru.
+
+> **O `external_id` fica FORA do Pixel de propósito.** O servidor o manda
+> hasheado e não deu para confirmar — a doc da Meta está bloqueada no
+> ambiente onde isto foi escrito — se o `fbevents.js` hasheia esse campo ou
+> o trata como id opaco. Se hashear, os dois lados divergiriam, e
+> identificador divergente é pior que ausente. Há teste travando a ausência
+> para ela não entrar por engano; resolve-se olhando o Events Manager
+> depois dos primeiros eventos reais.
+
 ---
 
 ## Destinos server-side — as regras do envio
@@ -849,6 +865,25 @@ O evento sai por dois caminhos: o Pixel no navegador e a Conversions API aqui.
 O que impede a conversão de contar em dobro é o `event_id` ser **idêntico** nos
 dois — a Meta recebe os dois, vê o mesmo id e fica com o mais completo.
 
+- **A compra manda a identidade INTEIRA que a linha carrega, não parte
+  dela.** Por um tempo mandou SETE parâmetros de match contra os ONZE de um
+  PageView — no evento que a Meta usa para OTIMIZAR. E não era falta de
+  dado: `trck_user_id`, `geo_city`, `geo_region` e `geo_country` já estavam
+  gravados na própria linha, copiados do visitante no casamento, e só não
+  eram passados ao `montarUserData()`. Nada quebra quando isso acontece — a
+  conversão chega, conta, e a nota de match fica baixa sem ninguém saber por
+  quê. Ao acrescentar campo à compra, acrescente também ao envio.
+- **O `event_time` é a hora da VENDA, e ela vem do gateway.** `occurred_at`
+  (o `paid_at`/`created_at`/`time` que os cinco adaptadores extraem) primeiro,
+  `created_at` — quando o webhook chegou AQUI — de reserva. No fluxo normal
+  diferem por segundos; num retry da Appmax, que são quatro, ou num
+  Reprocessar de venda antiga, diferem por dias. **E de propósito não há
+  teto:** a Meta recusa evento com mais de 7 dias, e deixá-la recusar é
+  melhor que remendar a data — a recusa fica no `response_meta` e alguém vê;
+  uma venda antiga datada de hoje entra calada, suja o ROAS do dia e ensina
+  o otimizador que houve conversão agora. O GA4 leva a MESMA hora em
+  `timestamp_micros`: se cada um pegasse a sua, conferir um relatório contra
+  o outro acusaria diferença que não existe.
 - **O disparo roda em `after()`**, depois da resposta. Quem chama `/api/event` é
   o navegador de quem está comprando; segurar a página por uma ida à Meta seria
   trocar velocidade de loja por conveniência nossa. Medido: resposta em 258ms

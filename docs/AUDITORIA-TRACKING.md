@@ -1,6 +1,31 @@
 # Auditoria da lógica de tracking — 29/09/2026
 
-Diagnóstico antes de publicar. **Nenhum código foi alterado.**
+Diagnóstico antes de publicar.
+
+> ## ✅ O que já foi CORRIGIDO depois deste diagnóstico
+>
+> | # | achado | estado |
+> |---|---|---|
+> | 1 | Purchase com 7 parâmetros contra os 11 do PageView | **corrigido** — `external_id`, `ct`, `st`, `country` |
+> | 2 | `hashCep` órfã, `zp` nunca enviado | **corrigido** — coluna `zip`, extração na Adoorei, `ATUALIZAR-D` |
+> | 3 | `event_time` com `Date.now()` | **corrigido** — e melhor que o proposto: sai de `occurred_at` (a hora do GATEWAY), não de `created_at` |
+> | 4 | Advanced Matching do Pixel desligado | **corrigido** — `identify` alimenta o `fbq` |
+> | 5 | `external_id` fora do Pixel | **deliberadamente NÃO feito** — ver abaixo |
+> | 6 | `gclid` | não feito — só importa com Google Ads |
+>
+> **Um achado a mais apareceu durante a correção**, do mesmo tipo do CEP: os
+> **cinco** adaptadores já extraíam `ocorridoEm` — a hora em que o gateway
+> diz que o pagamento saiu — e o valor morria no caminho, porque não havia
+> coluna. É melhor que o `created_at` que este relatório propunha, e virou a
+> fonte do `event_time` da Meta e do `timestamp_micros` do GA4.
+>
+> **O item 5 continua aberto, e é decisão de dado, não de código:** o
+> servidor manda `external_id` hasheado; não consegui confirmar se o
+> `fbevents.js` hasheia esse campo ou o trata como id opaco. Divergir é pior
+> que faltar, então fica fora, com teste travando a ausência. Resolve-se
+> olhando o Events Manager depois dos primeiros eventos reais.
+>
+> Para rodar: **`supabase/atualizacoes/ATUALIZAR-2026-09-29-D-COMPACTO.sql`**.
 
 ---
 
