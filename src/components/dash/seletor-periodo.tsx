@@ -69,30 +69,30 @@ export function SeletorPeriodo({
       </nav>
 
       {/*
-        GRADE no celular, LINHA no desktop — e foi a foto que decidiu.
+        UM CAMPO POR LINHA NO CELULAR — e a foto num iPhone é que decidiu.
 
-        Tudo numa linha só, a 390px, o botão roubava largura dos campos e a
-        data saía CORTADA no ano: `09/01/2(`. Um seletor de data que não deixa
-        ler a data escolhida é pior que não ter seletor — a pessoa não tem
-        como conferir o que pediu. Na grade os dois campos dividem a linha
-        inteira e o botão desce, com espaço de sobra para `dd/mm/aaaa`.
+        A largura de um `<input type="date">` NÃO se supõe: o formato é
+        escolhido pelo navegador, não por nós. O Chromium headless em que eu
+        testei mostra `09/28/2026`; o Safari do iPhone, em pt-BR, mostra
+        `29 de set. de 2026` — mais que o dobro. Os dois lado a lado
+        estouravam o cartão e o segundo saía cortado pela borda.
+
+        Empilhados e com a linha inteira para cada um, qualquer formato cabe:
+        o longo do Safari, o curto do Chrome, e o que vier no aparelho que eu
+        não testei. O rótulo sai do meio ("até" espremido entre dois campos) e
+        vira coluna própria — que também diz qual campo é qual, coisa que a
+        ordem sozinha não dizia.
       */}
       <form
         method="get"
         aria-label="Período personalizado"
         className={cn(
-          'glass grid w-full grid-cols-[1fr_auto_1fr] items-center gap-1 rounded-lg p-1',
-          'sm:flex sm:w-auto',
-          // Quando a faixa está valendo, ela é que fica acesa — os atalhos
-          // ficam apagados acima. Sem isto as duas metades pareceriam ativas.
+          'glass grid w-full grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 rounded-lg p-1.5',
+          'sm:flex sm:w-auto sm:gap-1 sm:p-1',
           faixa && 'ring-primary ring-1',
         )}
       >
-        {/*
-          Nasce com HOJE, não vazio. Campo vazio não diz qual período está na
-          tela, e o filtro ficava com duas metades afirmando coisas
-          diferentes: "Hoje" aceso em cima e `dd/mm/aaaa` embaixo.
-        */}
+        <span className="text-muted-foreground shrink-0 px-1 text-xs">De</span>
         <input
           type="date"
           name="de"
@@ -101,6 +101,7 @@ export function SeletorPeriodo({
           aria-label="Data inicial"
           className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"
         />
+
         <span className="text-muted-foreground shrink-0 px-1 text-xs">até</span>
         <input
           type="date"
@@ -110,10 +111,12 @@ export function SeletorPeriodo({
           aria-label="Data final"
           className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"
         />
+
         <button
           type="submit"
           className={cn(
-            'col-span-3 min-h-9 shrink-0 rounded-md px-3 text-sm font-medium transition-colors sm:col-span-1',
+            'col-span-2 mt-1 min-h-9 shrink-0 rounded-md px-3 text-sm font-medium transition-colors',
+            'sm:col-span-1 sm:mt-0',
             faixa
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',

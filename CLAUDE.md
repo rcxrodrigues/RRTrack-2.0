@@ -438,9 +438,19 @@ troca de aba.
   coisas diferentes: "Hoje" aceso em cima e `dd/mm/aaaa` embaixo. `hojeEm`
   calcula no fuso do painel — em UTC, às 21h em São Paulo o campo mostraria
   o dia seguinte ao que o atalho ao lado está contando.
-- **A grade no celular veio da foto.** Os dois campos e o botão numa linha
-  só, a 390px, cortavam o ano: `09/01/2(`. Um seletor de data que não deixa
-  ler a data escolhida é pior que não ter seletor.
+- **LARGURA DE `input type="date"` NÃO SE SUPÕE — quem escolhe o formato é o
+  NAVEGADOR.** Este errou duas vezes, e a segunda só apareceu num aparelho
+  de verdade. A 390px, os dois campos e o botão numa linha só cortavam o ano
+  (`09/01/2(`) — virou grade. E a grade ainda estourava no iPhone, porque o
+  Chromium headless em que eu testo mostra `09/28/2026` e o **Safari em
+  pt-BR mostra `29 de set. de 2026`**, mais que o dobro: o segundo campo saía
+  cortado pela borda do cartão.
+  Agora é **um campo por linha no celular**, com rótulo próprio (`De` / `até`)
+  numa coluna à parte — qualquer formato cabe, inclusive o do aparelho que eu
+  não testei. E como a foto do meu ambiente não reproduz o Safari, a prévia
+  tem um bloco que **imita o pior caso** com o texto longo em campo de texto,
+  mais uma medição de `scrollWidth > clientWidth` a 390px e a 320px: é o que
+  prova a linha sem depender de eu ter o aparelho.
 
 ### Atualizar é `router.refresh()`, não `location.reload()`
 
