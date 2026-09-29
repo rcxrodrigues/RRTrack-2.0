@@ -12,8 +12,21 @@ export type ResultadoTeste = {
 
 const TIMEOUT_MS = 10_000;
 
-async function chamarMeta(url: string): Promise<{ status: number; corpo: unknown }> {
+/**
+ * Chama a Graph API com o token no CABEÇALHO, nunca na query.
+ *
+ * Query string aparece em log de proxy, em histórico de erro e em relatório
+ * de crash — e estes dois tokens não são pouca coisa: o da CAPI ESCREVE no
+ * pixel, o de Ads LÊ a conta de anúncio inteira (gasto, criativo, público).
+ * É a mesma regra que o `insights.ts` e o `capi.ts` já seguem; esta função
+ * era a porta que faltava fechar.
+ */
+async function chamarMeta(
+  url: string,
+  token: string,
+): Promise<{ status: number; corpo: unknown }> {
   const resposta = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(TIMEOUT_MS),
     // Teste de conexão nunca pode vir de cache: a pergunta é "funciona AGORA?".
     cache: 'no-store',
@@ -39,9 +52,8 @@ export async function testarPixel(
   try {
     const url = new URL(metaNodeEndpoint(pixelId));
     url.searchParams.set('fields', 'id,name');
-    url.searchParams.set('access_token', capiToken);
 
-    const { status, corpo } = await chamarMeta(url.toString());
+    const { status, corpo } = await chamarMeta(url.toString(), capiToken);
 
     if (status === 200) {
       const nome = texto(corpo, 'name');
@@ -79,9 +91,8 @@ export async function testarContaDeAnuncio(
     const base = metaInsightsEndpoint(adAccountId).replace(/\/insights$/, '');
     const url = new URL(base);
     url.searchParams.set('fields', 'name,currency,account_status');
-    url.searchParams.set('access_token', adsToken);
 
-    const { status, corpo } = await chamarMeta(url.toString());
+    const { status, corpo } = await chamarMeta(url.toString(), adsToken);
 
     if (status === 200) {
       const detalhe = [texto(corpo, 'name'), texto(corpo, 'currency')]

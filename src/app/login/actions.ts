@@ -4,10 +4,23 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
+import { extrairIp } from '@/lib/geo';
+import { dentroDoLimite, LIMITE_LOGIN } from '@/lib/ratelimit';
 import { caminhoInterno } from '@/lib/rotas';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 const emailSchema = z.email({ error: 'Digite um e-mail válido.' });
+
+/**
+ * A mesma frase para "você insistiu demais" venha o limite de onde vier.
+ *
+ * Não depende de o e-mail existir, então continua sem virar verificador de
+ * quem tem acesso — que é a propriedade que esta tela protege acima de tudo.
+ */
+const MUITAS_TENTATIVAS: EstadoLogin = {
+  status: 'erro',
+  mensagem: 'Muitas tentativas. Espere alguns minutos e tente de novo.',
+};
 
 export type EstadoLogin = {
   status: 'inicial' | 'enviado' | 'erro';
@@ -42,6 +55,25 @@ export async function enviarLinkDeAcesso(
   const proximo = caminhoInterno(formData.get('proximo'));
 
   const cabecalhos = await headers();
+
+  /*
+   * Rate limit em DOIS baldes, porque são dois abusos diferentes.
+   *
+   * Por IP pega o script que dispara mil pedidos daqui. Por e-mail pega o
+   * ataque distribuído contra uma caixa só — que é o que de fato queima a
+   * cota do SMTP e deixa o dono do painel sem conseguir entrar. Um balde
+   * só deixaria a outra porta aberta.
+   *
+   * O e-mail entra no bucket já normalizado pelo Zod (minúsculas, sem
+   * espaço), senão `A@x.com` e `a@x.com` seriam baldes distintos.
+   */
+  const ip = extrairIp(cabecalhos);
+  const baldes = [`login:ip:${ip ?? 'sem-ip'}`, `login:email:${email.data.toLowerCase()}`];
+
+  for (const balde of baldes) {
+    if (!(await dentroDoLimite(balde, LIMITE_LOGIN))) return MUITAS_TENTATIVAS;
+  }
+
   const host = cabecalhos.get('x-forwarded-host') ?? cabecalhos.get('host');
   const protocolo = cabecalhos.get('x-forwarded-proto') ?? 'https';
   const origem = `${protocolo}://${host}`;

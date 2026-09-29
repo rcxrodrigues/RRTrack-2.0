@@ -19,6 +19,21 @@ export const LIMITE_CAPTURA: Limite = { requisicoes: 60, janelaSegundos: 60 };
 /** O webhook é chamado pela plataforma de venda, não por um navegador. */
 export const LIMITE_WEBHOOK: Limite = { requisicoes: 120, janelaSegundos: 60 };
 
+/**
+ * O link de acesso por e-mail. Apertado de propósito, e por um motivo que
+ * não é o de sempre.
+ *
+ * Aqui o recurso escasso não é CPU nossa — é a COTA DE E-MAIL. O SMTP do
+ * Supabase tem um teto baixo por hora, e quem martelar esta porta o queima:
+ * aí quem não consegue entrar no painel é o dono, exatamente quando precisa.
+ * O `shouldCreateUser: false` impede criar conta e a resposta idêntica
+ * impede descobrir quem tem acesso — nenhum dos dois impede esgotar a cota.
+ *
+ * Cinco em dez minutos é folgado para quem errou o e-mail ou não achou a
+ * mensagem, e fecha a porta para um script.
+ */
+export const LIMITE_LOGIN: Limite = { requisicoes: 5, janelaSegundos: 600 };
+
 export async function dentroDoLimite(
   bucket: string,
   { requisicoes, janelaSegundos }: Limite,
