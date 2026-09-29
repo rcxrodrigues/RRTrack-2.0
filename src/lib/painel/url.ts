@@ -12,7 +12,17 @@
 export function caminhoDaUrl(url: string): string {
   try {
     const u = new URL(url);
-    return u.pathname === '/' ? '/' : u.pathname.replace(/\/$/, '');
+    /*
+     * A HOME não é uma barra solta.
+     *
+     * `/` sozinho no meio de `/cart` e `/products/...` não diz nada, e a
+     * leitura que chegou foi literalmente "acho que o / deve ser o checkout,
+     * área de pagamento". É a linha mais importante da lista — a porta de
+     * entrada da loja — identificada pelo caractere menos informativo que
+     * existe.
+     */
+    if (u.pathname === '/') return '/ (início)';
+    return u.pathname.replace(/\/$/, '');
   } catch {
     /*
      * URL que não parseia é dado real que chegou torto — o snippet manda o

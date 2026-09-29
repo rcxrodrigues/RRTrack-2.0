@@ -422,6 +422,19 @@ export type Visitante = {
    * saída é adivinhar.
    */
   userAgent: string | null;
+  /**
+   * O IP que chegou na captura.
+   *
+   * Está aqui porque é a ÚNICA forma de separar os dois diagnósticos quando o
+   * geo surpreende: IP brasileiro com geo americano é erro de leitura do
+   * cabeçalho; IP americano é outra pessoa (ou outra rota) chegando. Sem o
+   * número na tela só sobra chutar — e chutar aqui custa horas mexendo na
+   * configuração errada.
+   *
+   * É também o valor que vai para a Conversions API, então ver que ele está
+   * errado é ver o match da Meta degradando.
+   */
+  ip: string | null;
   pais: string | null;
   regiao: string | null;
   cidade: string | null;
@@ -468,7 +481,7 @@ export async function carregarVisitante(
         'trck_user_id, email, phone, first_name, last_name, fbp, fbc, ' +
           'ga_client_id, utm_source, utm_medium, utm_campaign, utm_term, ' +
           'utm_content, referrer, landing_url, geo_country, geo_region, ' +
-          'geo_city, user_agent, created_at',
+          'geo_city, user_agent, ip, created_at',
       )
       .eq('trck_user_id', trckUserId)
       .maybeSingle(),
@@ -574,6 +587,7 @@ export async function carregarVisitante(
     referrer: textoEm(v, 'referrer') ?? null,
     landingUrl: textoEm(v, 'landing_url') ?? null,
     userAgent: textoEm(v, 'user_agent') ?? null,
+    ip: textoEm(v, 'ip') ?? null,
     pais: textoEm(v, 'geo_country') ?? null,
     regiao: textoEm(v, 'geo_region') ?? null,
     cidade: textoEm(v, 'geo_city') ?? null,

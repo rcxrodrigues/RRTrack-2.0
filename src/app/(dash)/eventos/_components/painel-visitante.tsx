@@ -304,6 +304,28 @@ function Conteudo({ visitante: v }: { visitante: Visitante }) {
             ) : null
           }
         />
+        {/*
+          IP E GEO JUNTOS, de propósito — é a comparação que diagnostica.
+
+          IP brasileiro com geo americano é erro de LEITURA do cabeçalho.
+          IP americano é outra pessoa, ou outra rota, chegando. Os dois dão
+          a mesma tela de "geo estranho", e separados em lugares diferentes
+          (ou fora da tela, como estavam) só sobra chutar. O IP é também o
+          que vai para a Conversions API: vê-lo errado é ver o match da Meta
+          degradando.
+        */}
+        <Campo
+          rotulo="IP"
+          valor={v.ip ? <code className="font-mono">{v.ip}</code> : null}
+        />
+        <Campo
+          rotulo="Geo lido"
+          valor={
+            v.pais ? (
+              [v.cidade, v.regiao, v.pais].filter(Boolean).join(' · ')
+            ) : null
+          }
+        />
         <Campo rotulo="Região" valor={lugar} />
       </Secao>
 
