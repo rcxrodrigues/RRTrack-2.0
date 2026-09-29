@@ -381,3 +381,40 @@ describe('hojeEm', () => {
     expect(faixa.ate.toISOString()).toBe(i.ate.toISOString());
   });
 });
+
+describe('mês passado', () => {
+  it('vai do dia 1º do mês anterior ao dia 1º deste', () => {
+    const i = intervaloDe('mes-passado', SP, NOITE_EM_SP); // 22/09/2026
+    expect(iso(i.de)).toBe('2026-08-01T03:00:00.000Z');
+    // Fim EXCLUSIVO: o dia 31 de agosto inteiro está dentro.
+    expect(iso(i.ate)).toBe('2026-09-01T03:00:00.000Z');
+    expect(i.dias).toBe(31);
+  });
+
+  /*
+   * A VIRADA DE ANO é onde uma conta de mês erra.
+   *
+   * Com o mês em base 1, janeiro é 1 e `mes - 1` dá 0 — que o `Date.UTC`
+   * trata como dezembro do ano anterior. Quem "consertasse" isso com um
+   * `if (mes === 1)` escrito à mão teria uma chance de errar o ano.
+   */
+  it('em janeiro, é dezembro do ano anterior', () => {
+    const emJaneiro = new Date('2027-01-15T15:00:00Z');
+    const i = intervaloDe('mes-passado', SP, emJaneiro);
+    expect(iso(i.de)).toBe('2026-12-01T03:00:00.000Z');
+    expect(iso(i.ate)).toBe('2027-01-01T03:00:00.000Z');
+    expect(i.dias).toBe(31);
+  });
+
+  it('fevereiro bissexto tem 29, sem ninguém contar dias', () => {
+    // O fim é o dia 1º de março, então o tamanho do mês sai da própria data.
+    const emMarco = new Date('2028-03-10T15:00:00Z');
+    expect(intervaloDe('mes-passado', SP, emMarco).dias).toBe(29);
+  });
+
+  it('encosta em "este mês" sem sobrepor', () => {
+    const passado = intervaloDe('mes-passado', SP, NOITE_EM_SP);
+    const atual = intervaloDe('mes', SP, NOITE_EM_SP);
+    expect(iso(passado.ate)).toBe(iso(atual.de));
+  });
+});

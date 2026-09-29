@@ -19,7 +19,14 @@
 
 const UM_DIA = 86_400_000;
 
-export const PERIODOS = ['hoje', 'ontem', '7d', '30d', 'mes'] as const;
+export const PERIODOS = [
+  'hoje',
+  'ontem',
+  '7d',
+  '30d',
+  'mes',
+  'mes-passado',
+] as const;
 
 export type Periodo = (typeof PERIODOS)[number];
 
@@ -29,6 +36,7 @@ export const ROTULOS: Record<Periodo, string> = {
   '7d': '7 dias',
   '30d': '30 dias',
   mes: 'Este mês',
+  'mes-passado': 'Mês passado',
 };
 
 /**
@@ -370,6 +378,19 @@ export function intervaloDe(
     '7d': () => [meiaNoiteLocal(ano, mes, dia - 6, fuso), amanha],
     '30d': () => [meiaNoiteLocal(ano, mes, dia - 29, fuso), amanha],
     mes: () => [meiaNoiteLocal(ano, mes, 1, fuso), amanha],
+    /*
+     * O mês fechado, e o fim é o dia 1º DESTE mês — exclusivo, como todo
+     * `ate` daqui. Somar "o último dia do mês passado" exigiria saber
+     * quantos dias ele teve (e se foi fevereiro bissexto); pedir o dia 1º
+     * do mês corrente devolve a mesma fronteira sem essa conta.
+     *
+     * `mes - 1` com `mes` em base 1 vira 0 em janeiro, e `Date.UTC` trata
+     * isso como dezembro do ano anterior — que é exatamente o desejado.
+     */
+    'mes-passado': () => [
+      meiaNoiteLocal(ano, mes - 1, 1, fuso),
+      meiaNoiteLocal(ano, mes, 1, fuso),
+    ],
   };
 
   const [de, ate] = janelas[periodo]();

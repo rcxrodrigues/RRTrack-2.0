@@ -408,19 +408,32 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
   É a mesma armadilha do `toLocaleString` em data, por outra porta, e pior:
   o erro depende de qual navegador abriu a página.
 
-### O filtro de período: cinco atalhos e uma faixa
+### O filtro de período: um menu, não uma fileira de atalhos
 
-Hoje · Ontem · 7 dias · 30 dias · Este mês cobrem o dia a dia, e **não**
-cobrem "1 a 15 de setembro". A faixa entra pelo mesmo caminho: vive na URL
-(`?de=…&ate=…`), é compartilhável, sobrevive ao recarregar e atravessa a
-troca de aba.
+Seis opções — Hoje · Ontem · 7 dias · 30 dias · Este mês · Mês passado — mais
+a faixa livre, tudo dentro de **um controle só**, igual no desktop e no
+celular.
 
-- **`<form method="get">` com dois `<input type="date">`**, não um calendário
-  em React. O navegador vira isso em query string sozinho, sem uma linha de
-  JS — a mesma propriedade que os cinco atalhos têm por serem `<Link>`. O
-  `type="date"` ainda resolve o formato: mostra no formato de quem olha e
-  manda sempre `YYYY-MM-DD`, então não há adivinhar se "03/04" é março ou
-  abril.
+> **Era uma fileira de chips, e no celular ficava caro.** Cinco chips numa
+> linha que rolava na horizontal, mais dois campos de data e um botão: TRÊS
+> linhas no topo da tela mais importante, antes de qualquer número,
+> empurrando as métricas para fora da primeira dobra. A queixa foi direta —
+> *"achei meio feio no telefone"*. E a fileira que rola ainda escondia
+> opção: "Este mês" só aparecia arrastando, e ninguém arrasta o que não sabe
+> que existe.
+
+- **`<details>`, não um dropdown em React.** O navegador abre e fecha
+  sozinho, com semântica de botão e estado expandido para o leitor de tela, e
+  sem uma linha de JS. As opções são `<Link>` porque o período vive na URL
+  (`?periodo=…` ou `?de=…&ate=…`): o estado é compartilhável, sobrevive ao
+  recarregar e funciona antes da hidratação. Um `<select>` com `onChange`
+  custaria JS para reimplementar o que o navegador já faz.
+- **O painel abre POR CIMA do conteúdo**, com `.flutuante` e não `.glass`:
+  vidro translúcido deixaria o texto de trás aparecer através dos campos de
+  data. É a regra que o seletor de moeda aprendeu primeiro.
+- **A faixa fica na MESMA lista, não atrás de escolher "Personalizado".** Na
+  referência que inspirou o desenho é preciso selecionar a opção para só
+  então ver os campos; aqui eles já estão no pé, a um toque em vez de dois.
 - **A faixa é INCLUSIVA nas duas pontas**, e a conversão para o `ate`
   exclusivo do painel acontece em `intervaloDe`. Guardar já convertido faria
   a tela devolver "1 a 16" para quem pediu "1 a 15".
@@ -433,24 +446,23 @@ troca de aba.
 - **Teto de 366 dias.** A Meta recusa `time_range` além de 37 meses, e o "vs
   período anterior" de uma faixa de cinco anos compara com anos que talvez
   não existam. Fora disso cai no padrão, como qualquer lixo de query string.
-- **Os campos de data nascem com HOJE, não vazios.** Campo vazio não diz
-  qual período está na tela, e o filtro ficava com duas metades afirmando
-  coisas diferentes: "Hoje" aceso em cima e `dd/mm/aaaa` embaixo. `hojeEm`
-  calcula no fuso do painel — em UTC, às 21h em São Paulo o campo mostraria
-  o dia seguinte ao que o atalho ao lado está contando.
+- **Os campos de data nascem com HOJE, não vazios.** Campo vazio não diz qual
+  período está na tela. `hojeEm` calcula no fuso do painel — em UTC, às 21h
+  em São Paulo o campo mostraria o dia seguinte ao que o menu está contando.
+- **"Mês passado" termina no dia 1º DESTE mês**, não no último dia do
+  anterior: o `ate` é exclusivo, e pedir o dia 1º devolve a mesma fronteira
+  sem ninguém precisar saber quantos dias o mês teve. Com o mês em base 1,
+  `mes - 1` dá 0 em janeiro e o `Date.UTC` já trata isso como dezembro do ano
+  anterior — um `if (mes === 1)` escrito à mão é que teria chance de errar o
+  ano. Há teste para janeiro e para fevereiro bissexto.
 - **LARGURA DE `input type="date"` NÃO SE SUPÕE — quem escolhe o formato é o
-  NAVEGADOR.** Este errou duas vezes, e a segunda só apareceu num aparelho
-  de verdade. A 390px, os dois campos e o botão numa linha só cortavam o ano
-  (`09/01/2(`) — virou grade. E a grade ainda estourava no iPhone, porque o
-  Chromium headless em que eu testo mostra `09/28/2026` e o **Safari em
-  pt-BR mostra `29 de set. de 2026`**, mais que o dobro: o segundo campo saía
-  cortado pela borda do cartão.
-  Agora é **um campo por linha no celular**, com rótulo próprio (`De` / `até`)
-  numa coluna à parte — qualquer formato cabe, inclusive o do aparelho que eu
-  não testei. E como a foto do meu ambiente não reproduz o Safari, a prévia
-  tem um bloco que **imita o pior caso** com o texto longo em campo de texto,
-  mais uma medição de `scrollWidth > clientWidth` a 390px e a 320px: é o que
-  prova a linha sem depender de eu ter o aparelho.
+  NAVEGADOR.** Isto errou duas vezes, e a segunda só apareceu num aparelho de
+  verdade: o Chromium headless em que eu testo mostra `09/28/2026` e o
+  **Safari em pt-BR mostra `29 de set. de 2026`**, mais que o dobro. Lado a
+  lado, o segundo campo saía cortado pela borda do cartão no iPhone. São um
+  por linha, com rótulo em cima, e a prévia tem um bloco que **imita o pior
+  caso** mais uma medição de `scrollWidth > clientWidth` a 390px e a 320px —
+  é o que prova a linha sem depender de eu ter o aparelho.
 
 ### Atualizar é `router.refresh()`, não `location.reload()`
 

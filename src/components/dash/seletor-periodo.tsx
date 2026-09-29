@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Check, ChevronDown } from 'lucide-react';
 
 import {
   ehFaixa,
@@ -10,25 +11,36 @@ import {
 import { cn } from '@/lib/utils';
 
 /**
- * O filtro de período — uma linha acima de tudo.
- *
- * São `<Link>`, não botões com `onClick`: o período vive na URL, então o
- * estado é compartilhável, sobrevive ao recarregar, e a tela funciona antes
- * do JS carregar (e continua funcionando se ele não carregar). Um seletor de
- * filtro é a última coisa que deveria depender de hidratação.
+ * O filtro de período: UM controle, igual no desktop e no celular.
  *
  * ┌───────────────────────────────────────────────────────────────────────────┐
- * │ A FAIXA SEGUE A MESMA REGRA, e é por isso que é um `<form method="get">`.│
+ * │ ERA UMA FILEIRA DE ATALHOS, E NO CELULAR FICAVA CARO.                   │
  * │                                                                          │
- * │ Dois `<input type="date">` num formulário GET viram `?de=…&ate=…`        │
- * │ sozinhos, sem uma linha de JavaScript — o navegador faz. Um seletor de   │
- * │ calendário em React daria mais controle sobre o visual e custaria a      │
- * │ propriedade que os cinco atalhos já têm.                                 │
+ * │ Cinco chips numa linha que rolava na horizontal, mais os dois campos de  │
+ * │ data e o botão — três linhas no topo da tela mais importante do painel,  │
+ * │ antes de qualquer número, empurrando as métricas para fora da primeira   │
+ * │ dobra. E a fileira que rola esconde opção: "Este mês" só aparecia        │
+ * │ arrastando, e ninguém arrasta o que não sabe que existe.                 │
  * │                                                                          │
- * │ O `type="date"` também resolve o formato: o navegador MOSTRA no formato  │
- * │ de quem olha (dd/mm/aaaa aqui) e MANDA sempre `YYYY-MM-DD`. Um campo de  │
- * │ texto exigiria adivinhar se "03/04" é março ou abril.                    │
+ * │ Agora é um menu: o gatilho diz o que está valendo, a lista abre por      │
+ * │ cima, e a faixa personalizada mora no pé dela. Mesma altura nos dois     │
+ * │ tamanhos de tela, e nada fica escondido fora do quadro.                  │
  * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * **`<details>`, não um dropdown em React.** O navegador abre e fecha sozinho,
+ * com semântica de botão e estado expandido para o leitor de tela, e sem uma
+ * linha de JS. As opções são `<Link>` porque o período vive na URL — o estado
+ * é compartilhável, sobrevive ao recarregar e funciona antes da hidratação.
+ * Um `<select>` com `onChange` custaria JS para reimplementar o que o
+ * navegador já faz, e pararia de funcionar se ele não carregasse.
+ *
+ * **A faixa fica NA MESMA lista, não atrás de escolher "Personalizado".** Na
+ * referência é preciso selecionar a opção para só então ver os campos; aqui
+ * eles já estão no pé, a um toque de distância em vez de dois.
+ *
+ * **`.flutuante`, não `.glass`.** O painel abre POR CIMA do conteúdo, e vidro
+ * translúcido deixa o texto de trás aparecer através dos campos de data. É a
+ * regra que o seletor de moeda aprendeu primeiro.
  */
 export function SeletorPeriodo({
   atual,
@@ -41,11 +53,26 @@ export function SeletorPeriodo({
   const faixa = ehFaixa(atual) ? atual : null;
 
   return (
-    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-      <nav
-        aria-label="Período"
-        className="glass flex w-full gap-1 overflow-x-auto rounded-lg p-1 sm:w-auto"
+    <details className="group relative w-full sm:w-64">
+      <summary
+        // Sem o triângulo do navegador: o marcador padrão estraga o
+        // alinhamento e muda de desenho entre navegadores.
+        className={cn(
+          'glass ring-border flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 text-sm ring-1 transition-colors',
+          'hover:bg-muted/40 group-open:ring-primary',
+          '[&::-webkit-details-marker]:hidden',
+        )}
       >
+        <span className="flex min-w-0 flex-col text-left">
+          <span className="text-muted-foreground text-[0.7rem] leading-none">
+            Período
+          </span>
+          <span className="truncate font-medium">{rotuloDaEscolha(atual)}</span>
+        </span>
+        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="flutuante absolute inset-x-0 z-30 mt-1 rounded-lg p-1">
         {PERIODOS.map((periodo) => {
           const ativo = !faixa && periodo === atual;
           return (
@@ -56,75 +83,71 @@ export function SeletorPeriodo({
               href={`?periodo=${periodo}`}
               aria-current={ativo ? 'page' : undefined}
               className={cn(
-                'flex min-h-9 flex-1 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors sm:flex-none',
+                'flex min-h-11 items-center justify-between gap-2 rounded-md px-3 text-sm transition-colors',
                 ativo
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                  ? 'bg-primary/10 text-primary-vivid font-medium'
+                  : 'hover:bg-muted/60',
               )}
             >
               {ROTULOS[periodo]}
+              {/* A marca fica no item escolhido — num menu aberto, cor de
+                  fundo sozinha se confunde com o item sob o dedo. */}
+              {ativo && <Check className="size-4 shrink-0" />}
             </Link>
           );
         })}
-      </nav>
 
-      {/*
-        UM CAMPO POR LINHA NO CELULAR — e a foto num iPhone é que decidiu.
-
-        A largura de um `<input type="date">` NÃO se supõe: o formato é
-        escolhido pelo navegador, não por nós. O Chromium headless em que eu
-        testei mostra `09/28/2026`; o Safari do iPhone, em pt-BR, mostra
-        `29 de set. de 2026` — mais que o dobro. Os dois lado a lado
-        estouravam o cartão e o segundo saía cortado pela borda.
-
-        Empilhados e com a linha inteira para cada um, qualquer formato cabe:
-        o longo do Safari, o curto do Chrome, e o que vier no aparelho que eu
-        não testei. O rótulo sai do meio ("até" espremido entre dois campos) e
-        vira coluna própria — que também diz qual campo é qual, coisa que a
-        ordem sozinha não dizia.
-      */}
-      <form
-        method="get"
-        aria-label="Período personalizado"
-        className={cn(
-          'glass grid w-full grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 rounded-lg p-1.5',
-          'sm:flex sm:w-auto sm:gap-1 sm:p-1',
-          faixa && 'ring-primary ring-1',
-        )}
-      >
-        <span className="text-muted-foreground shrink-0 px-1 text-xs">De</span>
-        <input
-          type="date"
-          name="de"
-          defaultValue={faixa?.de ?? hoje}
-          required
-          aria-label="Data inicial"
-          className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"
-        />
-
-        <span className="text-muted-foreground shrink-0 px-1 text-xs">até</span>
-        <input
-          type="date"
-          name="ate"
-          defaultValue={faixa?.ate ?? hoje}
-          required
-          aria-label="Data final"
-          className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1 sm:w-auto"
-        />
-
-        <button
-          type="submit"
-          className={cn(
-            'col-span-2 mt-1 min-h-9 shrink-0 rounded-md px-3 text-sm font-medium transition-colors',
-            'sm:col-span-1 sm:mt-0',
-            faixa
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
-          )}
+        <form
+          method="get"
+          aria-label="Período personalizado"
+          className="border-border/60 mt-1 flex flex-col gap-2 border-t px-3 pt-3 pb-2"
         >
-          {faixa ? rotuloDaEscolha(faixa) : 'Aplicar'}
-        </button>
-      </form>
-    </div>
+          <span
+            className={cn(
+              'text-xs',
+              faixa ? 'text-primary-vivid font-medium' : 'text-muted-foreground',
+            )}
+          >
+            Personalizado
+          </span>
+
+          {/*
+            Um campo por linha, com rótulo em cima. A largura de um
+            `<input type="date">` não se supõe — quem escolhe o formato é o
+            NAVEGADOR, e o Safari em pt-BR escreve `29 de set. de 2026`,
+            mais que o dobro do `09/28/2026` do Chromium. Lado a lado, o
+            segundo saía cortado pela borda no iPhone.
+          */}
+          <label className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-[0.7rem]">De</span>
+            <input
+              type="date"
+              name="de"
+              defaultValue={faixa?.de ?? hoje}
+              required
+              className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-[0.7rem]">Até</span>
+            <input
+              type="date"
+              name="ate"
+              defaultValue={faixa?.ate ?? hoje}
+              required
+              className="bg-input/40 ring-border min-h-9 w-full min-w-0 rounded-md px-2 text-sm ring-1"
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="bg-primary text-primary-foreground min-h-9 rounded-md px-3 text-sm font-medium"
+          >
+            Aplicar
+          </button>
+        </form>
+      </div>
+    </details>
   );
 }
