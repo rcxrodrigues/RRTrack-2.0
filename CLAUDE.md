@@ -1368,6 +1368,17 @@ e tratar ausência como "cheio" pararia o painel sem motivo.
 de anúncio inteira — gasto, criativo, público —, e query string aparece em
 log de proxy e em histórico de erro.
 
+> **Esta regra já estava escrita duas vezes e foi quebrada assim mesmo.** O
+> `meta/testar.ts` — o "Testar conexão" do painel, que roda no minuto em que
+> a pessoa acabou de colar a credencial — montava `?access_token=` nas duas
+> funções, enquanto o `capi.ts` (corpo) e o `insights.ts` (cabeçalho) ao lado
+> faziam certo. Atravessou uma auditoria inteira porque **prosa não varre
+> arquivo**. Agora `token-fora-da-query.test.ts` varre o `src/lib/meta/` e
+> quebra o build, no molde do `constants.test.ts`. O GA4 fica de fora de
+> propósito: o Measurement Protocol EXIGE `api_secret` na query e não oferece
+> cabeçalho — trava que não pode ser obedecida vira exceção, e exceção ensina
+> a ignorar a regra.
+
 **Cache velho é melhor que tela vazia**, e por isso a falha devolve o que
 havia com a data dita: um número de ontem rotulado é informação; um branco
 não é.
@@ -1388,6 +1399,28 @@ Meta — e um ROAS que não fecha é pior que ROAS nenhum.
   pode cachear uma resposta com `Set-Cookie` de sessão e servir o token de um
   usuário para outro. Exemplos na internet usam a assinatura antiga, de um
   parâmetro só — não copie de lá. Ver `src/lib/supabase/proxy.ts`.
+- **E isso vale para ROUTE HANDLER também, não só para o proxy** — foi por
+  aí que a regra vazou. O `server.ts` declarava um parâmetro só, justificado
+  com "Server Component não escreve cookie": verdade, mas
+  `criarClienteServidor()` serve Route Handler igual, e lá o `set`
+  **funciona**. O `/auth/callback` grava a sessão e responde com
+  `Set-Cookie`; medido num build de produção, um Route Handler que grava
+  cookie responde **sem `Cache-Control` nenhum** — o Next não repõe, e o
+  `cookies()` não alcança cabeçalho de resposta. Quem escreve sessão usa
+  `criarClienteServidorComCabecalhos()` e aplica o que vier; o
+  `Object.assign` mora **antes** do `try` porque no Server Component o `set`
+  estoura e a explosão não pode levar os cabeçalhos junto.
+- **Rate limit não é só para quem tem sessão a proteger — é para quem NÃO
+  tem.** `enviarLinkDeAcesso` é Server Action, ou seja, um POST público que
+  se alcança sabendo o id, sem passar pelo layout do painel. Ficou sem limite
+  porque a auditoria perguntou "checa sessão?" e a resposta ("não, de
+  propósito — é onde se obtém uma") encerrou o assunto. O recurso escasso ali
+  não é CPU: é a **cota de e-mail** do Supabase, que tem teto baixo por hora
+  — martelar a porta queima a cota e quem fica sem entrar no painel é o dono.
+  São **dois baldes**, porque são dois abusos: por IP pega o script daqui,
+  por e-mail pega o distribuído contra uma caixa só, que é o que de fato
+  queima a cota. A recusa usa a mesma frase para todo mundo, senão a tela
+  volta a ser verificador de quem tem acesso.
 - **Um cliente novo por requisição.** Reaproveitar deixa as respostas
   seguintes sem os cabeçalhos de cache.
 - **`getClaims()`**, não `getSession()` nem `getUser()`: valida a assinatura
