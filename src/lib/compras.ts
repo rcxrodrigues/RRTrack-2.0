@@ -4,7 +4,15 @@ import { enviarParaTodosOsPixels, segredoDoGa4 } from '@/lib/destinos';
 import { enviarParaGa4, montarPayloadGa4, type RespostaGa4 } from '@/lib/ga4/mp';
 import { texto } from '@/lib/json';
 import { montarPayload, montarUserData } from '@/lib/meta/capi';
-import { hashEmail, hashNome, hashTelefone } from '@/lib/hash';
+import {
+  hashCidade,
+  hashEmail,
+  hashEstado,
+  hashExternalId,
+  hashNome,
+  hashPais,
+  hashTelefone,
+} from '@/lib/hash';
 import { carregarConfiguracao } from '@/lib/settings';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 
@@ -33,6 +41,53 @@ export function eventIdDaCompra(transactionId: string): string {
 }
 
 /**
+ * QUANDO a venda aconteceu, em segundos — não quando estamos mandando.
+ *
+ * Era `Date.now()`, e no fluxo normal a diferença é de segundos: o webhook
+ * chega na hora. Quebra em dois casos, e os dois são reais aqui:
+ *
+ * - **Reprocessar.** O botão existe para recuperar venda que chegou antes
+ *   do adaptador existir — dias atrás, às vezes semanas. Com `Date.now()`
+ *   ela vai para a Meta datada de HOJE.
+ * - **Retry do gateway.** A Appmax reenvia até quatro vezes, e a ordem dos
+ *   eventos não é garantida.
+ *
+ * `created_at` é quando o webhook chegou, que é o mais perto da venda que
+ * este sistema tem.
+ *
+ * **E de propósito não há teto.** A Meta recusa evento com mais de 7 dias, e
+ * deixá-la recusar é melhor que remendar a data: a recusa fica no
+ * `response_meta` e alguém vê; uma venda antiga datada de hoje entra calada,
+ * suja o ROAS do dia e ainda ensina o otimizador que houve conversão agora.
+ * Este painel existe para não errar em silêncio.
+ */
+function instanteDaCompra(compra: LinhaCompra): number {
+  const bruto = texto(compra, 'created_at');
+  const quando = bruto ? Date.parse(bruto) : Number.NaN;
+
+  // Linha sem data legível não deveria existir; se existir, mandar agora é
+  // melhor que mandar `NaN`, que os dois destinos recusam sem dizer o motivo.
+  return Number.isNaN(quando) ? Date.now() : quando;
+}
+
+/** Para a Meta: SEGUNDOS. Com milissegundos ela recusa por "fora da janela". */
+function horaDaCompra(compra: LinhaCompra): number {
+  return Math.floor(instanteDaCompra(compra) / 1000);
+}
+
+/**
+ * Para o GA4: MICROSSEGUNDOS.
+ *
+ * Mesma fonte da hora da Meta, de propósito: se cada um pegasse a sua, uma
+ * venda reprocessada cairia em dias diferentes nos dois relatórios, e a
+ * conferência entre eles — que é metade da razão deste painel existir —
+ * passaria a acusar diferença que não existe.
+ */
+function microsDaCompra(compra: LinhaCompra): number {
+  return instanteDaCompra(compra) * 1000;
+}
+
+/**
  * Dispara a compra, uma única vez.
  *
  * Roda em `after()` na rota do webhook — os 5 segundos são do gateway, não
@@ -47,7 +102,10 @@ export async function dispararCompra(transactionId: string): Promise<void> {
       .select(
         'transaction_id, status, value, currency, email, email_hash, phone, phone_hash, ' +
           'first_name, last_name, product_id, product_name, fbp, fbc, ' +
-          'ga_client_id, ga_session_id, geo_country, geo_region, geo_city, ip, sent_at, reverted_at',
+          'ga_client_id, ga_session_id, geo_country, geo_region, geo_city, ip, sent_at, reverted_at, ' +
+          // Identidade e hora do evento. `trck_user_id` vira o `external_id`
+          // da Meta; `created_at` é QUANDO a venda chegou — ver o event_time.
+          'trck_user_id, created_at',
       )
       .eq('transaction_id', transactionId)
       .returns<LinhaCompra[]>()
@@ -357,19 +415,35 @@ async function enviarParaMeta(compra: LinhaCompra, eventId: string): Promise<unk
     {
       event_name: 'Purchase',
       // Segundos, nunca milissegundos.
-      event_time: Math.floor(Date.now() / 1000),
+      event_time: horaDaCompra(compra),
       event_id: eventId,
       // A compra acontece noutro site, mas a Meta só aceita `website`,
       // `app` ou `physical_store` — e o funil é web.
       action_source: 'website',
+      /*
+       * A identidade INTEIRA que a linha carrega.
+       *
+       * Isto já mandou menos que um PageView — sete parâmetros contra onze —
+       * no evento que a Meta usa para OTIMIZAR. E não era falta de dado:
+       * `trck_user_id` e o geo já estavam gravados aqui, copiados do
+       * visitante no casamento, e só não eram passados adiante.
+       */
       user_data: montarUserData({
-        // Os hashes de e-mail e telefone já vêm prontos do banco; nome vem
-        // em claro e é hasheado aqui pela MESMA função, então não há duas
-        // normalizações para divergirem.
+        // Os hashes de e-mail e telefone já vêm prontos do banco; o resto vem
+        // em claro e é hasheado aqui pelas MESMAS funções do `/api/identify`,
+        // então não há duas normalizações para divergirem.
         emailHash: texto(compra, 'email_hash') ?? hashEmail(texto(compra, 'email')),
         phoneHash: texto(compra, 'phone_hash') ?? hashTelefone(texto(compra, 'phone')),
         firstNameHash: hashNome(texto(compra, 'first_name')),
         lastNameHash: hashNome(texto(compra, 'last_name')),
+        // O geo é o do VISITANTE, copiado no casamento — nunca o da
+        // requisição, que é o datacenter do gateway.
+        cityHash: hashCidade(texto(compra, 'geo_city')),
+        stateHash: hashEstado(texto(compra, 'geo_region')),
+        countryHash: hashPais(texto(compra, 'geo_country')),
+        // Mesma forma do `/api/event`: hasheado dos dois lados, senão a Meta
+        // veria dois identificadores diferentes para a mesma pessoa.
+        externalIdHash: hashExternalId(texto(compra, 'trck_user_id')),
         // fbp e fbc vêm do VISITANTE, copiados no casamento. São o que mais
         // pesa no match, e nenhum gateway os conhece.
         fbp: texto(compra, 'fbp'),
@@ -426,6 +500,10 @@ async function enviarParaGa4Mp(compra: LinhaCompra, eventId: string): Promise<un
   const payload = montarPayloadGa4({
     clientId,
     sessionId: texto(compra, 'ga_session_id'),
+    // A hora da VENDA, a mesma que vai para a Meta. Sem isto o GA4 carimba
+    // "agora", e uma venda recuperada pelo Reprocessar entra na receita do
+    // dia errado.
+    timestampMicros: microsDaCompra(compra),
     eventos: [
       {
         name: 'purchase',

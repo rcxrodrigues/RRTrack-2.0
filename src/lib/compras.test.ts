@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { lista, numero, objeto, texto } from '@/lib/json';
+import { hashCidade, hashEstado, hashExternalId, hashPais } from '@/lib/hash';
 
 /**
  * As travas do disparo da compra. Cada uma existe porque quebrá-la conta
@@ -109,7 +110,21 @@ const APROVADA = {
   ga_session_id: '175',
   ip: '203.0.113.45',
   sent_at: null,
+
+  // O que o casamento copiou do visitante. Nenhum gateway conhece nada
+  // disto, e é o que faz a compra chegar à Meta com identidade.
+  trck_user_id: 'trck-abc-123',
+  geo_country: 'BR',
+  geo_region: 'BR-MG',
+  geo_city: 'Belo Horizonte',
+
+  // Bem no passado de propósito: é o que separa "a hora da venda" de "a
+  // hora em que estamos mandando".
+  created_at: '2026-09-20T15:30:00.000Z',
 };
+
+/** O instante do `created_at` acima, para os testes de hora. */
+const INSTANTE_DA_VENDA = Date.parse('2026-09-20T15:30:00.000Z');
 
 const CONFIG = {
   settings: {
@@ -236,6 +251,63 @@ describe('o payload da Meta', () => {
     // Em milissegundos passaria de 1,7 trilhão.
     expect(segundos).toBeLessThan(2_000_000_000);
   });
+
+  /*
+   * A compra já mandou MENOS identidade que um PageView — sete parâmetros
+   * contra onze — no evento que a Meta usa para OTIMIZAR. Não era falta de
+   * dado: `trck_user_id` e o geo já estavam gravados na linha, copiados do
+   * visitante no casamento, e só não eram passados adiante.
+   *
+   * Nada quebrava. A conversão chegava, contava, e a nota de qualidade do
+   * match ficava baixa sem ninguém saber por quê.
+   */
+  it('leva external_id, cidade, estado e país — a identidade INTEIRA da linha', async () => {
+    await dispararCompra('yampi:1000001');
+    const user = objeto(payloadMeta(), 'user_data');
+
+    // Hasheados, em array, como a Meta espera.
+    expect(lista(user, 'external_id')).toHaveLength(1);
+    expect(lista(user, 'ct')).toHaveLength(1);
+    expect(lista(user, 'st')).toHaveLength(1);
+    expect(lista(user, 'country')).toHaveLength(1);
+  });
+
+  it('hasheia o geo com as MESMAS funções do /api/identify', async () => {
+    await dispararCompra('yampi:1000001');
+    const user = objeto(payloadMeta(), 'user_data');
+
+    // Se estes divergissem do que o visitante gravou, a Meta veria duas
+    // pessoas diferentes — e não avisa, só casa menos.
+    expect(lista(user, 'ct')[0]).toBe(hashCidade('Belo Horizonte'));
+    expect(lista(user, 'st')[0]).toBe(hashEstado('BR-MG'));
+    expect(lista(user, 'country')[0]).toBe(hashPais('BR'));
+    expect(lista(user, 'external_id')[0]).toBe(hashExternalId('trck-abc-123'));
+  });
+
+  /*
+   * O `event_time` era `Date.now()`. No fluxo normal a diferença é de
+   * segundos — o webhook chega na hora. Quebra no REPROCESSAR, que existe
+   * justamente para recuperar venda de dias atrás: ela ia para a Meta
+   * datada de hoje, suja o ROAS do dia e ensina o otimizador que houve
+   * conversão agora.
+   */
+  it('a hora é a da VENDA, não a de agora', async () => {
+    await dispararCompra('yampi:1000001');
+    expect(numero(payloadMeta(), 'event_time')).toBe(
+      Math.floor(INSTANTE_DA_VENDA / 1000),
+    );
+  });
+
+  it('sem data legível na linha, manda agora em vez de NaN', async () => {
+    maybeSingle.mockResolvedValue({ data: { ...APROVADA, created_at: null } });
+    const antes = Math.floor(Date.now() / 1000);
+    await dispararCompra('yampi:1000001');
+
+    const quando = numero(payloadMeta(), 'event_time');
+    expect(quando).toBeDefined();
+    expect(Number.isNaN(quando)).toBe(false);
+    expect(quando).toBeGreaterThanOrEqual(antes);
+  });
 });
 
 describe('o GA4', () => {
@@ -256,6 +328,27 @@ describe('o GA4', () => {
   it('envia quando há client_id', async () => {
     await dispararCompra('yampi:1000001');
     expect(segredoDoGa4).toHaveBeenCalledWith('ga-1');
+  });
+
+  /*
+   * A MESMA hora que foi para a Meta, em microssegundos.
+   *
+   * Se cada destino pegasse a sua, uma venda reprocessada cairia em dias
+   * diferentes nos dois relatórios — e conferir um contra o outro, que é
+   * metade da razão deste painel existir, passaria a acusar diferença que
+   * não existe.
+   */
+  it('carimba a hora da VENDA, a mesma da Meta', async () => {
+    await dispararCompra('yampi:1000001');
+
+    const payload: unknown = ga4Enviado.mock.calls[0]?.[1];
+    const micros = numero(payload, 'timestamp_micros');
+    expect(micros).toBe(INSTANTE_DA_VENDA * 1000);
+
+    // E de fato a mesma: micros ÷ 1.000.000 = os segundos da Meta.
+    expect(Math.floor((micros ?? 0) / 1_000_000)).toBe(
+      numero(payloadMeta(), 'event_time'),
+    );
   });
 });
 
