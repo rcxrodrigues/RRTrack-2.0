@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   alinharPorDia,
+  diaNaPosicao,
   montarGeometria,
   montarSeriesDoQuadro,
   tetoComum,
@@ -291,5 +292,43 @@ describe('montarSeriesDoQuadro', () => {
     expect(series.map((s) => s.rotulo)).toEqual(['receita', 'investido']);
     // Mesma cor nas duas seria uma legenda que não separa nada.
     expect(series[0]?.cor).not.toBe(series[1]?.cor);
+  });
+});
+
+/*
+ * O DIA SOB O DEDO.
+ *
+ * Este teste existe porque o tooltip do gráfico estava MORTO no iPhone e
+ * nada dizia isso: ele nasceu com `onMouseEnter` + `onFocus` nas faixas, e
+ * nenhum dos dois chega num toque — o Safari do iOS não dá foco a `<button>`
+ * ao tocar. Trocado por Pointer Events lendo a POSIÇÃO, a conta de
+ * posição → dia virou o lugar onde um erro passa calado: a curva continua
+ * certa e o número mostrado é o do dia vizinho.
+ */
+describe('diaNaPosicao', () => {
+  it('as pontas são o primeiro e o último dia', () => {
+    expect(diaNaPosicao(0, 30)).toBe(0);
+    expect(diaNaPosicao(1, 30)).toBe(29);
+  });
+
+  it('arredonda para o dia MAIS PRÓXIMO, não para o de baixo', () => {
+    // Com 5 dias os pontos ficam em 0, 0,25, 0,5, 0,75 e 1. Truncando, o
+    // último dia teria uma faixa de um pixel e o primeiro teria o dobro
+    // dos outros — e ninguém conferiria, porque o desenho continua certo.
+    expect(diaNaPosicao(0.24, 5)).toBe(1);
+    expect(diaNaPosicao(0.26, 5)).toBe(1);
+    expect(diaNaPosicao(0.99, 5)).toBe(4);
+  });
+
+  it('o dedo escapando da borda prende na ponta, não some', () => {
+    // Tooltip piscando para fora quando o dedo passa da borda é pior que
+    // mostrar a ponta — e o dedo passa da borda o tempo todo.
+    expect(diaNaPosicao(-0.3, 30)).toBe(0);
+    expect(diaNaPosicao(1.4, 30)).toBe(29);
+  });
+
+  it('um dia só não divide por zero', () => {
+    expect(diaNaPosicao(0.5, 1)).toBe(0);
+    expect(diaNaPosicao(0.5, 0)).toBe(0);
   });
 });

@@ -372,6 +372,33 @@ cruzam. O mesmo vale para `--destructive` / `--destructive-vivid`.
 - **Mobile-first.** Alvos de toque ≥ 44px (o `size="default"` do Button já dá
   `h-11` no celular). Sidebar no desktop, barra inferior no celular —
   `src/lib/nav.ts` é a fonte única das duas.
+- **INTERAÇÃO QUE SÓ EXISTE NO HOVER ESTÁ MORTA NO IPHONE.** O tooltip do
+  gráfico nasceu com `onMouseEnter` + `onFocus`, e nenhum dos dois chega num
+  toque: o Safari do iOS **não dá foco a `<button>`** ao tocar — só a campo
+  de formulário —, e o `mouseenter` sintético dele é o caminho de DOIS
+  toques que existe para menu de hover, inútil num alvo invisível de 8px. O
+  gráfico abria bonito e o número do dia era inalcançável no aparelho em que
+  este painel mais é aberto, sem nada quebrar nem avisar.
+  **Pointer Events** cobre mouse, dedo e caneta de uma vez. E o alvo é a
+  POSIÇÃO, não o elemento: o iOS prende o ponteiro ao elemento onde o toque
+  começou, então arrastar o dedo pela série nunca dispararia o `enter` dos
+  vizinhos. Três regras que vieram juntas:
+  · `touch-action: pan-y pinch-zoom` no quadro — a rolagem vertical continua
+    sendo do navegador (o quadro ocupa a largura toda; quem começa a rolar
+    com o dedo em cima dele não pode ficar preso), e o `pinch-zoom` fica
+    porque no iOS é acessibilidade.
+  · `onPointerLeave` só limpa para `pointerType === 'mouse'`: no toque não
+    existe "sair", e limpar apagaria justamente o que a pessoa foi ver.
+  · `onPointerMove` só segue o dedo enquanto `buttons > 0`.
+  Medido com toque emulado antes e depois — antes, o dia não mudava em
+  toque nenhum. `diaNaPosicao` em `serie.ts` tem a conta e o teste.
+- **O resto do iOS já está coberto, e vale saber onde**, para não
+  regredir: `dvh` em vez de `vh` (no iOS o `100vh` conta a barra de
+  endereço e corta o rodapé), `env(safe-area-inset-bottom)` na barra
+  inferior fixa, `-webkit-backdrop-filter` junto do `backdrop-filter` no
+  `.glass` e no `.flutuante` (o Safari exige o prefixo), e campo de
+  formulário em **`text-base` no celular** com `sm:text-sm` — abaixo de
+  16px o Safari dá zoom ao focar e a página fica torta.
 - Métrica sem dado mostra **`—`, nunca `0`**: zero é um número, "sem dado" não é.
   É o que o `MetricCard` faz quando recebe `value={null}` — e o que a etapa
   `desconhecido` do funil faz quando o evento que a alimenta nunca chegou.

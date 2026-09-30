@@ -5,6 +5,7 @@ import * as React from 'react';
 import { inteiro, moeda, moedaCurta } from '@/lib/formato';
 import {
   ALTURA_DO_QUADRO,
+  diaNaPosicao,
   montarGeometria,
   tetoComum,
   type CorDaSerie,
@@ -118,6 +119,7 @@ export function SerieTemporal({
     formato === 'moeda' ? moedaCurta(valor, simbolo) : inteiro(valor);
 
   const [ativo, setAtivo] = React.useState<number | null>(null);
+  const quadro = React.useRef<HTMLDivElement>(null);
 
   const comDado = series.filter((s) => s.pontos.length > 0);
 
@@ -150,6 +152,38 @@ export function SerieTemporal({
 
   const indice = ativo ?? base.g.pontos.length - 1;
   const umaSo = desenhos.length === 1;
+
+  /*
+   * O DIA SOB O PONTEIRO, calculado da posição — e não de qual faixa
+   * recebeu o evento.
+   *
+   * ┌─────────────────────────────────────────────────────────────────────┐
+   * │ O TOOLTIP ESTAVA MORTO NO IPHONE, e nada dizia isso.                │
+   * │                                                                     │
+   * │ Ele nasceu com `onMouseEnter` + `onFocus` nas faixas. Nenhum dos    │
+   * │ dois chega num toque: o Safari do iOS **não dá foco a `<button>`**  │
+   * │ ao tocar (só campo de formulário), e o `mouseenter` sintético dele  │
+   * │ é o caminho de dois toques que existe para menu de hover — num      │
+   * │ alvo invisível de 8px ninguém acerta duas vezes. O gráfico abria    │
+   * │ bonito e o número do dia era inalcançável no aparelho em que este   │
+   * │ painel mais é aberto. Medido, com toque emulado: o dia não mudava   │
+   * │ em toque nenhum.                                                    │
+   * └─────────────────────────────────────────────────────────────────────┘
+   *
+   * Pointer Events resolve os três de uma vez (mouse, dedo e caneta), e
+   * ler a POSIÇÃO em vez do alvo resolve um quarto: com 30 dias em 260px
+   * cada faixa tem 8px, e arrastar o dedo pela série não funcionaria por
+   * faixa nenhuma — o iOS prende o ponteiro ao elemento onde o toque
+   * começou, então os `enter` dos vizinhos nunca chegariam.
+   */
+  const dias = base.g.pontos.length;
+  function diaSobOPonteiro(clientX: number): number | null {
+    const caixa = quadro.current?.getBoundingClientRect();
+    if (!caixa || caixa.width === 0) return null;
+    // A conta mora em `serie.ts`, com teste: é onde um erro de
+    // arredondamento se esconderia mostrando o dia vizinho.
+    return diaNaPosicao((clientX - caixa.left) / caixa.width, dias);
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -205,8 +239,36 @@ export function SerieTemporal({
         </div>
 
         <div
+          ref={quadro}
           className="relative min-w-0 flex-1"
-          onMouseLeave={() => { setAtivo(null); }}
+          /*
+            `pan-y pinch-zoom`: a rolagem VERTICAL da página continua sendo
+            do navegador — o quadro ocupa a largura toda do celular, e quem
+            começa a rolar com o dedo em cima dele não pode ficar preso. O
+            `pinch-zoom` fica junto porque tirá-lo mataria o zoom de dois
+            dedos, que no iOS é recurso de acessibilidade, não enfeite.
+            O que sobra para nós é o movimento horizontal, que é o do
+            gráfico.
+          */
+          style={{ touchAction: 'pan-y pinch-zoom' }}
+          onPointerDown={(e) => {
+            const i = diaSobOPonteiro(e.clientX);
+            if (i !== null) setAtivo(i);
+          }}
+          onPointerMove={(e) => {
+            // O mouse acompanha sempre; o dedo, só enquanto está encostado
+            // (`buttons` é 1 durante o contato). Sem esta guarda, no
+            // desktop o gráfico reagiria ao ponteiro parado passando por
+            // cima — que é o certo — e no celular a nada, que é o de hoje.
+            if (e.pointerType !== 'mouse' && e.buttons === 0) return;
+            const i = diaSobOPonteiro(e.clientX);
+            if (i !== null) setAtivo(i);
+          }}
+          onPointerLeave={(e) => {
+            // Só o mouse "sai". No toque não existe sair, e voltar ao
+            // último dia apagaria justamente o que a pessoa foi ver.
+            if (e.pointerType === 'mouse') setAtivo(null);
+          }}
         >
           {/* Grade: um passo de cinza acima do fundo, 1px, sólida. Nunca
               tracejada — tracejado é ruído que compete com o dado. */}
@@ -260,13 +322,21 @@ export function SerieTemporal({
                     `${formatar(s.g.pontos[i]?.valor ?? 0)} ${s.rotulo}`,
                 )
                 .join(', ')}`}
-              onMouseEnter={() => { setAtivo(i); }}
+              /*
+                Sobram para TECLADO e leitor de tela: o `aria-label` acima é
+                o que diz o dia e os valores para quem não vê o desenho, e o
+                Tab continua andando de dia em dia. O ponteiro é do quadro.
+              */
               onFocus={() => { setAtivo(i); }}
               className="absolute top-0 bottom-0"
               style={{
                 left: `${String((ponto.x / L) * 100)}%`,
                 width: `${String(100 / Math.max(1, base.g.pontos.length))}%`,
                 transform: 'translateX(-50%)',
+                // O quadro lê a posição; a faixa não precisa interceptar —
+                // e interceptando ela ainda pisca o cinza de toque do iOS.
+                pointerEvents: 'none',
+                WebkitTapHighlightColor: 'transparent',
               }}
             />
           ))}

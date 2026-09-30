@@ -242,3 +242,22 @@ export function montarSeriesDoQuadro(
 
   return series;
 }
+
+/**
+ * Que dia está sob o ponteiro, dada a fração da largura do quadro.
+ *
+ * Mora aqui, fora do componente, porque é onde um erro de arredondamento
+ * se esconde: a curva continua certa, o tooltip é que passa a mostrar o dia
+ * vizinho — e conferir isso a olho, num gráfico de 30 pontos, é impossível.
+ *
+ * O arredondamento é para o dia MAIS PRÓXIMO, não para o de baixo: os
+ * pontos ficam nas bordas do quadro (o primeiro em 0, o último em 1), então
+ * truncar daria ao último dia uma faixa de um pixel e ao primeiro o dobro
+ * dos outros. Fora do quadro, prende nas pontas em vez de devolver nada —
+ * o dedo escapa da borda o tempo todo, e o tooltip piscando para fora
+ * seria pior que mostrar a ponta.
+ */
+export function diaNaPosicao(fracao: number, dias: number): number {
+  if (dias <= 1) return 0;
+  return Math.min(dias - 1, Math.max(0, Math.round(fracao * (dias - 1))));
+}
