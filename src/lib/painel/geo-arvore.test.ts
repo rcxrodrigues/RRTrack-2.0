@@ -27,8 +27,23 @@ describe('montarArvoreGeo', () => {
     ]);
 
     expect(arvore).toHaveLength(1);
-    expect(arvore[0]?.rotulo).toBe('BR');
-    expect(arvore[0]?.filhos.map((f) => f.rotulo)).toEqual(['SP', 'RJ']);
+    /*
+     * RÓTULO é nome; CHAVE é código. A distinção entrou com o mapa ao lado:
+     * a árvore mostrava `BR-SP` a meio metro de um desenho dizendo
+     * "São Paulo", e código de máquina no painel de uma pessoa é defeito.
+     *
+     * A chave NÃO pode ser traduzida junto: é por ela que o mapa acha o
+     * estado, e é ela que separa dois países cujo nome a tabela não conhece
+     * — traduzidos para a mesma coisa, virariam uma linha só somando
+     * dinheiro de lugares diferentes.
+     */
+    expect(arvore[0]?.rotulo).toBe('Brasil');
+    expect(arvore[0]?.chave).toBe('BR');
+    expect(arvore[0]?.filhos.map((f) => f.rotulo)).toEqual([
+      'São Paulo',
+      'Rio de Janeiro',
+    ]);
+    expect(arvore[0]?.filhos.map((f) => f.chave)).toEqual(['SP', 'RJ']);
     expect(arvore[0]?.filhos[0]?.filhos.map((f) => f.rotulo)).toEqual([
       'São Paulo',
       'Campinas',
@@ -55,7 +70,7 @@ describe('montarArvoreGeo', () => {
     expect(br?.receita).toBe(450);
     expect(br?.aprovadas).toBe(4);
 
-    const sp = br?.filhos.find((f) => f.rotulo === 'SP');
+    const sp = br?.filhos.find((f) => f.chave === 'SP');
     expect(sp?.visitantes).toBe(14);
     expect(sp?.receita).toBe(400);
     // E as cidades somam o estado.
@@ -104,7 +119,7 @@ describe('montarArvoreGeo', () => {
     // SP vende e lidera com 5 visitantes; entre os dois que não venderam,
     // quem tem mais gente vem antes. Sem o desempate a ordem seria
     // indefinida e a lista dançaria a cada atualização.
-    expect(arvore[0]?.filhos.map((f) => f.rotulo)).toEqual(['SP', 'MG', 'RS']);
+    expect(arvore[0]?.filhos.map((f) => f.chave)).toEqual(['SP', 'MG', 'RS']);
   });
 
   it('um estado com o mesmo nome em países diferentes não se mistura', () => {

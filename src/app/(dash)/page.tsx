@@ -6,6 +6,7 @@ import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
 import { ArvoreGeo } from '@/components/dash/arvore-geo';
+import { MapaBrasil } from '@/components/dash/mapa-brasil';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
 import { SerieTemporal } from '@/components/dash/serie-temporal';
 import { Card } from '@/components/ui/card';
@@ -30,6 +31,7 @@ import { buscarGastoDiario } from '@/lib/painel/gasto-diario';
 import { montarSeriesDoQuadro } from '@/lib/painel/serie';
 import { etapaDe, montarFunil } from '@/lib/painel/funil';
 import { montarArvoreGeo } from '@/lib/painel/geo-arvore';
+import { pintarMapa } from '@/lib/painel/mapa';
 import {
   comPeriodo,
   hojeEm,
@@ -251,6 +253,16 @@ export default async function VisaoGeralPage({
   ]);
 
   const arvoreGeo = montarArvoreGeo(geo);
+  /*
+   * O mapa sai da MESMA árvore, e não de uma consulta própria: dois
+   * caminhos para o mesmo total é garantir que um dia discordam — e aqui a
+   * discordância seria um estado pintado de forte ao lado de uma linha
+   * dizendo outro número, a meio metro de distância.
+   */
+  const mapa = pintarMapa(arvoreGeo);
+  // Só faz sentido desenhar o Brasil quando há Brasil. Uma loja que vende
+  // só para fora ganharia um mapa cinza afirmando que não vendeu nada.
+  const temBrasil = arvoreGeo.some((r) => r.chave === 'BR');
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
   // Por `id`, nunca por índice: o carrinho entrou no meio do funil, e
   // `etapas[1]` passaria a ser ele — sem erro nenhum aparecer.
@@ -464,7 +476,23 @@ export default async function VisaoGeralPage({
             converte.
           </p>
         </div>
-        <ArvoreGeo raizes={arvoreGeo} />
+        {/*
+          O mapa AO LADO, nunca no lugar. No celular ele vem em cima, porque
+          a pergunta que ele responde — onde não tem nada — é a de relance, e
+          a árvore é a de conferir. Sem Brasil no período, só a árvore.
+        */}
+        {temBrasil ? (
+          <div className="grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+            <div className="border-border/60 border-t px-4 py-4 sm:px-5 lg:border-r">
+              <MapaBrasil estados={mapa} />
+            </div>
+            <div className="min-w-0">
+              <ArvoreGeo raizes={arvoreGeo} />
+            </div>
+          </div>
+        ) : (
+          <ArvoreGeo raizes={arvoreGeo} />
+        )}
       </Card>
 
       {/*

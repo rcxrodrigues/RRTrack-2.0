@@ -685,7 +685,67 @@ que já afirma quantidade.
 um estado com uma cidade só: abrir para ver o mesmo número ensina que abrir
 não vale a pena, e aí ninguém abre o nó que tem ramo.
 
-Se o mapa entrar um dia, entra **ao lado** da árvore, nunca no lugar dela.
+**E o nome do lugar é NOME, não código.** `BR-SP` virou "São Paulo" e `BR`
+virou "Brasil" (`lugares.ts`). A árvore sempre mostrou o que o cabeçalho
+mandava, e passava porque não havia com o que comparar — com o mapa ao lado
+dizendo "São Paulo", a mesma linha virou código de máquina no painel de uma
+pessoa. **Só o RÓTULO vira nome; a CHAVE continua o código**, porque é por ela
+que o mapa acha o estado e é ela que separa dois países cujo nome a tabela
+não conhece: traduzidos para a mesma coisa, virariam uma linha só somando
+dinheiro de lugares diferentes. E a tabela é à mão, não `Intl.DisplayNames`:
+mesma armadilha do `Intl.NumberFormat`, por outra porta — ICU do Node não é
+o do navegador, e a árvore passa por SSR e hidratação.
+
+### O mapa entrou — AO LADO, e por um motivo que a árvore não cobre
+
+A regra antiga ("se o mapa entrar um dia, entra ao lado") virou código. O que
+ele responde e a árvore não: **onde não tem nada**. A árvore só lista quem
+apareceu; um estado de onde nunca veio ninguém não tem linha nela, e portanto
+é invisível. No mapa ele é um buraco, e buraco se vê de relance. "12 de 27
+estados não receberam nenhum visitante" é uma frase que decide mídia, e
+nenhuma lista ordenada por receita a diz.
+
+- **Três estados de cor, e os dois primeiros não são degraus da mesma
+  escala.** `sem visitante` é ausência de medida; `visitou, sem venda` é
+  medida. Pintar os dois igual é a regra do travessão quebrada num mapa — e
+  é o erro que quase todo painel comete: o estado que você nunca alcançou
+  fica da cor do estado onde sua oferta não converte, que são problemas
+  OPOSTOS. Um pede mídia, o outro pede descobrir por que não vende.
+- **As cores são as da ÁRVORE** (verde de receita, azul de visitante), não
+  as do gráfico de linha. Os dois dividem o cartão; falar duas línguas de
+  cor a meio metro seria pior que a consistência com um gráfico que vive
+  noutro cartão. O `--success` reprova a banda de luminosidade numa linha de
+  2px — numa área, não.
+- **A geometria é dado gerado, com uma OBRIGAÇÃO DE LICENÇA junto.** Os
+  contornos vêm de `@svg-maps/brazil` (Victor Cazanave), **CC BY 4.0**, e
+  foram simplificados por nós (Douglas-Peucker, 64KB → 20KB; a 320px é
+  indistinguível do original, conferido lado a lado). A CC BY exige
+  atribuição "de maneira razoável para o meio" — por isso o crédito aparece
+  em DOIS lugares: no cabeçalho de `mapa-brasil.ts` e numa linha embaixo do
+  mapa, como todo mapa na web. **Não apague nenhum dos dois.**
+
+> **O defeito que a tela não mostrava, e como ele apareceu.** O gerador
+> quebra o contorno em sub-caminhos (continente e ilhas), e a primeira
+> versão zerava o ponto atual a cada um. No SVG o `m` depois de um `z` é
+> relativo AO PONTO ATUAL, que volta ao início do sub-caminho anterior — não
+> à origem. As ilhas iam parar longe do estado.
+>
+> O mapa continuava parecendo perfeito: as ilhas têm poucos pixels e somem
+> no oceano. O que mudava era o **alvo de toque**: a caixa de São Paulo
+> passou a cobrir 70% do país, e tocar em SP selecionava **Mato Grosso**.
+> Achado testando o TOQUE, não olhando o desenho — nenhuma foto pegaria.
+>
+> A trava é um gabarito de caixas em `mapa.test.ts`, conferido contra o
+> arquivo original desenhado pelo navegador. Rodado contra o gerador
+> defeituoso, reprova 7 estados com erro de até 533 unidades.
+
+> **`US-PA` é Pensilvânia e `PA` é Pará.** São seis colisões reais —
+> PA, MA, SC, MS, MT, AL —, todas entre estados grandes dos dois países.
+> `ufDaRegiao` exige o prefixo `BR-`; sem isso um visitante da Pensilvânia
+> pinta o Pará, e não há erro nenhum: só um estado do Norte que "vendeu"
+> sem nunca ter vendido. O teste disso também já nasceu errado uma vez: a
+> primeira versão usava `US-CA`, que não tem gêmeo brasileiro, e passava com
+> a checagem do país REMOVIDA.
 
 ### Gráfico: a cor é computável, então compute
 

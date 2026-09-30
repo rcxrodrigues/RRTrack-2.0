@@ -23,6 +23,8 @@
  * possível. Aqui fecha por construção.
  */
 
+import { nomeDoEstado, nomeDoPais } from './lugares';
+
 /** Uma linha no grão mais fino, como vem de `painel_geo_arvore`. */
 export type LinhaGeoFina = {
   pais: string;
@@ -93,7 +95,16 @@ export function montarArvoreGeo(linhas: readonly LinhaGeoFina[]): NoGeo[] {
   for (const linha of linhas) {
     let pais = paises.get(linha.pais);
     if (!pais) {
-      pais = vazio(linha.pais, linha.pais);
+      /*
+       * A CHAVE continua sendo o código, e só o RÓTULO vira nome.
+       *
+       * A chave é identidade: é por ela que o mapa acha o estado e que o
+       * React distingue as linhas. Traduzi-la juntaria dois países que a
+       * tabela não conhece — os dois cairiam no próprio código e tudo bem,
+       * mas o dia em que dois códigos mapeassem para o mesmo nome eles
+       * viravam uma linha só, somando dinheiro de lugares diferentes.
+       */
+      pais = vazio(linha.pais, nomeDoPais(linha.pais));
       paises.set(linha.pais, pais);
     }
     somar(pais, linha);
@@ -101,7 +112,10 @@ export function montarArvoreGeo(linhas: readonly LinhaGeoFina[]): NoGeo[] {
     const chaveRegiao = linha.regiao ?? '';
     let regiao = pais.filhos.find((f) => f.chave === chaveRegiao);
     if (!regiao) {
-      regiao = vazio(chaveRegiao, linha.regiao ?? SEM_DADO);
+      regiao = vazio(
+        chaveRegiao,
+        linha.regiao === null ? SEM_DADO : nomeDoEstado(linha.regiao),
+      );
       pais.filhos.push(regiao);
     }
     somar(regiao, linha);
