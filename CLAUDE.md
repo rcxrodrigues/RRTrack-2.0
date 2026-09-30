@@ -809,6 +809,31 @@ de copiar.
 - **`/t.js` não tem allowlist** — tag de script não manda `Origin`, e o arquivo
   só contém ids de GA4 e de pixel, que qualquer visitante já enxerga. Token
   nenhum passa por ali.
+- **O clique do anúncio é o dado que MENOS perdoa, e são TRÊS parâmetros.**
+  Cada um chega uma vez na URL da visita e nem a Shopify, nem o checkout,
+  nem o gateway o conhece depois — não lido na hora, não volta.
+
+  | na URL | vira | por quê |
+  |---|---|---|
+  | `fbclid` | `fbc` montado | a Meta quer `fb.1.<ts>.<fbclid>` |
+  | `gclid` | `gclid` CRU | o `ClickConversion` do Google Ads o quer cru |
+  | `wbraid` | `wbraid` CRU | é o que chega quando o consentimento limita o `gclid` |
+
+  O `gbraid` fica de fora de propósito: o proto do SDK oficial o descreve
+  como *"clicks associated with APP conversions"*, e esta loja não tem
+  aplicativo. Coluna que nunca recebe valor é pior que ausente — sugere que
+  alguém já pensou no caso.
+
+  **A volta sem clique não pode apagar o clique que trouxe a pessoa.** O
+  identify roda a cada pageview, e quem chegou por anúncio passa por lá de
+  novo sem `gclid` na URL. Quem impede o estrago é o filtro de nulos do
+  upsert — a mesma trava do "campo vazio não apaga" do webhook.
+
+  **E a compra CONGELA o clique.** `visitors` guarda um valor só, o da
+  última visita: quem volta por outro anúncio reescreve lá o clique que
+  gerou a venda anterior. A cópia no casamento é o que impede a importação
+  de conversão offline de creditar o anúncio errado — mesma razão de
+  `fbp`/`fbc` serem copiados.
 
 > **Teste de snippet espera a fila de microtasks.** O PageView e o
 > ViewContent saem no `.then()` do `/api/identify` — a trava que impede o
@@ -1009,6 +1034,16 @@ manhã. Adaptador novo entra em `ADAPTADORES` e em mais lugar nenhum.
   status. `processar.test.ts` exercita a escada contra um banco de mentira
   que guarda estado, porque o que decide é um `where` que roda no banco:
   ler o código não provaria nada.
+
+> **O banco de mentira HONRA o `select`, e isso não é capricho.** Antes ele
+> devolvia o visitante inteiro qualquer que fosse a lista de colunas — e aí
+> o teste mentia do pior jeito: tirar uma coluna do `select` da produção não
+> reprovava NADA. A cópia para a compra virava no-op silencioso
+> (`data.<coluna>` vinha `undefined`, o filtro de nulos a descartava) e nada
+> apontava a falta. Descoberto ao verificar quebrando: removi `gclid,
+> wbraid` do select e os 37 testes seguiram verdes. Agora `soAsPedidas`
+> reduz o visitante ao que foi pedido, e isso guarda TODAS as colunas
+> copiadas — tirar `geo_city`, `fbc` ou `ga_client_id` também reprova.
 
 ### Assinatura: quem assina, quem não assina, e quem se contradiz
 

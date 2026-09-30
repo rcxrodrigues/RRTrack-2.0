@@ -19,6 +19,30 @@ const update = vi.fn();
 const buscas: { coluna: string; valor: string }[] = [];
 /** O estado que sobrevive entre chamadas — é ele que a escada consulta. */
 const banco = new Map<string, Record<string, unknown>>();
+/** As colunas que o `select` da produção pediu, na última consulta. */
+let colunasPedidas: string[] = [];
+
+/**
+ * O visitante reduzido ao que o `select` pediu — como o Postgres faria.
+ *
+ * É esta função que faz "esqueci a coluna no select" reprovar em vez de
+ * passar calado.
+ */
+function registrarColunas(colunas: string): void {
+  colunasPedidas = colunas
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+}
+
+function soAsPedidas(visitante: unknown): unknown {
+  if (visitante === null || typeof visitante !== 'object') return visitante;
+  const entradas = Object.entries(visitante).filter(([chave]) =>
+    colunasPedidas.includes(chave),
+  );
+  return Object.fromEntries(entradas);
+}
+
 /** Devolve o visitante para a coluna que a cascata estiver tentando agora. */
 const visitantePor = vi.fn<(coluna: string) => unknown>();
 
@@ -44,17 +68,33 @@ vi.mock('@/lib/compras', () => ({
 vi.mock('@/lib/supabase/admin', () => {
   function consultaVisitante(): Promise<unknown> {
     const encadeaveis = Object.fromEntries(
-      ['gte', 'limit', 'neq', 'not', 'order', 'returns', 'select'].map(
+      ['gte', 'limit', 'neq', 'not', 'order', 'returns'].map(
         (metodo) => [metodo, () => consultaVisitante()],
       ),
     );
     return Object.assign(Promise.resolve({ data: [], error: null }), encadeaveis, {
+      /*
+       * O `select` do visitante HONRA as colunas pedidas.
+       *
+       * Antes ele as ignorava e devolvia o visitante inteiro — e isso fazia
+       * o teste mentir do pior jeito: tirar uma coluna do `select` da
+       * produção não reprovava NADA. A cópia para a compra virava um no-op
+       * silencioso (`data.<coluna>` vinha undefined, o filtro de nulos a
+       * descartava) e nada apontava a falta.
+       *
+       * Descoberto ao verificar quebrando: removi `gclid, wbraid` do select
+       * e os 37 testes seguiram verdes. Isto valia para TODAS as colunas —
+       * `geo_city`, `fbc`, `ga_client_id` — não só para as novas.
+       */
+      select: (colunas: string) => {
+        registrarColunas(colunas);
+        return consultaVisitante();
+      },
       eq: (coluna: string, valor: string) => {
         buscas.push({ coluna, valor });
         return consultaVisitante();
       },
-      maybeSingle: () =>
-        Promise.resolve({ data: visitantePor(buscas.at(-1)?.coluna ?? '') }),
+      maybeSingle: () => Promise.resolve({ data: soAsPedidas(visitantePor(buscas.at(-1)?.coluna ?? '')) }),
     });
   }
 
@@ -101,7 +141,12 @@ vi.mock('@/lib/supabase/admin', () => {
   return {
     criarClienteAdmin: () => ({
       from: () => ({
-        select: () => consultaVisitante(),
+        // É ESTE o select que a produção chama — o de entrada da cadeia.
+        // Ele registra as colunas; `soAsPedidas` as aplica no maybeSingle.
+        select: (colunas: string) => {
+          registrarColunas(colunas);
+          return consultaVisitante();
+        },
         upsert: (
           valores: Record<string, unknown>,
           opcoes: { ignoreDuplicates?: boolean },
@@ -553,5 +598,41 @@ describe('a escada de status', () => {
     await gravarCompra(compra({ status: 'recusada', email: null }), null);
 
     expect(noBanco(PEDIDO).email).toBe('ana@exemplo.com');
+  });
+});
+
+/*
+ * O clique do Google CONGELADO na linha da venda.
+ *
+ * `visitors` guarda um valor só — o da última visita. Quem compra hoje pelo
+ * anúncio A e volta amanhã pelo anúncio B reescreve o `gclid` lá; sem a
+ * cópia, a importação de conversão offline creditaria a venda de hoje ao
+ * anúncio de amanhã. É a mesma razão de `fbp`/`fbc` serem copiados.
+ *
+ * E o select do visitante TEM de trazer as colunas: sem elas a cópia é um
+ * no-op silencioso — `data.gclid` vem undefined, o filtro de nulos o
+ * descarta, e nada indica que faltou algo.
+ */
+describe('o clique do Google na compra', () => {
+  it('copia o gclid e o wbraid do visitante', async () => {
+    visitantePor.mockReturnValue({
+      trck_user_id: ID,
+      gclid: 'Cj0_do_anuncio_de_hoje',
+      wbraid: 'Cr4_web',
+    });
+
+    await concluirCompra(compra({ trckUserId: ID }));
+
+    expect(atualizado().gclid).toBe('Cj0_do_anuncio_de_hoje');
+    expect(atualizado().wbraid).toBe('Cr4_web');
+  });
+
+  it('visitante sem clique do Google não inventa valor', async () => {
+    visitantePor.mockReturnValue({ trck_user_id: ID, fbp: 'fb.1.2.3' });
+
+    await concluirCompra(compra({ trckUserId: ID }));
+
+    expect(atualizado()).not.toHaveProperty('gclid');
+    expect(atualizado()).not.toHaveProperty('wbraid');
   });
 });

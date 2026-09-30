@@ -81,6 +81,12 @@ function pedido(corpo: Record<string, unknown>) {
   });
 }
 
+/** A linha que foi para o upsert. */
+function gravado(): Record<string, unknown> {
+  const linha: unknown = upsert.mock.calls.at(-1)?.[0];
+  return ehObjeto(linha) ? linha : {};
+}
+
 async function responderCom(corpo: Record<string, unknown>) {
   const resposta = await POST(pedido(corpo));
   const lido: unknown = await resposta.json();
@@ -105,8 +111,7 @@ describe('a resposta do /api/identify', () => {
 
     // Calculado uma vez e usado nos dois lugares. Hashear em dois lugares é
     // garantir que um dia divergem, e aí a Meta vê duas pessoas.
-    const gravado: unknown = upsert.mock.calls.at(-1)?.[0];
-    expect(texto(gravado, 'external_id_hash')).toBe(texto(corpo, 'external_id'));
+    expect(texto(gravado(), 'external_id_hash')).toBe(texto(corpo, 'external_id'));
   });
 
   it('devolve o external_id mesmo quando a gravação falha', async () => {
@@ -122,5 +127,60 @@ describe('a resposta do /api/identify', () => {
 
     expect(corpo.gravado).toBe(false);
     expect(texto(corpo, 'external_id')).toBe(hashExternalId(ID));
+  });
+});
+
+/*
+ * O CLIQUE DO GOOGLE.
+ *
+ * O lado da Meta tinha o `fbclid` desde a Fase 3; o do Google não tinha
+ * nada. E o clique é o dado que MENOS perdoa: chega uma vez na URL da
+ * visita, e nem a Shopify, nem o checkout, nem o gateway o conhecem depois.
+ * Não capturado na hora, não volta.
+ *
+ * Vai CRU, sem transformação — ao contrário do `fbclid`, que vira `fbc`. É
+ * cru que o `ClickConversion` do Google Ads o quer (SDK oficial v33).
+ */
+describe('o clique do Google', () => {
+  it('grava o gclid cru, sem transformar', async () => {
+    const GCLID = 'Cj0KCQjw-abcDEF123_xyz';
+    await responderCom({ trck_user_id: ID, gclid: GCLID });
+
+    expect(texto(gravado(), 'gclid')).toBe(GCLID);
+  });
+
+  it('grava o wbraid — é ele que chega quando o consentimento limita o gclid', async () => {
+    await responderCom({ trck_user_id: ID, wbraid: 'Cr4KCQjw_wbraid_1' });
+
+    // Guardar só o gclid perderia justamente o clique restringido pela
+    // privacidade, e perderia calado.
+    expect(texto(gravado(), 'wbraid')).toBe('Cr4KCQjw_wbraid_1');
+  });
+
+  /*
+   * A VOLTA sem clique não pode apagar o clique que trouxe a pessoa.
+   *
+   * O identify roda a cada pageview. Quem chega por anúncio e depois navega
+   * — ou volta no dia seguinte digitando o endereço — passa por aqui de
+   * novo, agora sem `gclid` na URL. Gravando `null` ali, a segunda visita
+   * apagaria o clique da primeira e a venda ficaria sem a que a originou.
+   *
+   * O filtro de nulos do upsert é o que impede isso, e é a MESMA trava do
+   * "campo vazio não apaga o que já estava" do webhook. A chave nem entra.
+   */
+  it('a volta sem clique não apaga o clique da primeira visita', async () => {
+    await responderCom({ trck_user_id: ID });
+
+    expect(gravado()).not.toHaveProperty('gclid');
+    expect(gravado()).not.toHaveProperty('wbraid');
+  });
+
+  it('não confunde com o fbclid, que vira outra coisa', async () => {
+    await responderCom({ trck_user_id: ID, fbclid: 'IwAR_meta', gclid: 'Cj0_google' });
+    const linha = gravado();
+
+    // O fbclid é consumido para montar o `fbc`; o gclid fica como está.
+    expect(texto(linha, 'fbc')).toContain('IwAR_meta');
+    expect(texto(linha, 'gclid')).toBe('Cj0_google');
   });
 });

@@ -48,6 +48,16 @@ const corpoSchema = z.object({
   // O clique do anúncio, quando o Pixel ainda não rodou.
   fbclid: textoCurto,
 
+  /*
+   * O clique do Google. Não vira outra coisa como o `fbclid` vira `fbc` —
+   * é guardado cru, porque é cru que o ClickConversion do Google Ads o
+   * quer. Dois campos: o `wbraid` é o que chega quando o consentimento
+   * limita o `gclid`, e guardar só um perderia o clique restringido pela
+   * privacidade. O `gbraid` fica de fora — é de campanha de app.
+   */
+  gclid: textoCurto,
+  wbraid: textoCurto,
+
   // Dados pessoais, quando o site já os conhece (área logada, checkout).
   email: z.string().trim().max(320).optional(),
   phone: textoCurto,
@@ -132,6 +142,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     fbp: lerFbp(cookies.get('_fbp')),
     fbc: lerOuMontarFbc(cookies.get('_fbc'), corpo.fbclid),
+    // Crus, sem transformação: é assim que o Google Ads os quer.
+    gclid: corpo.gclid ?? null,
+    wbraid: corpo.wbraid ?? null,
     ga_client_id: clientIdDoGa(cookies.get('_ga')),
     ga_session_id: gaSessionId,
 

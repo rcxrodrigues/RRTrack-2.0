@@ -110,7 +110,17 @@ export function montarSnippet(base: string, config: Configuracao): string {
       trck_user_id: trckUserId || undefined,
       url: w.location.href,
       referrer: d.referrer || undefined,
-      fbclid: param('fbclid') || undefined
+      fbclid: param('fbclid') || undefined,
+      /* O clique do Google. Só existe AGORA: chega uma vez na URL e nem a
+         Shopify, nem o checkout, nem o gateway o conhecem depois.
+
+         Dois porque o ClickConversion do Google Ads aceita dois para web —
+         o wbraid é o que chega quando o consentimento limita o gclid.
+         Guardar só o gclid perderia justamente o clique restringido pela
+         privacidade, e perderia calado. O gbraid fica de fora: é de
+         campanha de APP, e esta loja não tem aplicativo. */
+      gclid: param('gclid') || undefined,
+      wbraid: param('wbraid') || undefined
     };
     var u = utms();
     for (var k in u) if (Object.prototype.hasOwnProperty.call(u, k)) corpo[k] = u[k];

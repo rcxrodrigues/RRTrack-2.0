@@ -201,7 +201,9 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
       // eslint-disable-next-line no-await-in-loop
       const { data } = await supabase
         .from('visitors')
-        .select('trck_user_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbp, fbc, ga_client_id, ga_session_id, geo_country, geo_region, geo_city')
+        .select('trck_user_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ' +
+          'fbp, fbc, gclid, wbraid, ga_client_id, ga_session_id, ' +
+          'geo_country, geo_region, geo_city')
         .eq(tentativa.coluna, tentativa.valor)
         // Mais de um visitante pode ter o mesmo e-mail (dois aparelhos, duas
         // visitas). O mais recente é o que trouxe a venda.
@@ -232,6 +234,16 @@ async function casarComVisitante(compra: CompraNormalizada): Promise<void> {
           utm_content: data.utm_content,
           fbp: data.fbp,
           fbc: data.fbc,
+          /*
+           * O clique do Google, CONGELADO na hora da compra.
+           *
+           * `visitors` guarda um valor só — o da última visita. Quem volta
+           * por outro anúncio depois reescreve lá o clique que gerou ESTA
+           * venda; a cópia é o que impede a importação de conversão offline
+           * de creditar o anúncio errado. Mesma razão do `fbc` acima.
+           */
+          gclid: data.gclid,
+          wbraid: data.wbraid,
           ga_client_id: data.ga_client_id,
           ga_session_id: data.ga_session_id,
           // O geo REAL do comprador: o da visita, não o do gateway.
