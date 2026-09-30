@@ -786,6 +786,29 @@ diferentes — são a mesma quantidade encolhendo, e quem carrega a magnitude é
 comprimento da barra. Matiz por etapa gastaria três cores para não dizer nada.
 Série única também não pede legenda: o rótulo já está na barra.
 
+**E o gradiente do funil não quebra essa regra — mas quase quebrou.** Ele vive
+dentro do mesmo matiz, do mais suave no topo ao cheio embaixo, e atravessa o
+funil INTEIRO. A trava é o `gradientUnits="userSpaceOnUse"`: o padrão do SVG é
+`objectBoundingBox`, em que cada polígono ganha a rampa inteira dentro da
+própria caixa — e o funil sai em quatro listras com emenda visível em cada
+fronteira, que é "uma cor por etapa" entrando pela porta dos fundos.
+Conferido lado a lado numa foto, não deduzido.
+
+A direção também é decisão: cheio em cima e apagado embaixo acompanharia a
+quantidade, mas deixaria a ponta de "Comprou" ao mesmo tempo a MENOR e a mais
+fraca — a etapa pela qual este painel existe sumindo no fundo. Aqui a
+intensidade marca profundidade, não quantidade; quem afirma quantidade é a
+largura, e ela continua afirmando. Três variantes foram renderizadas antes de
+escolher: abrir mais a rampa (30% → 100%) escurece justamente a faixa mais
+larga, e o gradiente ciano→azul da marca é o mais bonito e colide com o ciano
+do cartão "Chegaram no checkout" na mesma tela.
+
+**A transparência vai em `stopOpacity`, nunca no alfa do `stopColor`.** Pela
+especificação o alfa de um `stop-color` é ignorado, e o WebKit ignora mesmo:
+escrito como `text-chart-1/55`, o gradiente sai certo no Chromium e CHAPADO no
+Safari do iPhone, sem erro nenhum. `funil.test.ts` varre o fonte e trava as
+três coisas — prosa não varre arquivo.
+
 > **Neste ambiente a foto tem de ser do BUILD, não do `next dev`.** O
 > websocket de HMR não atravessa o proxy de saída, e sem ele a hidratação não
 > completa: o componente aparece certo e **não responde a clique**. Passei um
