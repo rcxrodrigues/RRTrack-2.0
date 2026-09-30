@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { inteiro, moeda, multiplo, percentual, razao, variacao } from './formato';
+import {
+  inteiro,
+  moeda,
+  moedaCurta,
+  multiplo,
+  percentual,
+  razao,
+  variacao,
+} from './formato';
 
 /**
  * A formatação é feita à mão porque `Intl.NumberFormat` depende do ICU, e o
@@ -131,5 +139,49 @@ describe('multiplo', () => {
 
   it('negativo mantém o sinal', () => {
     expect(multiplo(-1.5)).toBe('-1,50×');
+  });
+});
+
+/*
+ * O rótulo do EIXO — curto de propósito.
+ *
+ * Veio de uma foto: `R$ 4.000,00` não cabe nos 56px da calha, o navegador
+ * quebra entre o símbolo e o número, e o "R$" sozinho em cima parece outro
+ * valor. É a mesma queixa do `R$ 37.158,70` partindo no celular, por outra
+ * porta. Rótulo de eixo dá ordem de grandeza; o centavo está no tooltip.
+ */
+describe('moedaCurta', () => {
+  it('não leva centavos — é o que fazia o rótulo quebrar', () => {
+    expect(moedaCurta(4000)).toBe('R$ 4.000');
+    expect(moedaCurta(625)).toBe('R$ 625');
+    expect(moedaCurta(0)).toBe('R$ 0');
+  });
+
+  it('guarda o dígito no MILHAR: as marcas do eixo não são redondas', () => {
+    // O eixo divide o teto por 4, e isso dá 1.125, 1.875, 375… Abreviar aqui
+    // ("1,1 mil") jogaria fora um dígito que cabe perfeitamente.
+    expect(moedaCurta(1125)).toBe('R$ 1.125');
+    expect(moedaCurta(1875)).toBe('R$ 1.875');
+    expect(moedaCurta(37_158)).toBe('R$ 37.158');
+  });
+
+  it('abrevia no milhão, onde o rótulo inteiro não caberia', () => {
+    expect(moedaCurta(1_500_000)).toBe('R$ 1,5 mi');
+    expect(moedaCurta(1_000_000)).toBe('R$ 1,0 mi');
+    // Acima de dez milhões a casa decimal não informa mais nada.
+    expect(moedaCurta(12_400_000)).toBe('R$ 12 mi');
+  });
+
+  it('respeita o símbolo da moeda do gateway', () => {
+    expect(moedaCurta(4000, 'MX$')).toBe('MX$ 4.000');
+  });
+
+  it('negativo mantém o sinal antes do símbolo', () => {
+    expect(moedaCurta(-4000)).toBe('-R$ 4.000');
+  });
+
+  it('não inventa número para o que não é número', () => {
+    expect(moedaCurta(Number.NaN)).toBe('—');
+    expect(moedaCurta(Number.POSITIVE_INFINITY)).toBe('—');
   });
 });

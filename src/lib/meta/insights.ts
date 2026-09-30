@@ -309,3 +309,205 @@ async function gravarCache(
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// A série DIÁRIA de gasto
+// ---------------------------------------------------------------------------
+
+export type GastoDoDia = { dia: string; gasto: number };
+
+export type ResultadoGastoDiario = {
+  porDia: GastoDoDia[];
+  cacheDe: string | null;
+  aviso: string | null;
+};
+
+/** O `level` do nosso cache. Não é nível da Meta — ver a migration 0020. */
+const NIVEL_DIARIO = 'diario';
+
+async function lerCacheDiario(
+  adAccountId: string,
+  dateStart: string,
+  dateStop: string,
+): Promise<{ porDia: GastoDoDia[]; fetchedAt: string } | null> {
+  try {
+    const supabase = await criarClienteServidor();
+    const { data } = await supabase
+      .from('meta_insights_cache')
+      .select('data, fetched_at')
+      .eq('ad_account_id', adAccountId)
+      .eq('level', NIVEL_DIARIO)
+      .eq('date_start', dateStart)
+      .eq('date_stop', dateStop)
+      .maybeSingle();
+
+    if (!data) return null;
+    const fetchedAt = texto(data, 'fetched_at');
+    if (!fetchedAt) return null;
+
+    // Reconstruído campo a campo, como o outro cache: linha gravada por uma
+    // versão anterior com outro nome viraria NaN na curva, sem avisar.
+    const porDia = lista(data, 'data').flatMap((l): GastoDoDia[] => {
+      const dia = texto(l, 'dia');
+      return dia ? [{ dia, gasto: numero(l, 'gasto') ?? 0 }] : [];
+    });
+
+    return { porDia, fetchedAt };
+  } catch {
+    return null;
+  }
+}
+
+async function gravarCacheDiario(
+  adAccountId: string,
+  dateStart: string,
+  dateStop: string,
+  porDia: GastoDoDia[],
+): Promise<void> {
+  try {
+    await criarClienteAdmin().from('meta_insights_cache').upsert(
+      {
+        ad_account_id: adAccountId,
+        level: NIVEL_DIARIO,
+        date_start: dateStart,
+        date_stop: dateStop,
+        data: porDia,
+        fetched_at: new Date().toISOString(),
+      },
+      { onConflict: 'ad_account_id,level,date_start,date_stop' },
+    );
+  } catch (erro) {
+    console.error(
+      '[insights] não consegui gravar o cache diário:',
+      erro instanceof Error ? erro.message : erro,
+    );
+  }
+}
+
+/**
+ * O gasto da conta, dia a dia.
+ *
+ * Existe para o quadro de receita × investido da visão geral, onde as duas
+ * séries dividem UM eixo. A receita sai do nosso banco com os dias vazios
+ * inclusos; o gasto precisa vir no mesmo grão, senão a curva pula o dia sem
+ * anúncio e mente sobre a forma.
+ *
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ `time_increment=1` é o que muda o grão, e ele CUSTA.                    │
+ * │                                                                         │
+ * │ A Meta pontua por consulta, e o indicador que estoura primeiro numa     │
+ * │ consulta pesada é o `total_cputime`, não a contagem de chamadas. Pedir  │
+ * │ 36 meses dia a dia é a consulta mais cara que este painel faz.          │
+ * │                                                                         │
+ * │ Por isso ela passa pela MESMA fila serial por conta, pelo mesmo teto    │
+ * │ de 25% e pelo mesmo cache de 15 min das outras — e `level=account`,     │
+ * │ que é o grão mais barato que responde a pergunta. Quebrar por campanha  │
+ * │ multiplicaria o custo para desenhar a mesma linha.                      │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ */
+export async function buscarGastoPorDia({
+  contaId,
+  adAccountId,
+  de,
+  ate,
+  fuso,
+}: {
+  contaId: string;
+  adAccountId: string;
+  de: Date;
+  ate: Date;
+  fuso: string;
+}): Promise<ResultadoGastoDiario> {
+  // O `ate` do painel é exclusivo; o da Meta é inclusivo. Mesma conversão da
+  // busca da árvore — sem ela o gasto não fecharia com a receita.
+  const dataDe = comoData(de, fuso);
+  const dataAte = comoData(new Date(ate.getTime() - 86_400_000), fuso);
+
+  const doCache = await lerCacheDiario(adAccountId, dataDe, dataAte);
+  if (doCache && Date.now() - Date.parse(doCache.fetchedAt) < TTL_CACHE_MS) {
+    return { porDia: doCache.porDia, cacheDe: doCache.fetchedAt, aviso: null };
+  }
+
+  const token = await segredoDaContaDeAnuncio(contaId);
+  if (!token) {
+    return {
+      porDia: doCache?.porDia ?? [],
+      cacheDe: doCache?.fetchedAt ?? null,
+      aviso: 'a conta de anúncio não tem token cadastrado',
+    };
+  }
+
+  return emFila(adAccountId, async () => {
+    const url = new URL(metaInsightsEndpoint(adAccountId));
+    url.searchParams.set('level', 'account');
+    url.searchParams.set('fields', 'spend');
+    url.searchParams.set('time_increment', '1');
+    url.searchParams.set(
+      'time_range',
+      JSON.stringify({ since: dataDe, until: dataAte }),
+    );
+    url.searchParams.set('limit', '500');
+
+    try {
+      const resposta = await fetch(url, {
+        method: 'GET',
+        // O token no CABEÇALHO, nunca na query — ele lê a conta inteira.
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+
+      const uso = lerUso(resposta.headers.get('x-business-use-case-usage'));
+
+      if (!resposta.ok) {
+        const corpo: unknown = await resposta.json().catch(() => null);
+        console.error(
+          '[insights] a Meta recusou a série diária:',
+          resposta.status,
+          texto(corpo, 'error') ?? '',
+        );
+        return {
+          porDia: doCache?.porDia ?? [],
+          cacheDe: doCache?.fetchedAt ?? null,
+          aviso:
+            uso.bloqueadoPor > 0
+              ? `a Meta bloqueou a conta por ${String(Math.ceil(uso.bloqueadoPor / 60))} min`
+              : `a Meta recusou a consulta (${String(resposta.status)})`,
+        };
+      }
+
+      const corpo: unknown = await resposta.json();
+      /*
+       * Com `time_increment=1` cada linha traz o `date_start` daquele dia —
+       * é ele que vira a chave, nunca a posição na lista: a Meta omite o dia
+       * sem gasto, e casar por índice deslocaria a curva inteira.
+       */
+      const porDia = lista(corpo, 'data').flatMap((l): GastoDoDia[] => {
+        const dia = texto(l, 'date_start');
+        if (!dia) return [];
+        const gasto = Number(texto(l, 'spend') ?? '0');
+        return [{ dia, gasto: Number.isFinite(gasto) ? gasto : 0 }];
+      });
+
+      await gravarCacheDiario(adAccountId, dataDe, dataAte, porDia);
+
+      return {
+        porDia,
+        cacheDe: null,
+        aviso: uso.acimaDoTeto
+          ? `uso em ${String(Math.round(uso.percentual))}% da cota — o próximo pedido espera o cache (teto nosso: ${String(TETO_DE_USO)}%)`
+          : null,
+      };
+    } catch (erro) {
+      console.error(
+        '[insights] falha na série diária:',
+        erro instanceof Error ? erro.message : erro,
+      );
+      // Cache velho é melhor que quadro vazio.
+      return {
+        porDia: doCache?.porDia ?? [],
+        cacheDe: doCache?.fetchedAt ?? null,
+        aviso: 'não consegui falar com a Meta agora',
+      };
+    }
+  });
+}

@@ -138,10 +138,16 @@ export default async function FaturamentoPage({
           </p>
         </div>
         <SerieTemporal
-          pontos={serie.map((p) => ({ dia: p.dia, valor: p.receita }))}
+          series={[
+            {
+              id: 'receita',
+              rotulo: 'de receita',
+              cor: 'teal',
+              pontos: serie.map((p) => ({ dia: p.dia, valor: p.receita })),
+            },
+          ]}
           formato="moeda"
           simbolo={simbolo(settings.currency)}
-          rotulo="de receita"
         />
       </Card>
 

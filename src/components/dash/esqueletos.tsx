@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ALTURA_DO_QUADRO } from '@/lib/painel/serie';
 import { cn } from '@/lib/utils';
 
 /**
@@ -134,6 +135,74 @@ export function EsqueletoFunil() {
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * O corpo de um gráfico de série — o que espera DENTRO do cartão.
+ *
+ * Os outros esqueletos substituem a tela toda na navegação; este entra num
+ * `Suspense` no meio de um cartão já desenhado, porque a segunda série do
+ * quadro de receita × investido sai da API da Meta e é a coisa mais lenta do
+ * painel. O título e a explicação aparecem na hora; só a moldura espera.
+ *
+ * A altura vem de `ALTURA_DO_QUADRO`, a mesma constante que o componente usa.
+ * Copiar `160` para cá seria pedir para os dois divergirem — e aí o quadro
+ * salta ao trocar, no lugar feito para nada saltar.
+ */
+export function EsqueletoQuadro() {
+  return (
+    <div className="flex flex-col gap-2">
+      {/*
+        A legenda: dois pares de ponto + nome.
+
+        O contêiner leva `h-4` porque é a altura de uma linha de `text-xs`
+        (12px de fonte, 16px de entrelinha) — e é a altura da legenda de
+        verdade. Com os blocos em `h-3` a linha media 12px e o cartão inteiro
+        ficava 8px mais baixo: invisível a olho, e medido.
+      */}
+      <div className="flex h-4 items-center gap-4">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+      {/* Calha do eixo à esquerda, quadro à direita — como os irmãos do flex
+          do componente, e não um bloco só: a calha é mais clara que o quadro
+          na tela real, e um retângulo cheio saltaria na largura dela. */}
+      <div className="flex gap-2" style={{ height: `${String(ALTURA_DO_QUADRO)}px` }}>
+        <div className="flex w-14 shrink-0 flex-col justify-between py-px">
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} className="h-2.5 w-full" />
+          ))}
+        </div>
+        <Skeleton className="min-w-0 flex-1" />
+      </div>
+      {/*
+        A linha do tooltip, que na tela real fica fora do quadro — e que
+        QUEBRA em três linhas no celular.
+
+        Esta era a pior diferença: 16px no desktop e 56px a 390px, contra
+        12px fixos do esqueleto. Quase 50px de salto no aparelho em que o
+        painel mais é aberto. A correção não é um número chutado: é a MESMA
+        estrutura aninhada da tela real (o período de um lado, e do outro um
+        flex que envolve dia + um grupo por série), com blocos de largura
+        parecida. Assim ela quebra onde a de verdade quebra, em vez de
+        acertar numa largura e errar nas outras.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pl-16">
+        <Skeleton className="h-4 w-24" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/*
+            As larguras foram MEDIDAS contra o texto real (36px o dia, 134 e
+            148 os dois grupos), não escolhidas no olho: é o que faz a quebra
+            cair na mesma largura de tela. Conferido a 320, 390, 500, 600 e
+            1280 — todas batem ao pixel.
+          */}
+          <Skeleton className="h-4 w-8" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+    </div>
   );
 }
 

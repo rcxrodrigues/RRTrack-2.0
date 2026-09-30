@@ -520,11 +520,21 @@ Consequências práticas:
   **herda** o do `(dash)`, então `/estilo` mostrava seis métricas, funil e
   geo antes de virar uma página de paleta. Regra escrita e não verificada é
   regra que já foi quebrada — esta estava, por `/estilo`.
-- **O esqueleto tem a MESMA geometria da tela real.** Contagem de cartões,
-  colunas da grade, altura do gráfico. Esqueleto de outro tamanho é pior que
-  nenhum: o conteúdo salta quando chega e o olho perde o lugar. Os blocos
-  estão em `src/components/dash/esqueletos.tsx`, e a foto é que decide se
-  batem — o teste não pega geometria.
+- **O esqueleto tem a MESMA geometria da tela real — e quem decide é a
+  MEDIDA, não a foto.** Contagem de cartões, colunas da grade, altura do
+  gráfico. Esqueleto de outro tamanho é pior que nenhum: o conteúdo salta
+  quando chega e o olho perde o lugar. Os blocos estão em
+  `src/components/dash/esqueletos.tsx`, e o teste não pega geometria.
+  **A foto também não pegou.** O `EsqueletoQuadro` parecia certo nas duas
+  capturas e estava 8px mais baixo no desktop e **48px** mais baixo a 390px:
+  os blocos de rótulo nasceram `h-3` onde a linha real de `text-xs` mede 16,
+  e o rodapé do gráfico QUEBRA em três linhas no celular enquanto o
+  esqueleto ficava em uma. Quase 50px de salto no aparelho em que o painel
+  mais é aberto, invisível a olho nu. O jeito de saber é o `getBoundingClientRect`
+  dos dois, lado a lado, em várias larguras — e o conserto não é número
+  chutado: é repetir a ESTRUTURA aninhada da tela real com blocos da largura
+  do texto real, para a quebra cair na mesma largura de tela. Conferido a
+  320, 360, 390, 430, 500, 600, 640, 768, 1024 e 1280: Δ=0 em todas.
 - **A cor do esqueleto é `--foreground` a 10%, não `--muted`.** No escuro o
   `--muted` (13%) fica a um ou dois pontos do cartão de vidro (~9%) e o
   esqueleto SOME: a tela carregando lia como tela vazia. Sobre a cor do texto
@@ -720,6 +730,85 @@ posicionado por `left`/`right` **não ganhava largura calculada** — caía no
 tamanho intrínseco do `viewBox`, 600px, e no celular atravessava a tela
 inteira. Calha e quadro viraram irmãos num flex, e todo `%` passou a ser
 relativo só ao quadro.
+
+### Duas séries num quadro: receita e investido
+
+A visão geral tem um quadro com **receita e investimento por dia**. É o
+mesmo `SerieTemporal` do faturamento — o componente recebe uma LISTA de
+séries, não uma —, porque calha, escala, faixa de toque, cruzeta e tooltip
+são idênticos com uma linha ou duas: separados em dois componentes, o dia
+em que o eixo mudasse mudaria num só.
+
+- **UM EIXO. Nunca dois.** Duas escalas são escolha de quem desenha, e aí o
+  cruzamento das linhas passa a significar o que o autor quiser. Aqui as
+  duas são a MESMA unidade, o teto é compartilhado (`tetoComum`), e por isso
+  o **vão** entre as linhas é literalmente a margem sobre a mídia e o
+  **cruzamento** é literalmente o ponto de equilíbrio do dia. Cada série
+  calculando o próprio teto seria o eixo duplo por dentro, sem parecer um.
+  `serie.test.ts` prova que R$ 100 numa linha fica na mesma altura que
+  R$ 100 na outra — e prova ao contrário também, que sem o teto
+  compartilhado não ficam.
+- **A META OMITE O DIA SEM GASTO; o nosso banco não.** `painel_serie_diaria`
+  devolve os dias vazios de propósito; o `time_increment=1` da Meta pula o
+  dia sem anúncio. Casar as duas por índice funciona num período cheio e
+  **desloca a curva inteira** a partir do primeiro dia vazio — o investido
+  de quinta aparece sob a receita de quarta. Nada quebra, nenhum número fica
+  estranho, e o quadro passa a mentir sobre qual dia pagou qual venda.
+  `alinharPorDia` casa por DATA, e soma quando duas contas caem no mesmo dia.
+- **Gasto desconhecido não vira linha no zero.** Sem conta de anúncio
+  cadastrada, ou com a Meta fora do ar e nada no cache, o certo é desenhar
+  UMA linha e dizer por quê. Uma reta colada na base atravessando o período
+  AFIRMA que não se gastou nada, com a mesma convicção com que a outra linha
+  diz quanto entrou — é a regra do travessão (`—`, nunca `0`) na forma mais
+  perigosa dela, porque aqui quem afirma não é um número, é o desenho, e
+  ninguém confere o desenho. Zero COM conta cadastrada é medida real e
+  aparece. `montarSeriesDoQuadro` carrega essa distinção, e mora no arquivo
+  puro porque teste não alcança Server Component.
+- **Área só quando é UMA série.** Duas lavagens a 12% se somam onde se
+  cruzam e viram um terceiro tom — que lê como terceira categoria
+  justamente no ponto de equilíbrio, que é o que o quadro existe para
+  mostrar.
+- **Receita é `--chart-2` (teal), investido é `--chart-3` (âmbar) — e não
+  `--success`.** O verde de receita da árvore de geo é token de ESTADO, que
+  a skill de dataviz reserva para estado; medido, ele reprova a banda de
+  luminosidade no escuro (L 0,772 contra 0,48–0,67). Numa barra grossa passa;
+  numa linha de 2px some. O teal é vizinho de matiz — "frio = receita"
+  continua valendo — e passa os seis checks nos dois temas.
+- **`stroke-${cor}` NÃO GERA CSS.** O Tailwind varre o TEXTO do fonte; nome
+  de classe montado em tempo de execução ele não vê. A classe chega sem
+  regra, e como `stroke` não tem valor padrão visível a linha simplesmente
+  **não aparece** — sem erro de build, sem aviso no console, o quadro abre
+  com uma série a menos. O mapa `CORES` escreve as classes por extenso, e é
+  `Record<CorDaSerie, …>` para um nome novo sem classe não compilar.
+- **O rótulo do EIXO não leva centavos** (`moedaCurta` em `formato.ts`). A
+  calha tem 56px: `R$ 4.000,00` não cabe, o navegador quebra a linha entre o
+  símbolo e o número, e o **"R$" sozinho em cima parece outro valor**. É a
+  mesma queixa do `R$ 37.158,70` partindo no celular, agora no desktop,
+  assim que a receita passou de mil. Alargar a calha roubaria largura do
+  gráfico no celular, onde ela já come 14% da tela — e eixo existe para dar
+  ordem de grandeza: o centavo está no tooltip. A abreviação só entra no
+  MILHÃO, porque as marcas saem de `teto/4` e caem em 1.125 ou 1.875, e
+  "1,1 mil" jogaria fora um dígito que cabia.
+- **O quadro INTEIRO espera a Meta.** A receita chega antes, e desenhá-la
+  sozinha parece melhor: não é. O teto é compartilhado, então a chegada da
+  segunda linha reescalaria a primeira — a curva da receita mudaria de forma
+  na frente de quem olha, sem nada ter acontecido. Uma fronteira só, com o
+  `EsqueletoQuadro` da altura certa.
+- **A série diária é um `level` PRÓPRIO no `meta_insights_cache`**
+  (`'diario'`, migration 0020). A árvore de campanhas e a série cobrem a
+  MESMA conta e o MESMO período: sob a mesma chave, uma sobrescreveria a
+  outra a cada troca de tela — a árvore mostrando dias e o gráfico mostrando
+  campanhas, alternando conforme quem chegou por último. Não quebraria nada;
+  só mostraria o dado errado, calado. E a busca é `level=account`, o grão
+  mais barato que responde: quebrar por campanha multiplicaria o custo para
+  desenhar a mesma linha.
+- **São duas idas à Meta por tela, de propósito.** A soma da série diária
+  daria o total do cartão de gasto numa chamada só. Mas o cartão, o ROAS e
+  os três custos por evento rodam sobre `level=campaign` há semanas, e
+  trocar a fonte deles mudaria o número do cartão mais importante do painel
+  sem que dê para conferir contra a API de verdade daqui. O preço de manter
+  as duas é uma consulta a mais por conta a cada 15 minutos — mesmo cache,
+  mesma fila serial —, e é barato perto de mexer no ROAS às cegas.
 
 E o teto do eixo tem degraus finos (`[1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]`)
 porque com os grossos um pico de 5.120 subia para 10.000 e a curva ficava

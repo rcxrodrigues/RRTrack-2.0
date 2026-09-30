@@ -51,6 +51,50 @@ export function moeda(valor: number, sigla = 'R$'): string {
 }
 
 /**
+ * Moeda CURTA, para rótulo de eixo. `4000` → `R$ 4.000`; `1.5e6` → `R$ 1,5 mi`.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ ISTO SAIU DE UMA FOTO, COMO DA OUTRA VEZ.                                │
+ * │                                                                          │
+ * │ A calha do eixo tem 56px. `R$ 4.000,00` não cabe, então o navegador      │
+ * │ QUEBRA a linha entre o símbolo e o número — e o "R$" sozinho em cima     │
+ * │ vira o que parece ser outro valor. É literalmente a mesma queixa que já  │
+ * │ apareceu com `R$ 37.158,70` no celular; aqui ela voltou por outra porta, │
+ * │ no desktop, assim que a receita passou de mil.                           │
+ * │                                                                          │
+ * │ Alargar a calha resolveria no desktop e roubaria largura do gráfico no   │
+ * │ celular, onde ela já come 14% da tela. A resposta certa é outra: rótulo  │
+ * │ de eixo NÃO PRECISA de centavos. Ele existe para dar ordem de grandeza;  │
+ * │ o valor exato, com centavos, está no tooltip a um toque de distância.    │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * A abreviação só entra no milhão, e não no milhar, porque as marcas do eixo
+ * saem de `teto/4` e caem em números como 1.125 ou 1.875 — "1,1 mil" jogaria
+ * fora um dígito que cabia perfeitamente. Acima do milhão o dígito jogado
+ * fora não muda a leitura do eixo, e o rótulo inteiro não caberia de jeito
+ * nenhum.
+ */
+export function moedaCurta(valor: number, sigla = 'R$'): string {
+  if (!Number.isFinite(valor)) return '—';
+
+  const abs = Math.abs(valor);
+  const sinal = valor < 0 ? '-' : '';
+
+  if (abs >= 1_000_000) {
+    const milhoes = abs / 1_000_000;
+    // Uma casa só abaixo de 10 milhões: `R$ 1,5 mi` informa, `R$ 12,4 mi`
+    // não informa mais que `R$ 12 mi` e ocupa mais.
+    const texto =
+      milhoes < 10
+        ? milhoes.toFixed(1).replace('.', ',')
+        : String(Math.round(milhoes));
+    return `${sinal}${sigla} ${texto} mi`;
+  }
+
+  return `${sinal}${sigla} ${comMilhar(String(Math.round(abs)))}`;
+}
+
+/**
  * Percentual com uma casa. `0.1234` → `12,3%`.
  *
  * Recebe a FRAÇÃO, não o número já multiplicado: passar 12.34 esperando

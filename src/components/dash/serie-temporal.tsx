@@ -2,25 +2,45 @@
 
 import * as React from 'react';
 
-import { inteiro, moeda } from '@/lib/formato';
-import { montarGeometria, type Ponto } from '@/lib/painel/serie';
+import { inteiro, moeda, moedaCurta } from '@/lib/formato';
+import {
+  ALTURA_DO_QUADRO,
+  montarGeometria,
+  tetoComum,
+  type CorDaSerie,
+  type SerieDoQuadro,
+} from '@/lib/painel/serie';
 import { cn } from '@/lib/utils';
 
 /**
- * Série temporal de uma métrica só.
+ * Série temporal de uma ou duas métricas, no MESMO eixo.
  *
- * **Uma cor, sem legenda.** Série única: o título já diz o que está plotado,
- * e uma caixa de legenda com um quadradinho só repetiria o título gastando
- * espaço.
- *
- * O SVG desenha só a área e a linha, com `preserveAspectRatio="none"` para
+ * O SVG desenha só a área e as linhas, com `preserveAspectRatio="none"` para
  * esticar na largura disponível. Marcador e alvo de toque são HTML
  * posicionado em porcentagem — dentro do SVG esticado eles virariam elipses.
  * O `vector-effect` mantém a linha com 2px reais em qualquer largura.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ UM EIXO. NUNCA DOIS.                                                     │
+ * │                                                                          │
+ * │ Duas medidas em dois eixos é o erro nº 1 de gráfico: as escalas são      │
+ * │ escolhidas por quem desenha, então o cruzamento das linhas e o vão entre │
+ * │ elas passam a significar o que o autor quiser. Aqui as duas séries são a │
+ * │ MESMA unidade (reais), o teto é compartilhado (`tetoComum`), e por isso  │
+ * │ o vão entre as linhas é literalmente a margem sobre a mídia e o          │
+ * │ cruzamento é literalmente o ponto de equilíbrio.                         │
+ * │                                                                          │
+ * │ Duas séries de unidades diferentes não entram aqui — entram em dois      │
+ * │ quadros.                                                                 │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Um componente para os dois casos, e não dois componentes, porque calha,
+ * escala, faixa de toque, cruzeta e tooltip são idênticos: separados, o dia
+ * em que o eixo mudasse mudaria num só.
  */
 
 const L = 600;
-const A = 160;
+const A = ALTURA_DO_QUADRO;
 
 /** `2026-09-25` → `25/09`. Derivado do texto, sem passar por `Date`. */
 function diaCurto(iso: string): string {
@@ -43,24 +63,65 @@ function diaCurto(iso: string): string {
  */
 export type Formato = 'moeda' | 'inteiro';
 
+/**
+ * As cores, em classes ESCRITAS POR EXTENSO — e isso não é verbosidade.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ `stroke-${cor}` NÃO GERA CSS.                                            │
+ * │                                                                          │
+ * │ O Tailwind varre o TEXTO do fonte para saber quais classes emitir; um    │
+ * │ nome montado em tempo de execução ele não vê. A classe chega ao          │
+ * │ navegador sem regra nenhuma, a linha fica sem cor — e como `stroke`      │
+ * │ não tem valor padrão visível, ela simplesmente NÃO APARECE. Sem erro de  │
+ * │ build, sem aviso no console: o quadro abre com uma série a menos.         │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Por que não `--success` na receita, como na árvore de geo: ele é token de
+ * ESTADO, e a skill de dataviz reserva os de estado para estado. Medido, ele
+ * reprova a banda de luminosidade no tema escuro (L 0,772 contra a faixa
+ * 0,48–0,67) — numa barra grossa isso passa, numa linha de 2px ela some no
+ * fundo claro. `--chart-2` é vizinho de matiz (a leitura "frio = receita"
+ * continua) e passa os seis checks nos dois temas.
+ */
+const CORES: Record<
+  CorDaSerie,
+  { linha: string; area: string; marca: string }
+> = {
+  azul: { linha: 'stroke-chart-1', area: 'fill-chart-1/12', marca: 'bg-chart-1' },
+  teal: { linha: 'stroke-chart-2', area: 'fill-chart-2/12', marca: 'bg-chart-2' },
+  ambar: { linha: 'stroke-chart-3', area: 'fill-chart-3/12', marca: 'bg-chart-3' },
+};
+
 export function SerieTemporal({
-  pontos,
+  series,
   formato,
   simbolo = 'R$',
-  rotulo,
 }: {
-  pontos: Ponto[];
+  /** Uma ou duas. Três linhas num quadro de 160px viram novelo. */
+  series: SerieDoQuadro[];
   formato: Formato;
   simbolo?: string;
-  /** O que a linha é — aparece no tooltip, já que não há legenda. */
-  rotulo: string;
 }) {
+  /** O valor cheio, com centavos — tooltip e leitor de tela. */
   const formatar = (valor: number): string =>
     formato === 'moeda' ? moeda(valor, simbolo) : inteiro(valor);
 
+  /*
+   * O rótulo do EIXO é outro, e mais curto.
+   *
+   * A calha tem 56px: `R$ 4.000,00` não cabe e o navegador quebra a linha
+   * entre o símbolo e o número — o "R$" sozinho em cima parece outro valor.
+   * Foi a foto que pegou, no desktop, assim que a receita passou de mil.
+   * Eixo dá ordem de grandeza; o centavo está no tooltip.
+   */
+  const formatarEixo = (valor: number): string =>
+    formato === 'moeda' ? moedaCurta(valor, simbolo) : inteiro(valor);
+
   const [ativo, setAtivo] = React.useState<number | null>(null);
 
-  if (pontos.length === 0) {
+  const comDado = series.filter((s) => s.pontos.length > 0);
+
+  if (comDado.length === 0) {
     return (
       <p className="text-muted-foreground py-10 text-center text-sm">
         Sem dado no período.
@@ -68,11 +129,55 @@ export function SerieTemporal({
     );
   }
 
-  const g = montarGeometria(pontos, L, A);
-  const destaque = ativo === null ? g.pontos.at(-1) : g.pontos[ativo];
+  /*
+   * O teto é de TODAS as séries juntas. Cada uma calculando o seu daria um
+   * eixo duplo por dentro, sem parecer um: duas curvas cheias, cada uma
+   * chegando ao topo do quadro, e o vão entre elas dizendo nada.
+   */
+  const teto = tetoComum(...comDado.map((s) => s.pontos));
+  const desenhos = comDado.map((s) => ({
+    id: s.id,
+    rotulo: s.rotulo,
+    cor: s.cor,
+    g: montarGeometria(s.pontos, L, A, 4, teto),
+  }));
+
+  // A calha e as faixas de toque saem da PRIMEIRA série. As duas têm os
+  // mesmos dias — é o que `alinharPorDia` garante —, e com o teto
+  // compartilhado as marcas são idênticas.
+  const base = desenhos[0];
+  if (!base) return null;
+
+  const indice = ativo ?? base.g.pontos.length - 1;
+  const umaSo = desenhos.length === 1;
 
   return (
     <div className="flex flex-col gap-2">
+      {/*
+        Legenda a partir de DUAS séries; com uma só, não — o título do cartão
+        já diz o que está plotado, e uma caixinha com um quadrado repetiria o
+        título gastando espaço.
+
+        Sem o total do período ao lado do nome de propósito: ele já está no
+        cartão de métrica acima, e dois desenhos do mesmo número lado a lado
+        fazem quem olha conferir um contra o outro em vez de ler.
+      */}
+      {!umaSo && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {desenhos.map((s) => (
+            <span
+              key={s.id}
+              className="text-muted-foreground flex items-center gap-1.5 text-xs"
+            >
+              <span
+                className={cn('size-2.5 shrink-0 rounded-full', CORES[s.cor].marca)}
+              />
+              {s.rotulo}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/*
         Calha e quadro como IRMÃOS num flex, não como camadas absolutas.
         Com o SVG posicionado por `left`/`right` ele não ganhava largura
@@ -82,13 +187,19 @@ export function SerieTemporal({
       */}
       <div className="flex gap-2" style={{ height: `${String(A)}px` }}>
         <div className="relative w-14 shrink-0">
-          {g.marcas.map((marca) => (
+          {base.g.marcas.map((marca) => (
             <span
               key={`r${String(marca.valor)}`}
-              className="text-muted-foreground tabular absolute right-0 -translate-y-1/2 text-right text-[10px] leading-tight"
+              /*
+                `whitespace-nowrap` é cinto e suspensório: o formato curto já
+                cabe, mas uma moeda de sigla longa (`PLN 1.125`) voltaria a
+                quebrar — e quebrar aqui é silencioso, porque continua um
+                número na tela, só que partido em dois.
+              */
+              className="text-muted-foreground tabular absolute right-0 -translate-y-1/2 text-right text-[10px] leading-tight whitespace-nowrap"
               style={{ top: `${String((marca.y / A) * 100)}%` }}
             >
-              {formatar(marca.valor)}
+              {formatarEixo(marca.valor)}
             </span>
           ))}
         </div>
@@ -99,7 +210,7 @@ export function SerieTemporal({
         >
           {/* Grade: um passo de cinza acima do fundo, 1px, sólida. Nunca
               tracejada — tracejado é ruído que compete com o dado. */}
-          {g.marcas.map((marca) => (
+          {base.g.marcas.map((marca) => (
             <div
               key={marca.valor}
               className="border-border/40 absolute inset-x-0 border-t"
@@ -113,55 +224,82 @@ export function SerieTemporal({
             className="absolute inset-0 h-full w-full"
             aria-hidden
           >
-            {/* Área: a mesma cor a 12% — uma lavagem, nunca bloco saturado. */}
-            <path d={g.area} className="fill-chart-1/12" />
-            <path
-              d={g.linha}
-              className="stroke-chart-1 fill-none"
-              strokeWidth={2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
+            {/*
+              Área só quando é UMA série.
+              Duas lavagens a 12% se somam onde se cruzam e viram um terceiro
+              tom — que lê como uma terceira categoria justamente no ponto de
+              equilíbrio, que é o que o quadro existe para mostrar. Com duas,
+              são duas linhas e o vão fica limpo.
+            */}
+            {umaSo && <path d={base.g.area} className={CORES[base.cor].area} />}
+            {desenhos.map((s) => (
+              <path
+                key={s.id}
+                d={s.g.linha}
+                className={cn('fill-none', CORES[s.cor].linha)}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
           </svg>
 
-          {/* Faixas de toque: uma por ponto, largura inteira da coluna. O
+          {/* Faixas de toque: uma por dia, largura inteira da coluna. O
               alvo é maior que o marcador de propósito — ponto de 10px é
-              impossível de acertar no dedo. */}
-          {g.pontos.map((ponto, i) => (
+              impossível de acertar no dedo. Uma faixa por DIA e não por
+              série: as duas linhas compartilham o dia, e alvos empilhados
+              disputariam o mesmo clique. */}
+          {base.g.pontos.map((ponto, i) => (
             <button
               key={ponto.dia}
               type="button"
-              aria-label={`${diaCurto(ponto.dia)}: ${formatar(ponto.valor)}`}
+              aria-label={`${diaCurto(ponto.dia)}: ${desenhos
+                .map(
+                  (s) =>
+                    `${formatar(s.g.pontos[i]?.valor ?? 0)} ${s.rotulo}`,
+                )
+                .join(', ')}`}
               onMouseEnter={() => { setAtivo(i); }}
               onFocus={() => { setAtivo(i); }}
               className="absolute top-0 bottom-0"
               style={{
                 left: `${String((ponto.x / L) * 100)}%`,
-                width: `${String(100 / Math.max(1, g.pontos.length))}%`,
+                width: `${String(100 / Math.max(1, base.g.pontos.length))}%`,
                 transform: 'translateX(-50%)',
               }}
             />
           ))}
 
-          {/* Cruzeta e marcador. O anel na cor do cartão é o que mantém o
-              ponto legível onde ele cruza a linha. */}
-          {destaque && (
-            <>
+          {/* Cruzeta e marcadores. O anel na cor do cartão é o que mantém o
+              ponto legível onde ele cruza a linha — e com duas séries é ele
+              que separa os dois marcadores quando elas se encontram. */}
+          {base.g.pontos[indice] && (
+            <div
+              className="bg-border/70 pointer-events-none absolute top-0 bottom-0 w-px"
+              style={{
+                left: `${String((base.g.pontos[indice].x / L) * 100)}%`,
+              }}
+            />
+          )}
+          {desenhos.map((s) => {
+            const p = s.g.pontos[indice];
+            if (!p) return null;
+            return (
               <div
-                className="bg-border/70 pointer-events-none absolute top-0 bottom-0 w-px"
-                style={{ left: `${String((destaque.x / L) * 100)}%` }}
-              />
-              <div
-                className="bg-chart-1 ring-card pointer-events-none absolute size-2.5 rounded-full ring-2"
+                key={s.id}
+                className={cn(
+                  'ring-card pointer-events-none absolute size-2.5 rounded-full ring-2',
+                  CORES[s.cor].marca,
+                )}
                 style={{
-                  left: `${String((destaque.x / L) * 100)}%`,
-                  top: `${String((destaque.y / A) * 100)}%`,
+                  left: `${String((p.x / L) * 100)}%`,
+                  top: `${String((p.y / A) * 100)}%`,
                   transform: 'translate(-50%, -50%)',
                 }}
               />
-            </>
-          )}
+            );
+          })}
         </div>
       </div>
 
@@ -170,22 +308,39 @@ export function SerieTemporal({
           taparia o próprio dado. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pl-16 text-xs">
         <span className="text-muted-foreground tabular">
-          {diaCurto(g.pontos[0]?.dia ?? '')} — {diaCurto(g.pontos.at(-1)?.dia ?? '')}
+          {diaCurto(base.g.pontos[0]?.dia ?? '')} —{' '}
+          {diaCurto(base.g.pontos.at(-1)?.dia ?? '')}
         </span>
-        {destaque && (
-          <span
-            className={cn(
-              'flex items-baseline gap-2 whitespace-nowrap',
-              ativo === null && 'text-muted-foreground',
-            )}
-          >
-            <span className="tabular">{diaCurto(destaque.dia)}</span>
-            <span className="text-foreground tabular font-medium">
-              {formatar(destaque.valor)}
-            </span>
-            <span className="text-muted-foreground">{rotulo}</span>
+        <span
+          className={cn(
+            'flex flex-wrap items-baseline gap-x-3 gap-y-1',
+            // Sem hover o que aparece é o último dia. Em cinza, porque é
+            // valor padrão e não escolha de quem está olhando.
+            ativo === null && 'text-muted-foreground',
+          )}
+        >
+          <span className="tabular">
+            {diaCurto(base.g.pontos[indice]?.dia ?? '')}
           </span>
-        )}
+          {desenhos.map((s) => (
+            <span key={s.id} className="flex items-baseline gap-1.5 whitespace-nowrap">
+              {/* O ponto colorido só com duas séries: com uma, a cor não
+                  distingue nada e o rótulo já está no título. */}
+              {!umaSo && (
+                <span
+                  className={cn(
+                    'size-2 shrink-0 translate-y-[-1px] rounded-full',
+                    CORES[s.cor].marca,
+                  )}
+                />
+              )}
+              <span className="text-foreground tabular font-medium">
+                {formatar(s.g.pontos[indice]?.valor ?? 0)}
+              </span>
+              <span className="text-muted-foreground">{s.rotulo}</span>
+            </span>
+          ))}
+        </span>
       </div>
     </div>
   );

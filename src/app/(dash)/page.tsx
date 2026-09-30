@@ -1,21 +1,33 @@
 import { cache, Suspense } from 'react';
 import Link from 'next/link';
 
-import { EsqueletoMetrica } from '@/components/dash/esqueletos';
+import { EsqueletoMetrica, EsqueletoQuadro } from '@/components/dash/esqueletos';
 import { MetricCard } from '@/components/dash/metric-card';
 import { FunilEtapas } from '@/components/dash/funil';
 import { ListaRanqueada } from '@/components/dash/lista-ranqueada';
 import { ArvoreGeo } from '@/components/dash/arvore-geo';
 import { SeletorPeriodo } from '@/components/dash/seletor-periodo';
+import { SerieTemporal } from '@/components/dash/serie-temporal';
 import { Card } from '@/components/ui/card';
-import { inteiro, moeda, multiplo, percentual, razao, variacao } from '@/lib/formato';
+import {
+  inteiro,
+  moeda,
+  multiplo,
+  percentual,
+  razao,
+  simbolo,
+  variacao,
+} from '@/lib/formato';
 import {
   buscarEventosPorTipo,
   buscarGeoArvore,
   buscarPaginas,
   buscarResumo,
+  buscarSerieDiaria,
 } from '@/lib/painel/consultas';
 import { buscarGastoDoPeriodo } from '@/lib/painel/gasto';
+import { buscarGastoDiario } from '@/lib/painel/gasto-diario';
+import { montarSeriesDoQuadro } from '@/lib/painel/serie';
 import { etapaDe, montarFunil } from '@/lib/painel/funil';
 import { montarArvoreGeo } from '@/lib/painel/geo-arvore';
 import {
@@ -48,6 +60,21 @@ export const dynamic = 'force-dynamic';
  * intervalo novo em cada componente passaria pelo cache sem acertar nada.
  */
 const gastoDoPeriodo = cache(buscarGastoDoPeriodo);
+
+/*
+ * O gasto no grão de DIA, memoizado pela mesma razão — e é uma ida à Meta
+ * separada da de cima, de propósito.
+ *
+ * A soma da série diária daria o total do cartão numa chamada só, e é
+ * tentador. Mas o cartão de gasto, o ROAS e os três custos por evento já
+ * rodam há semanas sobre `level=campaign`, e trocar a fonte deles por
+ * `level=account` mudaria o número do cartão mais importante do painel sem
+ * que eu tenha como conferir contra a API de verdade daqui. O preço de
+ * manter as duas é uma consulta a mais por conta a cada 15 minutos — o cache
+ * e a fila serial são os mesmos —, e isso é barato perto de mexer no ROAS às
+ * cegas.
+ */
+const gastoDiario = cache(buscarGastoDiario);
 
 type ComIntervalo = { intervalo: Intervalo };
 
@@ -125,6 +152,59 @@ async function CustoPor({
   }
 
   return <>{moeda(gasto.total / quantidade)}</>;
+}
+
+/**
+ * Receita e investimento por dia, no MESMO eixo.
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ ELE INTEIRO ESPERA A META, E ISSO É DE PROPÓSITO.                        │
+ * │                                                                          │
+ * │ A receita sai do nosso banco e chega antes. Desenhá-la sozinha e deixar  │
+ * │ o investido entrar depois parece melhor e é pior: o teto do eixo é       │
+ * │ COMPARTILHADO, então a chegada da segunda linha reescalaria a primeira   │
+ * │ — a curva da receita mudaria de forma na frente de quem está olhando,    │
+ * │ sem nada ter acontecido. Uma fronteira só, com esqueleto da altura       │
+ * │ certa.                                                                   │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+async function QuadroReceitaGasto({
+  intervalo,
+  moedaIso,
+}: ComIntervalo & { moedaIso: string }) {
+  const [serie, gasto] = await Promise.all([
+    buscarSerieDiaria(intervalo),
+    gastoDiario(intervalo),
+  ]);
+
+  /*
+   * A montagem é uma função PURA, testada — e não um `if` aqui dentro.
+   *
+   * A regra que ela carrega ("gasto desconhecido não vira linha no zero") é
+   * a que mais custa se quebrar neste quadro, e teste não alcança Server
+   * Component. Escrita aqui, ela ficaria sem rede.
+   */
+  const series = montarSeriesDoQuadro(serie, gasto.porDia);
+
+  return (
+    <>
+      <SerieTemporal
+        series={series}
+        formato="moeda"
+        simbolo={simbolo(moedaIso)}
+      />
+      {gasto.porDia === null && (
+        <p className="text-muted-foreground text-xs">
+          {gasto.contas === 0
+            ? 'Só a receita: nenhuma conta de anúncio cadastrada, então o investido é desconhecido — e uma linha no zero afirmaria que você não gastou nada.'
+            : 'Só a receita: não consegui ler o gasto na Meta agora. A linha do investido volta sozinha quando ela responder.'}
+        </p>
+      )}
+      {gasto.aviso !== null && gasto.porDia !== null && (
+        <p className="text-warning text-xs">{gasto.aviso}</p>
+      )}
+    </>
+  );
 }
 
 async function AvisoDoGasto({ intervalo }: ComIntervalo) {
@@ -273,6 +353,33 @@ export default async function VisaoGeralPage({
       <Suspense fallback={null}>
         <AvisoDoGasto intervalo={intervalo} />
       </Suspense>
+
+      {/*
+        Receita e investimento no mesmo quadro — a pergunta que as seis
+        métricas de cima respondem no total, respondida ao longo do tempo.
+        O título e a explicação ficam FORA do `Suspense`: eles não dependem
+        da Meta, e esperar a API para mostrar um título seria deixar o cartão
+        sem identidade enquanto carrega.
+      */}
+      <Card className="gap-4 p-4 sm:p-5">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-semibold tracking-tight">
+            Receita e investimento, por dia
+          </h3>
+          <p className="text-muted-foreground text-xs">
+            Um eixo só, porque as duas são reais: o <strong>vão</strong> entre
+            as linhas é o que sobrou da mídia e o <strong>cruzamento</strong> é
+            o ponto de equilíbrio do dia. Receita só{' '}
+            <strong>aprovada</strong>; o eixo começa em zero.
+          </p>
+        </div>
+        <Suspense fallback={<EsqueletoQuadro />}>
+          <QuadroReceitaGasto
+            intervalo={intervalo}
+            moedaIso={settings.currency}
+          />
+        </Suspense>
+      </Card>
 
       {/*
         O funil sozinho na linha. O cartão "Eventos por tipo" que dividia o
