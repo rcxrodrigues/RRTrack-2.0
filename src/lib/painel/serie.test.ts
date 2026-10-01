@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  RECUO_DA_BASE,
   alinharPorDia,
   diaNaPosicao,
   montarGeometria,
@@ -58,9 +59,17 @@ describe('tetoRedondo', () => {
     }
   });
 
-  it('período sem nada não divide por zero', () => {
-    expect(tetoRedondo(0)).toBe(1);
-    expect(tetoRedondo(-5)).toBe(1);
+  /*
+   * Sem valor nenhum NÃO existe escala, e o teto diz isso devolvendo zero.
+   *
+   * Antes devolvia 1, e num período vazio a calha imprimia
+   * `R$ 1 · R$ 1 · R$ 1 · R$ 0 · R$ 0` — rótulo repetido e gradação de um
+   * real num painel de faturamento. Foi a foto do período vazio que pegou,
+   * e esse é o estado em que o painel passa o começo da vida.
+   */
+  it('sem valor nenhum, NÃO há escala — e o teto diz isso', () => {
+    expect(tetoRedondo(0)).toBe(0);
+    expect(tetoRedondo(-5)).toBe(0);
   });
 });
 
@@ -72,12 +81,18 @@ describe('montarGeometria', () => {
    */
   it('o eixo começa em ZERO, mesmo com os valores todos altos', () => {
     const { marcas, pontos } = montarGeometria(serie(500, 750, 1000), 300, 100);
+    // A base recua um pixel para a linha do zero não ser cortada ao meio
+    // pela borda do viewBox — ver `RECUO_DA_BASE`. A escala é sobre ela.
+    const base = 100 - RECUO_DA_BASE;
 
     expect(marcas[0]?.valor).toBe(0);
     // Teto 1000: 750 fica a três quartos da altura, contados de baixo.
-    expect(pontos[1]?.y).toBeCloseTo(25);
+    expect(pontos[1]?.y).toBeCloseTo(base * 0.25);
     // E o menor NÃO encosta na base: ele vale 500, não zero.
-    expect(pontos[0]?.y).toBeCloseTo(50);
+    expect(pontos[0]?.y).toBeCloseTo(base * 0.5);
+    // O zero é a base, e a base está DENTRO do quadro.
+    expect(marcas[0]?.y).toBe(base);
+    expect(base).toBeLessThan(100);
   });
 
   it('o maior valor não encosta no topo do quadro', () => {
@@ -105,11 +120,26 @@ describe('montarGeometria', () => {
     expect(area).toMatch(/L300\.00,100 L0\.00,100 Z$/);
   });
 
-  it('período inteiro em zero não quebra', () => {
+  /*
+   * O PERÍODO VAZIO é o estado em que o painel passa o começo da vida, e ele
+   * tem de desenhar uma reta na base dizendo "não entrou nada nesses dias".
+   * A queixa que chegou foi que o gráfico "só funciona quando há
+   * movimentação" — e a linha estava lá, em `y = altura`, com metade do
+   * traço de 2px cortada pela borda do viewBox. Sobrava 1px colado na
+   * borda, que não lê como linha.
+   */
+  it('período inteiro em zero desenha uma reta VISÍVEL na base', () => {
     const { pontos, marcas, teto } = montarGeometria(serie(0, 0, 0), 300, 100);
-    expect(teto).toBe(1);
-    // Todos na base, nenhum NaN.
-    for (const p of pontos) expect(p.y).toBe(100);
+
+    expect(teto).toBe(0);
+    // Todos na base — e a base cabe dentro do quadro, com folga para o traço.
+    for (const p of pontos) expect(p.y).toBe(100 - RECUO_DA_BASE);
+    expect(100 - RECUO_DA_BASE).toBeLessThan(100);
+
+    // Uma marca só: não há escala para graduar, e cinco rótulos iguais
+    // (`R$ 1 · R$ 1 · R$ 1 · R$ 0 · R$ 0`) leem como defeito.
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0]?.valor).toBe(0);
     expect(marcas.every((m) => Number.isFinite(m.y))).toBe(true);
   });
 

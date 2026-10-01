@@ -696,6 +696,16 @@ dinheiro de lugares diferentes. E a tabela é à mão, não `Intl.DisplayNames`:
 mesma armadilha do `Intl.NumberFormat`, por outra porta — ICU do Node não é
 o do navegador, e a árvore passa por SSR e hidratação.
 
+**A tabela de países é COMPLETA (os 249 do ISO 3166-1), e era parcial.** A
+primeira versão trazia os ~25 que eu supus que apareceriam num funil
+brasileiro, com o resto caindo no código — justificado por "tabela
+incompleta nunca mostra nome errado", que é verdade e é irrelevante. Na
+conta real a árvore saiu com "Estados Unidos", "Brasil", "Alemanha"… e `CN`
+e `FI` no meio. Nome e código misturados na mesma lista não leem como "este
+eu não conheço": leem como defeito. E tráfego de site aberto não é o que a
+oferta mira — rastreador e bot chegam de qualquer canto, então supor a lista
+era supor o que não dá.
+
 ### O mapa entrou — AO LADO, e por um motivo que a árvore não cobre
 
 A regra antiga ("se o mapa entrar um dia, entra ao lado") virou código. O que
@@ -919,6 +929,40 @@ em que o eixo mudasse mudaria num só.
   sem que dê para conferir contra a API de verdade daqui. O preço de manter
   as duas é uma consulta a mais por conta a cada 15 minutos — mesmo cache,
   mesma fila serial —, e é barato perto de mexer no ROAS às cegas.
+
+### O PERÍODO VAZIO é um estado de primeira classe, não um caso de borda
+
+É o estado em que o painel passa o começo da vida, e três coisas quebraram
+nele ao mesmo tempo — todas caladas, todas achadas na conta real, nenhuma
+num teste:
+
+- **A linha do zero era cortada ao meio.** Valor zero caía em `y = altura`,
+  a borda do viewBox, e o traço de 2px ficava centrado nela: metade
+  desenhava fora e era recortada. Sobrava 1px colado na borda, que não lê
+  como linha — lê como nada. A queixa chegou assim: *"a linha só funciona
+  quando há movimentação"*. Ela estava lá, invisível. `RECUO_DA_BASE` afasta
+  a base uma unidade; a escala continua começando em zero, o zero é que
+  deixa de nascer em cima da tesoura.
+- **O eixo inventava escala.** `tetoRedondo(0)` devolvia 1, e as quatro
+  marcas saíam de um real dividido por quatro: `R$ 1 · R$ 1 · R$ 1 · R$ 0 ·
+  R$ 0`. Rótulo repetido e gradação de um real num painel de faturamento.
+  Agora zero quer dizer "não há escala", e `montarGeometria` responde com
+  UMA marca, a do zero — grade atrás de uma reta na base é ruído.
+- **O mapa sumia.** Ele só desenhava quando havia visitante do Brasil, e
+  isso engolia o período vazio: o mapa desaparecia inteiro, sem uma linha
+  dizendo por quê, e quem abriu o painel concluiu — com razão — que a função
+  não tinha subido. Agora ele aparece SEMPRE. Cinza com "nenhum visitante
+  com geo no período" é uma afirmação verdadeira; sumir não afirma nada e
+  ainda parece defeito.
+
+A regra por trás das três: **esconder é a última escolha, nunca a primeira.**
+O travessão existe para "sem dado" não virar ausência — e eu tinha posto a
+ausência na tela em três lugares de uma vez.
+
+> **A árvore PODE ficar vazia; o mapa não.** São coisas diferentes: a árvore
+> lista o que houve, e sem acesso não há o que listar. O mapa desenha o país
+> inteiro, e um país cinza é a resposta certa para "de onde veio" quando não
+> veio de lugar nenhum.
 
 E o teto do eixo tem degraus finos (`[1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]`)
 porque com os grossos um pico de 5.120 subia para 10.000 e a curva ficava

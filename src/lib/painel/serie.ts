@@ -16,6 +16,14 @@
  */
 export const ALTURA_DO_QUADRO = 160;
 
+/**
+ * Quanto a base recua, em unidade do viewBox.
+ *
+ * É a metade do traço (2px), que é o que ficaria fora do quadro e seria
+ * cortado quando o valor é zero. Ver `emY` em `montarGeometria`.
+ */
+export const RECUO_DA_BASE = 1;
+
 export type Ponto = {
   /** `YYYY-MM-DD`, já no fuso certo. Texto, nunca `Date`. */
   dia: string;
@@ -43,7 +51,18 @@ export type Geometria = {
  * legíveis (R$ 1.500,00).
  */
 export function tetoRedondo(maior: number): number {
-  if (maior <= 0) return 1;
+  /*
+   * Sem valor nenhum, NÃO existe escala — e inventar uma é o que fazia o
+   * eixo mentir num período vazio.
+   *
+   * Isto devolvia 1. Com tudo zerado, as quatro marcas saíam de 1 real
+   * dividido por quatro e a calha imprimia `R$ 1 · R$ 1 · R$ 1 · R$ 0 ·
+   * R$ 0`: rótulo repetido, gradação de um real num painel de faturamento,
+   * e cara de defeito justamente no estado em que o painel passa o começo
+   * da vida. Zero aqui diz "não há escala", e `montarGeometria` responde
+   * com uma marca só, na base.
+   */
+  if (maior <= 0) return 0;
 
   const magnitude = 10 ** Math.floor(Math.log10(maior));
   /*
@@ -97,9 +116,29 @@ export function montarGeometria(
    * Cortar a base é a forma mais fácil de mentir com um gráfico: uma
    * variação de 2% vira um pico. Num painel de faturamento isso não é
    * estética — é decisão de mídia tomada em cima de uma ilusão.
+   *
+   * ┌─────────────────────────────────────────────────────────────────────┐
+   * │ E A BASE RECUA UM PIXEL, SENÃO A LINHA DO ZERO É CORTADA AO MEIO.   │
+   * │                                                                     │
+   * │ Sem o recuo, valor zero cai em `y = altura`, que é a borda do       │
+   * │ viewBox. O traço tem 2px e fica centrado nela: metade desenha FORA  │
+   * │ e é cortada. Sobra 1px colado na borda — que não lê como linha, lê  │
+   * │ como nada.                                                          │
+   * │                                                                     │
+   * │ O efeito prático é cruel justamente no caso que mais importa: um    │
+   * │ período sem venda nenhuma mostrava um quadro VAZIO, e quem olhava   │
+   * │ concluía que o gráfico só funciona quando há movimento. A queixa    │
+   * │ chegou com essas palavras. Uma reta no zero é uma AFIRMAÇÃO — "não  │
+   * │ entrou nada nesses dias" — e ela precisa aparecer.                  │
+   * │                                                                     │
+   * │ O recuo é de UMA unidade do viewBox, que é um pixel na altura em    │
+   * │ que o quadro é desenhado. A escala continua começando em zero; o    │
+   * │ zero é que deixa de nascer em cima da tesoura.                      │
+   * └─────────────────────────────────────────────────────────────────────┘
    */
+  const base = altura - RECUO_DA_BASE;
   const emY = (valor: number): number =>
-    altura - (teto === 0 ? 0 : (valor / teto) * altura);
+    base - (teto === 0 ? 0 : (valor / teto) * base);
 
   // Um ponto só não tem "entre": fica no meio, em vez de dividir por zero.
   const passoX = pontos.length > 1 ? largura / (pontos.length - 1) : 0;
@@ -128,10 +167,19 @@ export function montarGeometria(
     linha,
     area,
     pontos: coordenadas,
-    marcas: Array.from({ length: marcas + 1 }, (_, i) => {
-      const valor = (teto / marcas) * i;
-      return { y: emY(valor), valor };
-    }),
+    /*
+     * Sem escala (tudo zerado), UMA marca só — a do zero.
+     *
+     * Cinco marcas de um teto que não existe viram cinco rótulos repetidos,
+     * e grade atrás de uma reta na base é ruído puro: não há o que graduar.
+     */
+    marcas:
+      teto <= 0
+        ? [{ y: emY(0), valor: 0 }]
+        : Array.from({ length: marcas + 1 }, (_, i) => {
+            const valor = (teto / marcas) * i;
+            return { y: emY(valor), valor };
+          }),
     teto,
   };
 }

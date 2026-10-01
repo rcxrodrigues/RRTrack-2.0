@@ -259,30 +259,21 @@ export default async function VisaoGeralPage({
    * discordância seria um estado pintado de forte ao lado de uma linha
    * dizendo outro número, a meio metro de distância.
    */
-  const mapa = pintarMapa(arvoreGeo);
   /*
-   * ┌─────────────────────────────────────────────────────────────────────┐
-   * │ O MAPA SÓ SOME QUANDO HÁ GEO E NENHUM DELE É DO BRASIL.             │
-   * │                                                                     │
-   * │ A primeira versão sumia sempre que não havia Brasil — e isso incluía │
-   * │ o caso mais comum de todos: PERÍODO VAZIO. Num dia sem visitante o   │
-   * │ mapa desaparecia inteiro, sem uma linha dizendo por quê, e quem      │
-   * │ abria o painel concluía que a função não tinha subido. Foi o que     │
-   * │ aconteceu de verdade, e levou meia hora de conversa para descobrir.  │
-   * │                                                                     │
-   * │ É o silêncio que este projeto recusa em todo lugar — o travessão     │
-   * │ existe justamente para "sem dado" não virar ausência. Eu pus a       │
-   * │ ausência na tela.                                                    │
-   * │                                                                     │
-   * │ Sem geo nenhum, o mapa aparece VAZIO e diz isso: 27 de 27 estados    │
-   * │ sem visitante é uma afirmação verdadeira sobre um período vazio, e   │
-   * │ ainda mostra que a função existe. O caso que a regra original queria │
-   * │ proteger — loja que vende só para fora — continua protegido: ali HÁ  │
-   * │ geo, e nada dele é brasileiro.                                       │
-   * └─────────────────────────────────────────────────────────────────────┘
+   * O MAPA APARECE SEMPRE, e isso foi uma correção pedida.
+   *
+   * Ele nasceu condicionado: só desenhava quando havia visitante do Brasil
+   * no período. Duas vezes isso deu errado na prática — primeiro sumindo
+   * inteiro num período vazio, depois porque a condição em si está errada.
+   *
+   * Um mapa que vem e vai conforme o dado ensina que a tela é instável.
+   * Cinza com "nenhum visitante no período" é uma AFIRMAÇÃO verdadeira e
+   * útil; sumir não afirma nada e ainda parece defeito. O argumento que eu
+   * tinha para esconder — "loja que vende só para fora ganharia um mapa
+   * cinza" — vale menos que a estabilidade da tela, e essa loja vende para
+   * o Brasil.
    */
-  const temBrasil = arvoreGeo.some((r) => r.chave === 'BR');
-  const mostrarMapa = arvoreGeo.length === 0 || temBrasil;
+  const mapa = pintarMapa(arvoreGeo);
   const funil = montarFunil(resumo.visitantes, eventos, resumo.aprovadas);
   // Por `id`, nunca por índice: o carrinho entrou no meio do funil, e
   // `etapas[1]` passaria a ser ele — sem erro nenhum aparecer.
@@ -499,20 +490,21 @@ export default async function VisaoGeralPage({
         {/*
           O mapa AO LADO, nunca no lugar. No celular ele vem em cima, porque
           a pergunta que ele responde — onde não tem nada — é a de relance, e
-          a árvore é a de conferir. Sem Brasil no período, só a árvore.
+          a árvore é a de conferir.
+
+          A ÁRVORE pode ficar vazia; o MAPA não some. São coisas diferentes:
+          a árvore lista o que houve, e sem acesso não há o que listar. O
+          mapa desenha o país inteiro, e um país cinza é a resposta certa
+          para "de onde veio" quando não veio de lugar nenhum.
         */}
-        {mostrarMapa ? (
-          <div className="grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-            <div className="border-border/60 border-t px-4 py-4 sm:px-5 lg:border-r">
-              <MapaBrasil estados={mapa} />
-            </div>
-            <div className="min-w-0">
-              <ArvoreGeo raizes={arvoreGeo} />
-            </div>
+        <div className="grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+          <div className="border-border/60 border-t px-4 py-4 sm:px-5 lg:border-r">
+            <MapaBrasil estados={mapa} />
           </div>
-        ) : (
-          <ArvoreGeo raizes={arvoreGeo} />
-        )}
+          <div className="min-w-0">
+            <ArvoreGeo raizes={arvoreGeo} />
+          </div>
+        </div>
       </Card>
 
       {/*
