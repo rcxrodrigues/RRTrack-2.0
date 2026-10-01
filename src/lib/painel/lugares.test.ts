@@ -11,18 +11,46 @@ import { nomeDoEstado, nomeDoPais, PAISES_CONHECIDOS } from './lugares';
  */
 describe('nomeDoEstado', () => {
   it('traduz nas duas formas que chegam do cabeçalho', () => {
-    expect(nomeDoEstado('BR-SP')).toBe('São Paulo');
-    expect(nomeDoEstado('SP')).toBe('São Paulo');
-    expect(nomeDoEstado('BR-RJ')).toBe('Rio de Janeiro');
-    expect(nomeDoEstado('BR-DF')).toBe('Distrito Federal');
+    expect(nomeDoEstado('BR-SP', 'BR')).toBe('São Paulo');
+    expect(nomeDoEstado('SP', 'BR')).toBe('São Paulo');
+    expect(nomeDoEstado('BR-RJ', 'BR')).toBe('Rio de Janeiro');
+    expect(nomeDoEstado('BR-DF', 'BR')).toBe('Distrito Federal');
   });
 
   it('o que não é estado do Brasil volta CRU, nunca traduzido errado', () => {
-    // `US-PA` é Pensilvânia. Devolver "Pará" seria pior que devolver o
-    // código: o código quem lê sabe interpretar, o nome errado engana.
-    expect(nomeDoEstado('US-PA')).toBe('US-PA');
-    expect(nomeDoEstado('BR-XX')).toBe('BR-XX');
-    expect(nomeDoEstado('qualquer')).toBe('qualquer');
+    expect(nomeDoEstado('US-PA', 'US')).toBe('US-PA');
+    expect(nomeDoEstado('BR-XX', 'BR')).toBe('BR-XX');
+    expect(nomeDoEstado('qualquer', 'BR')).toBe('qualquer');
+  });
+
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────────┐
+   * │ O TESTE DE CIMA PASSAVA COM O BUG NO AR.                                │
+   * │                                                                        │
+   * │ Ele usa `US-PA`, com prefixo — e a Vercel manda `PA` cru. Foi a        │
+   * │ captura do painel real que mostrou a forma verdadeira: a árvore dizia  │
+   * │ "Estados Unidos > OR", e `OR` não tem gêmeo brasileiro, então passou   │
+   * │ despercebido. `PA` tem.                                                │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  it('sigla CRUA de outro país não vira nome brasileiro', () => {
+    expect(nomeDoEstado('PA', 'US')).toBe('PA'); // Pensilvânia, não Pará
+    expect(nomeDoEstado('MA', 'US')).toBe('MA'); // Maine, não Maranhão
+    expect(nomeDoEstado('SC', 'US')).toBe('SC');
+    expect(nomeDoEstado('MS', 'US')).toBe('MS');
+    expect(nomeDoEstado('MT', 'US')).toBe('MT');
+    expect(nomeDoEstado('AL', 'US')).toBe('AL');
+    // E a mesma sigla, vinda do Brasil, continua traduzindo.
+    expect(nomeDoEstado('PA', 'BR')).toBe('Pará');
+    expect(nomeDoEstado('MA', 'BR')).toBe('Maranhão');
+  });
+
+  it('região estrangeira fica em código, e isso é a escolha', () => {
+    // Não há tabela de subdivisão de outro país, e meia tabela repetiria o
+    // erro dos ~25 países. Código é honesto; nome errado não.
+    expect(nomeDoEstado('OR', 'US')).toBe('OR');
+    expect(nomeDoEstado('CA', 'US')).toBe('CA');
+    expect(nomeDoEstado('BY', 'DE')).toBe('BY');
   });
 });
 

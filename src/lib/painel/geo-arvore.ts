@@ -114,7 +114,11 @@ export function montarArvoreGeo(linhas: readonly LinhaGeoFina[]): NoGeo[] {
     if (!regiao) {
       regiao = vazio(
         chaveRegiao,
-        linha.regiao === null ? SEM_DADO : nomeDoEstado(linha.regiao),
+        linha.regiao === null
+          ? SEM_DADO
+          : // O país vai junto porque a sigla sozinha é ambígua: `PA` é Pará
+            // aqui e Pensilvânia nos Estados Unidos, e a Vercel manda crua.
+            nomeDoEstado(linha.regiao, linha.pais),
       );
       pais.filhos.push(regiao);
     }

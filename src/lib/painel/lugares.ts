@@ -302,9 +302,24 @@ export const PAISES_CONHECIDOS: Record<string, string> = {
   ZW: 'Zimbábue',
 };
 
-/** `BR-SP` ou `SP` → `São Paulo`. O que não for estado do Brasil volta cru. */
-export function nomeDoEstado(regiao: string): string {
-  const uf = ufDaRegiao(regiao);
+/**
+ * `SP` com país `BR` → `São Paulo`. Região de outro país volta CRUA.
+ *
+ * O `pais` não é enfeite: `PA` é Pará no Brasil e Pensilvânia nos Estados
+ * Unidos, e a sigla chega crua da Vercel. Sem o país, a árvore mostrava
+ * "Estados Unidos > Pará" — nome brasileiro pendurado no país errado, sem
+ * nada quebrar. Ver `ufDaRegiao`.
+ *
+ * Região estrangeira fica como código de propósito: `OR` não vira "Oregon"
+ * porque não há tabela de subdivisão de outro país aqui, e inventar meia
+ * tabela repetiria o erro dos ~25 países — nome e código misturados leem
+ * como defeito. Código é honesto; nome errado não.
+ */
+export function nomeDoEstado(
+  regiao: string,
+  pais: string | null | undefined,
+): string {
+  const uf = ufDaRegiao(regiao, pais);
   return (uf && NOMES_DE_ESTADO.get(uf)) ?? regiao;
 }
 

@@ -76,7 +76,10 @@ export function pintarMapa(raizes: readonly NoGeo[]): EstadoPintado[] {
 
   const porUf = new Map<string, NoGeo>();
   for (const filho of brasil?.filhos ?? []) {
-    const uf = ufDaRegiao(filho.chave);
+    // O país é `BR` por construção: `brasil` é o nó de chave `BR` e estes
+    // são os filhos DELE. Dito mesmo assim, porque a sigla crua é ambígua e
+    // `ufDaRegiao` recusa quem não declarar — ver a colisão PA/Pensilvânia.
+    const uf = ufDaRegiao(filho.chave, 'BR');
     // `Não informado` (região nula) não tem onde ser pintado — continua na
     // árvore, que é onde ele pode aparecer com nome.
     if (uf) porUf.set(uf, filho);

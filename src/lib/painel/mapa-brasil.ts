@@ -75,30 +75,49 @@ export const ESTADOS_BRASIL: readonly EstadoDoMapa[] = [
 export const TOTAL_DE_ESTADOS = 27;
 
 /**
- * `BR-SP` → `SP`. O que o banco guarda NÃO é a sigla.
+ * `SP` (ou `BR-SP`) **com o país junto** → `SP`. O que o banco guarda não é
+ * a sigla, e a sigla sozinha não basta.
  *
  * ┌───────────────────────────────────────────────────────────────────────────┐
- * │ ESTA É A JUNTA EM QUE O MAPA INTEIRO FICA VAZIO SEM DAR ERRO.            │
+ * │ A TRAVA CONTRA ESTRANGEIRO ERA DECORATIVA — NUNCA DISPAROU.              │
  * │                                                                          │
- * │ `geo_region` guarda o que o cabeçalho manda, e ele vem no formato        │
- * │ ISO 3166-2: `BR-SP`, `BR-MG`. Casar isso contra a lista de estados sem   │
- * │ tirar o prefixo não acha NADA — e o resultado não é um erro, é um mapa   │
- * │ cinza inteiro, que lê exatamente como "esta loja não vendeu nada".       │
+ * │ Esta função exigia o prefixo `BR-` para aceitar a sigla, e o comentário  │
+ * │ ao lado explicava que `US-PA` não é o Pará. Só que a Vercel manda a      │
+ * │ sigla CRUA: `OR`, `PA`, `SP`. Observado na conta real — a árvore         │
+ * │ mostrava "Estados Unidos > OR", sem prefixo nenhum. Sem hífen, o         │
+ * │ `includes('-')` nunca é verdade, e o que de fato sobrava era "esta       │
+ * │ sigla existe no Brasil?". Para seis estados a resposta é SIM nos dois    │
+ * │ países:                                                                  │
  * │                                                                          │
- * │ É a mesma armadilha que o `st` do hash da Meta já tem, por outra porta:  │
- * │ lá o `BR-SP` viraria `brsp` e não casaria com o hash dela.               │
+ * │   PA Pensilvânia   ↔ Pará        MS Mississippi  ↔ Mato Grosso do Sul   │
+ * │   MA Maine         ↔ Maranhão    MT Montana      ↔ Mato Grosso          │
+ * │   SC South Carolina↔ Sta Catarina AL Alabama     ↔ Alagoas              │
+ * │                                                                          │
+ * │ Um visitante da Pensilvânia virava Pará, e nada quebrava: só um estado   │
+ * │ do Norte com visita que nunca houve. O teste passava porque exercitava   │
+ * │ `US-PA` — a forma que não chega. É o mesmo furo do `US-CA`, uma porta    │
+ * │ adiante: a asserção certa, contra o dado errado.                         │
+ * │                                                                          │
+ * │ Agora quem decide é o PAÍS, que o `geo_country` sempre traz. O prefixo   │
+ * │ continua sendo tirado — custa nada e algum cabeçalho pode mandá-lo —,    │
+ * │ mas não é mais ele que protege.                                          │
  * └───────────────────────────────────────────────────────────────────────────┘
  *
- * Aceita as duas formas porque as duas chegam: o Cloudflare manda `SP` em
- * alguns casos e a Vercel manda `BR-SP`. Qualquer outra coisa volta `null`,
- * que é honesto — um estado inventado não tem onde ser pintado.
+ * Tirar o prefixo continua importando pelo motivo original: casar `BR-SP`
+ * contra a lista de siglas não acha nada, e o resultado não é erro, é o mapa
+ * cinza inteiro — que lê como "esta loja não vendeu nada".
+ *
+ * O `pais` é OBRIGATÓRIO porque sem ele não existe resposta certa: assim quem
+ * esquecer é pego pelo compilador, em vez de a tela mentir calada.
  */
-export function ufDaRegiao(regiao: string | null | undefined): string | null {
+export function ufDaRegiao(
+  regiao: string | null | undefined,
+  pais: string | null | undefined,
+): string | null {
   if (!regiao) return null;
+  if (pais?.trim().toUpperCase() !== 'BR') return null;
 
   const limpo = regiao.trim().toUpperCase();
-  // Com prefixo de país, só o que vem depois do hífen interessa — e só se
-  // o país for o Brasil: `US-CA` não é um estado deste mapa.
   const sigla = limpo.includes('-')
     ? limpo.startsWith('BR-')
       ? limpo.slice(3)

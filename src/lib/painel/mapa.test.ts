@@ -56,15 +56,15 @@ function linha(p: Partial<LinhaGeoFina> & { pais: string }): LinhaGeoFina {
  */
 describe('ufDaRegiao', () => {
   it('tira o prefixo do país, que é o formato que o banco guarda', () => {
-    expect(ufDaRegiao('BR-SP')).toBe('SP');
-    expect(ufDaRegiao('BR-MG')).toBe('MG');
-    expect(ufDaRegiao('BR-DF')).toBe('DF');
+    expect(ufDaRegiao('BR-SP', 'BR')).toBe('SP');
+    expect(ufDaRegiao('BR-MG', 'BR')).toBe('MG');
+    expect(ufDaRegiao('BR-DF', 'BR')).toBe('DF');
   });
 
   it('aceita a sigla sozinha — o Cloudflare manda assim', () => {
-    expect(ufDaRegiao('SP')).toBe('SP');
-    expect(ufDaRegiao('sp')).toBe('SP');
-    expect(ufDaRegiao(' rj ')).toBe('RJ');
+    expect(ufDaRegiao('SP', 'BR')).toBe('SP');
+    expect(ufDaRegiao('sp', 'BR')).toBe('SP');
+    expect(ufDaRegiao(' rj ', 'BR')).toBe('RJ');
   });
 
   /*
@@ -89,18 +89,56 @@ describe('ufDaRegiao', () => {
    */
   it('estado de OUTRO país não vira estado brasileiro', () => {
     for (const estrangeiro of ['US-PA', 'US-MA', 'US-SC', 'US-MS', 'US-MT', 'US-AL']) {
-      expect(ufDaRegiao(estrangeiro), estrangeiro).toBeNull();
+      expect(ufDaRegiao(estrangeiro, 'US'), estrangeiro).toBeNull();
     }
-    expect(ufDaRegiao('US-CA')).toBeNull();
-    expect(ufDaRegiao('PT-11')).toBeNull();
+    expect(ufDaRegiao('US-CA', 'US')).toBeNull();
+    expect(ufDaRegiao('PT-11', 'PT')).toBeNull();
+  });
+
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────────┐
+   * │ ESTE É O TESTE QUE FALTAVA, E O DE CIMA PASSAVA SEM ELE.                │
+   * │                                                                        │
+   * │ O de cima exercita `US-PA` — a forma COM prefixo. A Vercel manda a     │
+   * │ sigla CRUA, e foi a tela real que mostrou: "Estados Unidos > OR".      │
+   * │ Com `PA` cru e sem o país, a antiga `ufDaRegiao` devolvia `PA` e a     │
+   * │ Pensilvânia virava Pará. A asserção certa, contra o dado errado.       │
+   * └─────────────────────────────────────────────────────────────────────────┘
+   */
+  it('sigla CRUA de outro país — as seis colisões reais', () => {
+    const colisoes = {
+      PA: 'Pensilvânia / Pará',
+      MA: 'Maine / Maranhão',
+      SC: 'South Carolina / Santa Catarina',
+      MS: 'Mississippi / Mato Grosso do Sul',
+      MT: 'Montana / Mato Grosso',
+      AL: 'Alabama / Alagoas',
+    };
+
+    for (const [sigla, par] of Object.entries(colisoes)) {
+      // Dos Estados Unidos: não é estado deste mapa.
+      expect(ufDaRegiao(sigla, 'US'), par).toBeNull();
+      // Do Brasil, a MESMA sigla crua: é, e continua sendo.
+      expect(ufDaRegiao(sigla, 'BR'), par).toBe(sigla);
+    }
+  });
+
+  it('país ausente recusa, em vez de adivinhar', () => {
+    // Sem país não há resposta certa para `PA`. Recusar é a única saída
+    // honesta — e é o que impede um caminho novo de reabrir a colisão.
+    expect(ufDaRegiao('PA', null)).toBeNull();
+    expect(ufDaRegiao('PA', undefined)).toBeNull();
+    expect(ufDaRegiao('PA', '')).toBeNull();
+    // Mesmo com o prefixo explícito: quem manda é o país.
+    expect(ufDaRegiao('BR-PA', null)).toBeNull();
   });
 
   it('sigla que não existe volta null, em vez de inventar', () => {
-    expect(ufDaRegiao('BR-XX')).toBeNull();
-    expect(ufDaRegiao('ZZ')).toBeNull();
-    expect(ufDaRegiao('')).toBeNull();
-    expect(ufDaRegiao(null)).toBeNull();
-    expect(ufDaRegiao(undefined)).toBeNull();
+    expect(ufDaRegiao('BR-XX', 'BR')).toBeNull();
+    expect(ufDaRegiao('ZZ', 'BR')).toBeNull();
+    expect(ufDaRegiao('', 'BR')).toBeNull();
+    expect(ufDaRegiao(null, 'BR')).toBeNull();
+    expect(ufDaRegiao(undefined, 'BR')).toBeNull();
   });
 });
 
@@ -320,7 +358,7 @@ describe('pintarMapa', () => {
     // possível aqui, e o que impede é a origem ser a MESMA árvore.
     const brasil = arvore.find((r) => r.chave === 'BR');
     for (const no of brasil?.filhos ?? []) {
-      const sigla = ufDaRegiao(no.chave);
+      const sigla = ufDaRegiao(no.chave, 'BR');
       if (!sigla) continue;
       expect(uf(sigla)?.receita, sigla).toBe(no.receita);
       expect(uf(sigla)?.visitantes, sigla).toBe(no.visitantes);

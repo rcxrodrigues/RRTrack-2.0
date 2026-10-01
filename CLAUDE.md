@@ -749,13 +749,39 @@ nenhuma lista ordenada por receita a diz.
 > arquivo original desenhado pelo navegador. Rodado contra o gerador
 > defeituoso, reprova 7 estados com erro de até 533 unidades.
 
-> **`US-PA` é Pensilvânia e `PA` é Pará.** São seis colisões reais —
-> PA, MA, SC, MS, MT, AL —, todas entre estados grandes dos dois países.
-> `ufDaRegiao` exige o prefixo `BR-`; sem isso um visitante da Pensilvânia
-> pinta o Pará, e não há erro nenhum: só um estado do Norte que "vendeu"
-> sem nunca ter vendido. O teste disso também já nasceu errado uma vez: a
-> primeira versão usava `US-CA`, que não tem gêmeo brasileiro, e passava com
-> a checagem do país REMOVIDA.
+> **`PA` é Pará E Pensilvânia, e quem desempata é o PAÍS — não o prefixo.**
+> São seis colisões reais — PA, MA, SC, MS, MT, AL —, todas entre estados
+> grandes dos dois países. Um visitante da Pensilvânia vira Pará, e não há
+> erro nenhum: só um estado do Norte com visita que nunca houve.
+>
+> **A trava contra isso existiu por semanas sem nunca disparar.** Ela exigia
+> o prefixo `BR-` — e a Vercel manda a sigla **CRUA**. Quem mostrou foi a
+> tela real: a árvore trazia "Estados Unidos > **OR**", sem prefixo nenhum.
+> Sem hífen o `includes('-')` nunca é verdade, e o que de fato sobrava era
+> "esta sigla existe no Brasil?". Para as seis, sim.
+>
+> O mapa escapou por acaso — `pintarMapa` já desce só pelo nó `BR`, então a
+> pintura nunca viu a sigla estrangeira. Quem exibia o nome errado era a
+> **árvore**, que chamava `nomeDoEstado` sem país: `Estados Unidos > Pará`,
+> com `Philadelphia` dentro.
+>
+> Agora `ufDaRegiao(regiao, pais)` e `nomeDoEstado(regiao, pais)` exigem o
+> país, **obrigatório** — opcional, o próximo caminho a esquecer voltaria a
+> mentir calado; obrigatório, o compilador acha. O prefixo continua sendo
+> tirado, porque sem isso `BR-SP` não casa com a lista e o mapa fica cinza
+> inteiro; só não é mais ele que protege.
+>
+> **E o teste disso já nasceu sem dente DUAS vezes**, do mesmo jeito: a
+> primeira versão usava `US-CA`, que não tem gêmeo brasileiro; a segunda
+> usava `US-PA` — asserção certa, forma errada, porque com prefixo é
+> justamente o caso que não chega. O que tem dente é a sigla **crua** mais o
+> país, nos dois sentidos: `('PA','US')` → `null` e `('PA','BR')` → `PA`.
+> Conferido removendo a trava: os três testes novos reprovam, e todos os
+> antigos seguem verdes.
+>
+> **Região estrangeira fica em CÓDIGO de propósito.** `OR` não vira
+> "Oregon": não há tabela de subdivisão de outro país aqui, e meia tabela
+> repetiria o erro dos ~25 países. Código é honesto; nome errado não.
 
 ### Gráfico: a cor é computável, então compute
 
@@ -1102,9 +1128,12 @@ coisa, e é ela que vale:
 | `em` | minúsculas e trim | |
 | `ph` | só dígitos, sem `+` nem zeros de discagem | acrescentamos o DDI `55` quando vêm 10-11 dígitos: formulário brasileiro não pede código de país |
 
-Exceção nossa, e única: `st` tira o prefixo do país **antes** da limpeza. O
-`BR-SP` que a Vercel manda viraria `brsp` pela regra da Meta, que não casa com
-nada. Testes com estes vetores em `src/lib/hash.test.ts`.
+Exceção nossa, e única: `st` tira o prefixo do país **antes** da limpeza. Um
+`BR-SP` viraria `brsp` pela regra da Meta, que não casa com nada. **Na
+prática a Vercel manda a sigla crua** (`SP`, `OR`) — observado na conta real,
+e a razão de a trava do mapa ter ficado decorativa —, então aqui o corte é
+defensivo: custa nada e cobre o cabeçalho que um dia mande a forma completa.
+Testes com estes vetores em `src/lib/hash.test.ts`.
 
 **Nunca hasheados:** `fbp`, `fbc`, `client_ip_address`, `client_user_agent`.
 Hashear qualquer um deles o torna inútil.
