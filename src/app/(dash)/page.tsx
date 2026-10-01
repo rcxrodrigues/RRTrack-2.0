@@ -300,7 +300,19 @@ export default async function VisaoGeralPage({
           label="Visitantes únicos"
           value={inteiro(resumo.visitantes)}
           delta={variacao(resumo.visitantes, antes.visitantes)}
-          hint={`${inteiro(resumo.identificados)} identificados`}
+          /*
+            O robô sai da conta, e a tela DIZ que saiu.
+            Filtrar calado faria o número cair sozinho entre dois acessos,
+            sem explicação em lugar nenhum — e quem olhasse o funil veria a
+            conversão subir sem nada ter acontecido. Esconder é a última
+            escolha neste painel; aqui nem precisa ser.
+          */
+          hint={
+            resumo.robos > 0
+              ? `${inteiro(resumo.identificados)} identificados · ` +
+                `${inteiro(resumo.robos)} ${resumo.robos === 1 ? 'robô' : 'robôs'} fora da conta`
+              : `${inteiro(resumo.identificados)} identificados`
+          }
           custoRotulo="por visitante"
           /*
             Em `Suspense` próprio: o custo depende do gasto, que vem da API da

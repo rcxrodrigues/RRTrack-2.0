@@ -118,6 +118,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     geo_country: geo.pais,
     geo_region: geo.regiao,
     geo_city: geo.cidade,
+    // Grava marcado, nunca descarta: a linha é o que permite rever a
+    // classificação depois. O que o robô não faz é CONTAR e DISPARAR.
+    is_bot: preparo.ctx.robo,
   };
 
   let inedito = false;
@@ -146,7 +149,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return recusar(origem, 500, { erro: 'não foi possível registrar' });
   }
 
-  if (inedito) {
+  /*
+   * ┌─────────────────────────────────────────────────────────────────────┐
+   * │ ROBÔ NÃO VAI PARA A META NEM PARA O GA4.                            │
+   * │                                                                     │
+   * │ Não é só higiene do painel: um PageView de rastreador entra no      │
+   * │ público de remarketing e no aprendizado do otimizador. É a mesma     │
+   * │ razão de o ViewContent sair só em página de produto — ensinar a      │
+   * │ Meta com quem não compra é pior que não ensinar nada.                │
+   * └─────────────────────────────────────────────────────────────────────┘
+   */
+  if (inedito && !preparo.ctx.robo) {
     const paraMeta = {
       event_name: corpo.event_name,
       // Segundos, não milissegundos: a Meta recusa o evento com a unidade

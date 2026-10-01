@@ -24,6 +24,14 @@ export type Resumo = {
   visitantes: number;
   identificados: number;
   eventos: number;
+  /**
+   * Visitas de rastreador no período — JÁ FORA de `visitantes`.
+   *
+   * Existe para a tela poder DIZER o que tirou. Filtrar calado faria o
+   * número cair sozinho entre dois acessos, sem explicação em lugar nenhum
+   * — e esconder é a última escolha neste painel, nunca a primeira.
+   */
+  robos: number;
   aprovadas: number;
   receita: number;
   pendentes: number;
@@ -61,6 +69,7 @@ const RESUMO_VAZIO: Resumo = {
   visitantes: 0,
   identificados: 0,
   eventos: 0,
+  robos: 0,
   aprovadas: 0,
   receita: 0,
   pendentes: 0,
@@ -115,6 +124,7 @@ export async function buscarResumo(intervalo: Intervalo): Promise<Resumo> {
     visitantes: num(data, 'visitantes'),
     identificados: num(data, 'identificados'),
     eventos: num(data, 'eventos'),
+    robos: num(data, 'robos'),
     aprovadas: num(data, 'aprovadas'),
     receita: num(data, 'receita'),
     pendentes: num(data, 'pendentes'),

@@ -44,6 +44,16 @@ grant select (timezone) on public.settings to authenticated;
 -- `ate` é EXCLUSIVO (`< ate`), não inclusivo: com `<=` o último milissegundo
 -- do dia entraria em dois períodos ao mesmo tempo, e "hoje" + "ontem" somados
 -- dariam mais que os dois dias juntos.
+-- `drop` antes do `create or replace`, e isto é a correção de idempotência
+-- que o CLAUDE.md descreve como única razão para editar migration aplicada.
+-- Em 01/10/2026 o `painel_resumo` ganhou a coluna `robos` numa migration do
+-- fim. Rodando tudo de novo — que é como migration nova chega a um banco que
+-- já existe, e é o que o INSTALAR.sql faz —, este arquivo tentava recriar a
+-- versão SEM a coluna por cima da versão COM, e o Postgres recusa: "cannot
+-- change return type of existing function". Num banco limpo o resultado é
+-- idêntico; o que muda é deixar de travar no banco que já tem.
+drop function if exists public.painel_resumo(timestamptz, timestamptz);
+
 create or replace function public.painel_resumo(de timestamptz, ate timestamptz)
 returns table (
   visitantes      bigint,

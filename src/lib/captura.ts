@@ -7,6 +7,7 @@ import { cabecalhosCors, origemPermitida } from '@/lib/cors';
 import { extrairGeo, type Geo } from '@/lib/geo';
 import { lerCookies } from '@/lib/cookies-terceiros';
 import { bucketPorIp, dentroDoLimite, LIMITE_CAPTURA } from '@/lib/ratelimit';
+import { ehRobo } from '@/lib/robo';
 import { carregarConfiguracao, type Configuracao } from '@/lib/settings';
 
 /**
@@ -24,6 +25,15 @@ export type ContextoCaptura = {
   geo: Geo;
   cookies: Map<string, string>;
   userAgent: string | null;
+  /**
+   * Rastreador, prévia de link ou script — não gente.
+   *
+   * Decidido AQUI, no portão único, pelo mesmo motivo que o rate limit e a
+   * allowlist estão aqui: endpoint novo que esquecesse de perguntar
+   * passaria a contar robô outra vez, e nada quebraria. A linha continua
+   * sendo gravada; o que muda é contar e disparar.
+   */
+  robo: boolean;
 };
 
 type Resultado =
@@ -78,6 +88,7 @@ export async function prepararCaptura(
       geo,
       cookies: lerCookies(request.headers.get('cookie')),
       userAgent: request.headers.get('user-agent'),
+      robo: ehRobo(request.headers.get('user-agent')),
     },
   };
 }

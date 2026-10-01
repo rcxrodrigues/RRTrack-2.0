@@ -121,7 +121,17 @@ export async function buscarEventos(
     // grande isto custa; quando custar, o caminho é `planned`.
     .select(COLUNAS, { count: 'exact' })
     .gte('created_at', intervalo.de.toISOString())
-    .lt('created_at', intervalo.ate.toISOString());
+    .lt('created_at', intervalo.ate.toISOString())
+    /*
+     * Robô fora da LISTA, não do banco. Rastreador gera PageView em volume,
+     * e misturado aqui ele empurra o evento de gente para a página 3 — a
+     * aba de Eventos existe para achar o que aconteceu com uma pessoa.
+     *
+     * As buscas por id logo abaixo (payload, gaveta do visitante) NÃO
+     * filtram, de propósito: ali alguém pediu aquela linha, e esconder o
+     * que foi pedido é outra coisa — é mentir sobre o que existe.
+     */
+    .eq('is_bot', false);
 
   if (filtro.nome) consulta = consulta.eq('event_name', filtro.nome);
 

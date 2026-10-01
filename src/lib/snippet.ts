@@ -81,6 +81,10 @@ export function montarSnippet(base: string, config: Configuracao): string {
 
   var trckUserId = idAtual();
 
+  /* Rastreador, previa de link ou script. Quem responde e o /api/identify;
+     comeca FALSO para que uma falha de rede nunca cale gente de verdade. */
+  var ehRobo = false;
+
   function utms() {
     var out = {};
     ['source', 'medium', 'campaign', 'term', 'content'].forEach(function (k) {
@@ -132,6 +136,10 @@ export function montarSnippet(base: string, config: Configuracao): string {
     matchNoPixel(extra);
 
     return enviar('/api/identify', corpo).then(function (r) {
+      /* Quem decide e o SERVIDOR: so ele ve o User-Agent inteiro, e a regra
+         mora num lugar so. O padrao e false — identify fora do ar NAO pode
+         calar o rastreamento de gente. */
+      if (r && r.robo === true) ehRobo = true;
       if (r && r.trck_user_id) {
         trckUserId = r.trck_user_id;
         marcarLinks();
@@ -375,6 +383,20 @@ export function montarSnippet(base: string, config: Configuracao): string {
 
   /* rrtrack.track('Lead', { value: 97, currency: 'BRL' }) */
   api.track = seguro(function (nome, dados, opcoes) {
+    /* ---------------------------------------------------------------------
+       Robo nao dispara NADA — nem fbq, nem gtag, nem /api/event.
+
+       A trava fica aqui porque este e o ponto unico por onde todo evento
+       sai: PageView, ViewContent, AddToCart e o que o site chamar. Posta
+       em cada chamador, a proxima a nascer esqueceria de copiar — o modo
+       de falha que o prepararCaptura() ja documenta do lado do servidor.
+
+       O servidor recusa de novo, por conta propria: isto aqui e economia
+       de requisicao e de evento no Pixel, nao a trava de verdade. Quem
+       chamar track() antes do identify responder passa, e o servidor pega.
+    --------------------------------------------------------------------- */
+    if (ehRobo) return;
+
     var eventId = novoEventId();
     var custom = dados || {};
 

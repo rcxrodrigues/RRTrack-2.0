@@ -80,7 +80,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const preparo = await prepararCaptura(request, 'identify');
   if (!preparo.ok) return preparo.resposta;
 
-  const { origem, config, geo, cookies, userAgent } = preparo.ctx;
+  const { origem, config, geo, cookies, userAgent, robo } = preparo.ctx;
 
   const analise = corpoSchema.safeParse(await request.json().catch(() => null));
   if (!analise.success) {
@@ -158,6 +158,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     ip: geo.ip,
     user_agent: userAgent,
+    // Marcado, não descartado — ver `src/lib/robo.ts`. O `false` atravessa o
+    // filtro de nulos de propósito: ele existe para campo AUSENTE, e "não é
+    // robô" é resposta, não ausência.
+    is_bot: robo,
     geo_country: geo.pais,
     geo_region: geo.regiao,
     geo_city: geo.cidade,
@@ -188,13 +192,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // pendurar o vínculo nos links, e aí a venda chegaria órfã. Perder a
     // linha é ruim; perder a atribuição da venda é pior.
     return responder(
-      { trck_user_id: trckUserId, external_id: externalId, gravado: false },
+      { trck_user_id: trckUserId, external_id: externalId, gravado: false, robo },
       origem,
     );
   }
 
   const resposta = responder(
-    { trck_user_id: trckUserId, external_id: externalId, gravado: true },
+    { trck_user_id: trckUserId, external_id: externalId, gravado: true, robo },
     origem,
   );
   resposta.cookies.set(

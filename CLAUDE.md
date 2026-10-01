@@ -1110,6 +1110,76 @@ de copiar.
 > pega o array VAZIO, e o teste reprova dizendo que o evento não dispara
 > quando ele dispara um tique depois. `montar()` é `async` por isso.
 
+### Robô não conta como visitante — e o painel diz quantos saíram
+
+A conta real trouxe cinco "visitantes" de **The Dalles, Oregon**, que é
+datacenter do Google. Rastreador, prévia de link e script chegam em qualquer
+loja aberta, e entravam no topo do funil: a conversão era dividida por um
+denominador com máquina dentro, e o gasto por visitante também.
+
+**A LINHA CONTINUA SENDO GRAVADA.** `visitors.is_bot` e `events_log.is_bot`
+decidem o que CONTA, não o que existe. Descartar na porta perderia para
+sempre quem a regra classificasse errado — e esse é justamente o erro que
+esta regra pode cometer.
+
+- **O falso positivo é o caro, e por isso a lista é CURADA, não esperta.**
+  Marcar robô como gente infla o funil: chato, visível, corrigível. Marcar
+  GENTE como robô tira um comprador real da conta **e** do que vai para a
+  Meta — a venda some do funil, o otimizador deixa de aprender com quem
+  comprou, e nada aponta a falta. Na dúvida, não marca.
+- **`CUBOT` é marca de celular vendida no Brasil, e tem "bot" no nome.** Sem
+  a exceção, `bot/` marcaria o aparelho de um comprador. A limpeza vem
+  ANTES da busca, no TypeScript e no SQL.
+- **`whatsapp/` leva a barra de propósito.** O robô de prévia se anuncia
+  como `WhatsApp/2.x`; o navegador embutido do aplicativo — por onde chega
+  parte do tráfego desta loja — não carrega a palavra. Sem a barra, a regra
+  descartaria comprador. Pelo mesmo motivo `naver` e `sogou` ficaram de
+  fora: são navegador de gente também, e o crawler dos dois já cai no
+  `+http`.
+- **Agente AUSENTE não é robô.** É suspeito, mas extensão de privacidade
+  também remove o cabeçalho, e marcar por ausência trocaria suspeita por
+  afirmação.
+- **A decisão mora no portão único** (`prepararCaptura`), ao lado do rate
+  limit e da allowlist, e pelo mesmo motivo: endpoint novo que esquecesse
+  de perguntar voltaria a contar robô, sem nada quebrar.
+- **Robô não vai para a Meta nem para o GA4.** Não é higiene de painel: o
+  PageView de rastreador entra no público de remarketing e no aprendizado
+  do otimizador. Mesma razão de o `ViewContent` sair só em página de
+  produto — ensinar a Meta com quem não compra é pior que não ensinar nada.
+- **E o SNIPPET obedece, porque o `fbq` não passa por nós.** O renderizador
+  do Google executa JavaScript e dispararia o Pixel direto. A resposta do
+  `/api/identify` traz o veredito, e a trava fica no `track()`, que é o
+  ponto único por onde todo evento sai. O padrão é **false**: identify fora
+  do ar, resposta cortada ou rota antiga NÃO podem calar o rastreamento de
+  gente. `snippet-robo.test.ts` executa o snippet e conta o que chegou ao
+  `fbq` e ao `fetch` — conferido quebrando.
+- **A lista é UMA, e o teste prova.** A regra roda em `src/lib/robo.ts`; a
+  migration repete as marcas só para o preenchimento retroativo de quem já
+  estava no banco. Duas listas que podem divergir é o que este projeto evita
+  em todo lugar, então `robo.test.ts` varre o SQL e quebra o build quando
+  uma marca entra de um lado só — molde do `constants.test.ts`.
+- **No SQL é `ilike any (array[…])`, nunca regex.** A busca no TypeScript é
+  por SUBSTRING, e `ilike '%x%'` é exatamente isso. Numa regex o `+` de
+  `+http` viraria quantificador e a marca deixaria de casar, calada. Nenhuma
+  marca tem `%` nem `_`, os dois curingas do LIKE — há teste.
+- **`events_log` não guarda `user_agent`**, então o preenchimento retroativo
+  dele vem do visitante. Daqui para a frente a rota tem o cabeçalho na mão e
+  grava direto — um evento sem linha de visitante também é classificado.
+- **`purchases` não tem a coluna, e não é esquecimento.** Venda não nasce de
+  rastreador: ela entra por webhook de gateway, com dinheiro atrás. Filtrar
+  ali inventaria um caso que não existe e arriscaria esconder receita.
+- **A tela DIZ quantos saíram** (`painel_resumo.robos`, no rodapé do cartão
+  de visitantes). Filtrar calado faria o número cair sozinho entre dois
+  acessos e a conversão subir sem nada ter acontecido, sem explicação em
+  lugar nenhum. É a regra de esconder por último, aplicada antes de alguém
+  perguntar.
+- **A LISTA de Eventos filtra; a busca por id, não.** Rastreador gera
+  PageView em volume e empurraria o evento de gente para a página 3. Mas a
+  gaveta do visitante e o payload de uma linha são de quem pediu aquela
+  linha — ali esconder seria mentir sobre o que existe.
+
+---
+
 ### Hash para a CAPI: siga o `normalize.py`, não a prosa
 
 A Meta compara o nosso hash com o que ela calcula do lado dela. Normalizou
