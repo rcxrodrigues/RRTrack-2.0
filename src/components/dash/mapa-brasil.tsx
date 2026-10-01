@@ -131,16 +131,34 @@ export function MapaBrasil({ estados }: { estados: EstadoPintado[] }) {
       <div className="border-border/60 min-h-16 rounded-md border px-3 py-2">
         {ativo === null ? (
           <p className="text-muted-foreground text-xs">
-            Toque num estado para ver os números dele.{' '}
-            {semAlcance > 0 && (
+            {semAlcance === estados.length ? (
+              /*
+                Período inteiro vazio. Pedir "toque num estado" aqui seria
+                instrução que não pode funcionar — e o mapa todo cinza sem
+                uma frase ao lado lê como defeito, não como ausência de
+                visita.
+              */
               <>
                 <strong className="text-foreground">
-                  {inteiro(semAlcance)} de 27
+                  Nenhum visitante com geo no período.
                 </strong>{' '}
-                {semAlcance === 1
-                  ? 'estado não recebeu nenhum visitante'
-                  : 'estados não receberam nenhum visitante'}{' '}
-                no período.
+                O mapa acende conforme a origem das visitas aparece — tente um
+                período maior.
+              </>
+            ) : (
+              <>
+                Toque num estado para ver os números dele.{' '}
+                {semAlcance > 0 && (
+                  <>
+                    <strong className="text-foreground">
+                      {inteiro(semAlcance)} de {inteiro(estados.length)}
+                    </strong>{' '}
+                    {semAlcance === 1
+                      ? 'estado não recebeu nenhum visitante'
+                      : 'estados não receberam nenhum visitante'}{' '}
+                    no período.
+                  </>
+                )}
               </>
             )}
           </p>

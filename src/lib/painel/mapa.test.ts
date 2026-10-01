@@ -342,3 +342,41 @@ describe('pintarMapa', () => {
     expect(estadosSemAlcance(vazio)).toBe(TOTAL_DE_ESTADOS);
   });
 });
+
+/*
+ * QUANDO O MAPA APARECE — a regra que eu errei e que custou meia hora.
+ *
+ * A primeira versão escondia o mapa sempre que não havia Brasil no período,
+ * e isso engolia o caso mais comum: PERÍODO VAZIO. Num dia sem visitante o
+ * mapa sumia inteiro, sem uma linha dizendo por quê — e quem abriu o painel
+ * concluiu, com razão, que a função não tinha subido.
+ *
+ * A decisão mora na página, então o que dá para travar aqui é a condição.
+ * Ela é simples o bastante para caber num teste e importante o bastante
+ * para merecer um: esconder coisa da tela é a última escolha, nunca a
+ * primeira.
+ */
+function mostrarMapa(raizes: { chave: string }[]): boolean {
+  return raizes.length === 0 || raizes.some((r) => r.chave === 'BR');
+}
+
+describe('quando o mapa aparece', () => {
+  it('período VAZIO mostra o mapa, vazio — não o esconde', () => {
+    // O que o usuário viu: nada. O certo é um mapa cinza dizendo
+    // "nenhum visitante com geo no período".
+    expect(mostrarMapa([])).toBe(true);
+  });
+
+  it('com Brasil, aparece', () => {
+    expect(mostrarMapa([{ chave: 'BR' }])).toBe(true);
+    expect(mostrarMapa([{ chave: 'PT' }, { chave: 'BR' }])).toBe(true);
+  });
+
+  it('com geo e NENHUM brasileiro, aí sim some', () => {
+    // Este é o caso que a regra original queria proteger, e ele continua
+    // protegido: a loja vende só para fora, e um mapa do Brasil ao lado
+    // não diria nada sobre o funil dela. A árvore lista os países.
+    expect(mostrarMapa([{ chave: 'PT' }])).toBe(false);
+    expect(mostrarMapa([{ chave: 'US' }, { chave: 'PT' }])).toBe(false);
+  });
+});
